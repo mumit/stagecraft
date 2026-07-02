@@ -848,6 +848,7 @@ async function run(opts = {}) {
   state.transient = state.transient || {};        // no-gate transient retries per stage
   state.srcFingerprints = state.srcFingerprints || {}; // content hashes for no-source-change detection
   state.targetedFix = state.targetedFix || null;  // one-shot fix-and-retry dispatch hint
+  state.skipped_stages = Array.isArray(state.skipped_stages) ? state.skipped_stages : [];
   state.active_workstreams = {};
   state.last_workstream = state.last_workstream || null;
   // Phase 12.2: commit-cursor fields (resilient to resumed pre-12.2 states).
@@ -1024,7 +1025,13 @@ async function run(opts = {}) {
       // stage at the front. For feature runs, pass effectiveTrack so pipeline/track.json
       // and custom_stages selections propagate to next() without a second config read.
       const nextTrack = intent === "repair" ? order : effectiveTrack;
-      const r = _next({ cwd, track: nextTrack, changeId });
+      const r = _next({
+        cwd,
+        track: nextTrack,
+        changeId,
+        auditSkips: true,
+        auditedSkips: state.skipped_stages,
+      });
       state.iterations = (state.iterations || 0) + 1;
       state.last_action = r.action;
       state.current_stage = r.name || null;
@@ -1089,6 +1096,24 @@ async function run(opts = {}) {
           ac_count: r.acCount,
         });
         onEvent({ type: "auto-fold-sign-off", ...base, ac_count: r.acCount });
+        continue;
+      }
+
+      if (r.action === "skip-stage") {
+        if (r.name && !state.skipped_stages.includes(r.name)) state.skipped_stages.push(r.name);
+        saveRunState(cwd, changeId, state);
+        logEvent(cwd, changeId, {
+          ...base,
+          outcome: "skip-stage",
+          skip_kind: r.skip_kind || null,
+          trigger_inputs: r.trigger_inputs || {},
+        });
+        onEvent({
+          type: "skip-stage",
+          ...base,
+          skip_kind: r.skip_kind || null,
+          trigger_inputs: r.trigger_inputs || {},
+        });
         continue;
       }
 

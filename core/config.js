@@ -18,6 +18,7 @@ const DEFAULTS = {
     default_track: "full",
     isolation: "in-place",
     skip_stages: [],
+    force_stages: [],
     // verify: optional. Holds orchestrator-stamped verification commands
     // for stages that the orchestrator can verify directly (stage-04a
     // and stage-06 today). Absent test config discovers Node, pytest,
@@ -80,6 +81,7 @@ function loadConfig(cwd = process.cwd()) {
         isolation: parsed.pipeline?.isolation ?? DEFAULTS.pipeline.isolation,
         isolation_acknowledge_partial: parsed.pipeline?.isolation_acknowledge_partial === true,
         skip_stages: Array.isArray(parsed.pipeline?.skip_stages) ? parsed.pipeline.skip_stages : [],
+        force_stages: Array.isArray(parsed.pipeline?.force_stages) ? parsed.pipeline.force_stages : [],
         verify: (parsed.pipeline && typeof parsed.pipeline.verify === "object" && parsed.pipeline.verify !== null) ? parsed.pipeline.verify : {},
         custom_stages: Array.isArray(parsed.pipeline?.custom_stages) ? parsed.pipeline.custom_stages : null,
         require_signed_gates: parsed.pipeline?.require_signed_gates === true,
@@ -236,6 +238,7 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  isolation: in-place");
   lines.push("  # require_signed_gates: false  # requires DEVTEAM_SIGNING_SECRET when true");
   lines.push("  # skip_stages: []     # stage names to skip, e.g. [red-team]");
+  lines.push("  # force_stages: []    # stage names to run even when skip/conditional rules would skip them");
   lines.push("  # verify:             # orchestrator-stamped verification commands");
   lines.push("  #   lint_command: \"npm run lint\"   # override; defaults to package.json scripts.lint");
   lines.push("  #   test_command: \"npm test\"      # exclusive override; null disables auto-discovery");

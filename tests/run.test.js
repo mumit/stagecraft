@@ -107,6 +107,51 @@ describe("driver: halt paths (real next)", () => {
 });
 
 describe("driver: dispatch loop (injected deps)", () => {
+  it("records deterministic skip-stage transitions once and continues", async () => {
+    const cwd = track(makeTargetProject());
+    const events = [];
+    const triggerInputs = {
+      prerequisite_stage: "stage-04a",
+      field: "security_review_required",
+      expected: true,
+      actual: false,
+      force_stages: [],
+    };
+    const seq = [
+      {
+        action: "skip-stage",
+        stage: "stage-04b",
+        name: "security-review",
+        skip_kind: "conditionalOn",
+        trigger_inputs: triggerInputs,
+        reason: "condition not met: stage-04a.security_review_required !== true",
+      },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    await run({
+      cwd,
+      budgetUsd: 10,
+      next: () => seq.shift(),
+      onEvent: (event) => events.push(event),
+    });
+
+    const emitted = events.find((event) => event.type === "skip-stage");
+    assert.ok(emitted, "skip-stage event emitted");
+    assert.equal(emitted.name, "security-review");
+    assert.equal(emitted.skip_kind, "conditionalOn");
+
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.deepEqual(state.skipped_stages, ["security-review"]);
+
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const skips = log.filter((entry) => entry.outcome === "skip-stage");
+    assert.equal(skips.length, 1);
+    assert.deepEqual(skips[0].trigger_inputs, triggerInputs);
+  });
+
   it("advances run-stage → merge → complete", async () => {
     const cwd = track(makeTargetProject());
     const actions = [

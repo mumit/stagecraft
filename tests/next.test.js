@@ -107,6 +107,31 @@ describe("next: conditional dispatch", () => {
     assert.equal(r.name, "red-team", "expected to skip security-review and land on red-team");
   });
 
+  it("auditSkips returns a typed skip-stage transition with trigger inputs", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01","stage-02","stage-03","stage-03b","stage-04"]) seedGate(cwd, s, { status: "PASS" });
+    seedGate(cwd, "stage-04a", { status: "PASS", security_review_required: false });
+    const r = next({ cwd, auditSkips: true });
+    assert.equal(r.action, "skip-stage");
+    assert.equal(r.name, "security-review");
+    assert.equal(r.skip_kind, "conditionalOn");
+    assert.deepEqual(r.trigger_inputs, {
+      prerequisite_stage: "stage-04a",
+      field: "security_review_required",
+      expected: true,
+      actual: false,
+      force_stages: [],
+    });
+  });
+
+  it("auditSkips skips past stages already recorded in auditedSkips", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01","stage-02","stage-03","stage-03b","stage-04"]) seedGate(cwd, s, { status: "PASS" });
+    seedGate(cwd, "stage-04a", { status: "PASS", security_review_required: false });
+    const r = next({ cwd, auditSkips: true, auditedSkips: ["security-review"] });
+    assert.equal(r.name, "red-team");
+  });
+
   it("stage-04b runs when stage-04a.security_review_required is true", () => {
     const cwd = track(makeTargetProject());
     for (const s of ["stage-01","stage-02","stage-03","stage-03b","stage-04"]) seedGate(cwd, s, { status: "PASS" });
@@ -114,6 +139,47 @@ describe("next: conditional dispatch", () => {
     const r = next({ cwd });
     assert.equal(r.action, "run-stage");
     assert.equal(r.name, "security-review");
+  });
+
+  it("force_stages runs a conditional stage even when its condition is false", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  force_stages:\n    - security-review\n",
+    }));
+    for (const s of ["stage-01","stage-02","stage-03","stage-03b","stage-04"]) seedGate(cwd, s, { status: "PASS" });
+    seedGate(cwd, "stage-04a", { status: "PASS", security_review_required: false });
+    const r = next({ cwd });
+    assert.equal(r.action, "run-stage");
+    assert.equal(r.name, "security-review");
+  });
+});
+
+describe("next: configured skips", () => {
+  it("auditSkips returns configured skip-stage before silently advancing", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  skip_stages:\n    - design\n",
+    }));
+    seedGate(cwd, "stage-01", { status: "PASS" });
+    const audited = next({ cwd, auditSkips: true });
+    assert.equal(audited.action, "skip-stage");
+    assert.equal(audited.name, "design");
+    assert.equal(audited.skip_kind, "pipeline.skip_stages");
+    assert.deepEqual(audited.trigger_inputs, {
+      skip_stages: ["design"],
+      force_stages: [],
+    });
+
+    const quiet = next({ cwd });
+    assert.equal(quiet.name, "clarification");
+  });
+
+  it("force_stages overrides configured skip_stages", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  skip_stages:\n    - design\n  force_stages:\n    - design\n",
+    }));
+    seedGate(cwd, "stage-01", { status: "PASS" });
+    const r = next({ cwd, auditSkips: true });
+    assert.equal(r.action, "run-stage");
+    assert.equal(r.name, "design");
   });
 });
 

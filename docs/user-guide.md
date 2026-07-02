@@ -1481,9 +1481,19 @@ pipeline:
     - red-team
 ```
 
-Skipped stages are silently passed over by `devteam next` and shown as `skipped (pipeline.skip_stages)` in `devteam summary`. No gate file is required. The skip applies to all runs in the project. Use `--track` for per-run exclusions instead.
+Skipped stages are silently passed over by `devteam next` and shown as `skipped (pipeline.skip_stages)` in `devteam summary`. During `devteam run`, each configured or conditional skip is recorded once in `pipeline/run-log.jsonl` as `skip-stage` with the trigger inputs that caused the skip. No gate file is required. The skip applies to all runs in the project. Use `--track` for per-run exclusions instead.
 
-Note that `skip_stages` accepts stage names (e.g. `red-team`, `verification-beyond-tests`), not stage IDs (e.g. `stage-04c`). Run `devteam stages` to see valid names.
+To temporarily override either `skip_stages` or a conditional skip, list the stage under `pipeline.force_stages`:
+
+```yaml
+pipeline:
+  skip_stages:
+    - red-team
+  force_stages:
+    - red-team
+```
+
+Note that `skip_stages` and `force_stages` accept stage names (e.g. `red-team`, `verification-beyond-tests`), not stage IDs (e.g. `stage-04c`). Run `devteam stages` to see valid names.
 
 ### Verification commands
 
