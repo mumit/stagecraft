@@ -986,6 +986,7 @@ function mergeWorkstreamGates(stageName, opts = {}) {
 // Returns one of:
 //   { action: "run-stage",          stage, name, roles, reason }
 //   { action: "continue-stage",     stage, name, completed[], remaining[], reason }
+//   { action: "skip-stage",         stage, name, skip_kind, trigger_inputs, reason }
 //   { action: "merge",              stage, name, reason }
 //   { action: "fix-and-retry",      stage, name, gate, blockers[], reason }
 //   { action: "resolve-escalation", stage, name, gate, reason }
@@ -1009,6 +1010,7 @@ function next(opts = {}) {
     || config.pipeline.default_track
     || "full";
   const skipStages = config.pipeline.skip_stages || [];
+  const forceStages = config.pipeline.force_stages || [];
   const stageList = orderedStageNamesForTrack(track);
   const maxRetries = (config.autonomy && Number.isInteger(config.autonomy.max_retries))
     ? config.autonomy.max_retries
@@ -1017,7 +1019,11 @@ function next(opts = {}) {
   return withSpan("pipeline.next", {
     "devteam.track": trackLabel(track),
   }, () => {
-    const result = _nextImpl(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId);
+    const result = _nextImpl(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId, {
+      auditSkips: opts.auditSkips === true,
+      auditedSkips: opts.auditedSkips || [],
+      forceStages,
+    });
     setSpanAttributes({
       "devteam.next.action": result.action,
       "devteam.next.stage": result.stage || undefined,
@@ -1248,13 +1254,32 @@ function tryAutoFoldSignOff(cwd, gatesDir, track, changeId) {
 // pipeline root (bounded: pipeline/changes/<changeId>/; in-place: pipeline/).
 // Previously cwd was derived from gatesDir via path.resolve("..", ".."), which
 // was wrong in bounded mode (gatesDir is .../pipeline/changes/<id>/gates/).
-function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX_RETRIES_DEFAULT, cwd, changeId) {
+function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX_RETRIES_DEFAULT, cwd, changeId, opts = {}) {
+  const auditSkips = opts.auditSkips === true;
+  const auditedSkips = new Set(opts.auditedSkips || []);
+  const forceStages = new Set(opts.forceStages || []);
   for (const stageName of stageList) {
     const stageDef = getStage(stageName);
     const stageGatePath = path.join(gatesDir, `${stageDef.stage}.json`);
 
     // Explicitly skipped via pipeline.skip_stages in config.
-    if (skipStages.includes(stageName)) continue;
+    if (skipStages.includes(stageName) && !forceStages.has(stageName)) {
+      if (auditSkips && !auditedSkips.has(stageName)) {
+        return {
+          action: "skip-stage",
+          stage: stageDef.stage,
+          name: stageName,
+          skip_kind: "pipeline.skip_stages",
+          trigger_inputs: {
+            skip_stages: skipStages,
+            force_stages: Array.from(forceStages),
+          },
+          reason: "stage listed in pipeline.skip_stages",
+          command: "devteam next",
+        };
+      }
+      continue;
+    }
 
     // Stage 7 auto-fold. When Stage 6 cleanly satisfies the AC→test
     // contract, return a "fold-sign-off" action carrying the gate content.
@@ -1307,7 +1332,24 @@ function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX
             command: `cat ${prereqGatePath}  # then repair or rewrite`,
           };
         }
-        if (prereq[c.field] !== c.equals) {
+        if (prereq[c.field] !== c.equals && !forceStages.has(stageName)) {
+          if (auditSkips && !auditedSkips.has(stageName)) {
+            return {
+              action: "skip-stage",
+              stage: stageDef.stage,
+              name: stageName,
+              skip_kind: "conditionalOn",
+              trigger_inputs: {
+                prerequisite_stage: c.stage,
+                field: c.field,
+                expected: c.equals,
+                actual: prereq[c.field],
+                force_stages: Array.from(forceStages),
+              },
+              reason: `condition not met: ${c.stage}.${c.field} !== ${c.equals}`,
+              command: "devteam next",
+            };
+          }
           continue; // condition not met — skip this stage silently
         }
       }
@@ -1464,6 +1506,7 @@ function summary(opts = {}) {
     || config.pipeline.default_track
     || "full";
   const skipStages = config.pipeline.skip_stages || [];
+  const forceStages = new Set(config.pipeline.force_stages || []);
   const stageList = orderedStageNamesForTrack(track);
 
   const rows = [];
@@ -1477,7 +1520,7 @@ function summary(opts = {}) {
     const stageGatePath = path.join(gatesDir, `${stageDef.stage}.json`);
 
     // Explicitly skipped via pipeline.skip_stages.
-    if (skipStages.includes(stageName)) {
+    if (skipStages.includes(stageName) && !forceStages.has(stageName)) {
       rows.push({ stage: stageDef.stage, name: stageName, state: "skipped", reason: "pipeline.skip_stages" });
       continue;
     }
@@ -1488,7 +1531,7 @@ function summary(opts = {}) {
       const prereqGatePath = path.join(gatesDir, `${c.stage}.json`);
       if (fs.existsSync(prereqGatePath)) {
         const prereq = readJSONSafe(prereqGatePath);
-        if (prereq && prereq[c.field] !== c.equals) {
+        if (prereq && prereq[c.field] !== c.equals && !forceStages.has(stageName)) {
           rows.push({
             stage: stageDef.stage,
             name: stageName,

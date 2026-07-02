@@ -28,6 +28,16 @@ describe("config: loadConfig", () => {
     assert.equal(c.routing.roles.backend, "codex");
     assert.equal(c.pipeline.default_track, "hotfix");
     assert.equal(c.pipeline.require_signed_gates, false);
+    assert.deepEqual(c.pipeline.force_stages, []);
+  });
+
+  it("parses force_stages as an operator override list", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  skip_stages:\n    - security-review\n  force_stages:\n    - security-review\n",
+    }));
+    const c = loadConfig(cwd);
+    assert.deepEqual(c.pipeline.skip_stages, ["security-review"]);
+    assert.deepEqual(c.pipeline.force_stages, ["security-review"]);
   });
 
   it("fills in defaults for missing fields", () => {
@@ -78,6 +88,7 @@ describe("config: renderDefaultConfig + writeConfigIfAbsent", () => {
     assert.match(text, /default_host: claude-code/);
     assert.match(text, /default_track: full/);
     assert.match(text, /require_signed_gates: false/);
+    assert.match(text, /force_stages: \[\]/);
   });
 
   it("renders multi-host hints", () => {

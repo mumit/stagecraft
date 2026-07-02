@@ -123,6 +123,7 @@ function run(positional, _flags) {
       }
       case "dispatched":   process.stderr.write(`   ✓ ${ev.name} dispatched (${ev.duration_ms} ms${ev.timed_out ? ", TIMED OUT" : ""})\n`); break;
       case "merge":        process.stderr.write(`🔀 merge ${ev.name}\n`); break;
+      case "skip-stage":   process.stderr.write(`⏭  ${ev.name} skipped (${ev.skip_kind || "deterministic"}): ${ev.reason}\n`); break;
       case "complete":     process.stderr.write(`🎉 pipeline-complete\n`); break;
       case "halt":         process.stderr.write(`⏸  halt — ${ev.action}${tag}: ${ev.reason}\n`); break;
       case "ceiling":      process.stderr.write(`🛑 consequence ceiling — "${ev.name}" needs a human grant (re-run with --allow-stage ${ev.name})\n`); break;
