@@ -13,9 +13,11 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const name = "status";
 
 const flags = {
-  cwd:  { type: "string",  description: "Target project directory" },
-  json: { type: "boolean", description: "JSON output" },
-  help: { type: "boolean", description: "Show this help" },
+  cwd:     { type: "string",  description: "Target project directory" },
+  feature: { type: "string",  description: "Feature description for bounded isolation lookup" },
+  json:    { type: "boolean", description: "JSON output" },
+  verbose: { type: "boolean", description: "Show active and last workstream details" },
+  help:    { type: "boolean", description: "Show this help" },
 };
 
 // Scan run-log.jsonl backward for the last line matching a predicate.
@@ -49,6 +51,19 @@ function computeStatus(runState, lastEvent) {
     return "halted";
   }
   return "running";
+}
+
+function ageStr(ms) {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`;
+}
+
+function workstreamText(ws) {
+  if (!ws) return "—";
+  const role = ws.role || ws.workstream_id || "workstream";
+  return ws.host ? `${role}@${ws.host}` : role;
 }
 
 function run(positional, _flags) {
@@ -92,6 +107,9 @@ function run(positional, _flags) {
 
   const status = computeStatus(runState, lastEvent);
   const costUsd = runState ? (runState.cost_usd || null) : null;
+  const activeWorkstreams = runState && runState.active_workstreams
+    ? Object.values(runState.active_workstreams)
+    : [];
 
   const output = {
     status,
@@ -102,6 +120,8 @@ function run(positional, _flags) {
     last_heartbeat_age_ms: lastHeartbeatAgeMs,
     last_event_age_ms: lastEventAgeMs,
     stall_detected: stallDetected,
+    active_workstreams: activeWorkstreams,
+    last_workstream: runState ? (runState.last_workstream || null) : null,
   };
 
   if (_flags.json) {
@@ -109,22 +129,45 @@ function run(positional, _flags) {
     return;
   }
 
-  const ageStr = (ms) => {
-    if (ms == null) return "—";
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${Math.round(ms / 1000)}s`;
-    return `${Math.round(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`;
-  };
-
   process.stdout.write(`devteam status\n`);
   process.stdout.write(`  status:           ${output.status}\n`);
   process.stdout.write(`  current_stage:    ${output.current_stage || "—"}\n`);
   process.stdout.write(`  last_action:      ${output.last_action || "—"}\n`);
   process.stdout.write(`  iterations:       ${output.iterations}\n`);
   process.stdout.write(`  cost_usd:         ${output.cost_usd != null ? `$${output.cost_usd.toFixed(4)}` : "—"}\n`);
+  process.stdout.write(`  active_streams:   ${output.active_workstreams.length}\n`);
   process.stdout.write(`  heartbeat_age:    ${ageStr(output.last_heartbeat_age_ms)}\n`);
   process.stdout.write(`  last_event_age:   ${ageStr(output.last_event_age_ms)}\n`);
   process.stdout.write(`  stall_detected:   ${output.stall_detected ? "yes" : "no"}\n`);
+  if (_flags.verbose) {
+    process.stdout.write(`  active_workstreams:\n`);
+    if (output.active_workstreams.length === 0) {
+      process.stdout.write(`    —\n`);
+    } else {
+      const now = Date.now();
+      for (const ws of output.active_workstreams) {
+        const started = ws.started_at ? Date.parse(ws.started_at) : null;
+        const elapsed = started ? ageStr(now - started) : "—";
+        process.stdout.write(`    - ${workstreamText(ws)} (${ws.workstream_id || "—"}, ${elapsed})\n`);
+        if (ws.log_path) process.stdout.write(`      log:  ${ws.log_path}\n`);
+        if (ws.gate_path) process.stdout.write(`      gate: ${ws.gate_path}\n`);
+      }
+    }
+    process.stdout.write(`  last_workstream:\n`);
+    if (!output.last_workstream) {
+      process.stdout.write(`    —\n`);
+    } else {
+      const ws = output.last_workstream;
+      const outcome = ws.skipped ? "skipped"
+        : ws.timed_out ? "timed out"
+        : ws.exit_code == null ? "finished"
+        : `exit ${ws.exit_code}`;
+      process.stdout.write(`    ${workstreamText(ws)} (${ws.workstream_id || "—"}, ${outcome})\n`);
+      if (ws.duration_ms != null) process.stdout.write(`      duration: ${ws.duration_ms}ms\n`);
+      if (ws.log_path) process.stdout.write(`      log:      ${ws.log_path}\n`);
+      if (ws.gate_path) process.stdout.write(`      gate:     ${ws.gate_path}\n`);
+    }
+  }
 }
 
 module.exports = { name, flags, run };

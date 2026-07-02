@@ -1,6 +1,6 @@
 "use strict";
 
-const FRAME_LINES = 6;
+const FRAME_LINES = 10;
 
 function duration(ms) {
   if (ms == null) return "-";
@@ -13,6 +13,17 @@ function duration(ms) {
 function growthRate(bytes, intervalMs) {
   if (!Number.isFinite(bytes) || !Number.isFinite(intervalMs) || intervalMs <= 0) return "-";
   return `${Math.round((bytes * 60000) / intervalMs)} B/min`;
+}
+
+function workstreamName(event) {
+  const role = event.role || event.workstream_id || "workstream";
+  return event.host ? `${role}@${event.host}` : role;
+}
+
+function shortPath(value) {
+  if (!value) return "-";
+  const parts = String(value).split("/");
+  return parts.length > 3 ? parts.slice(-3).join("/") : value;
 }
 
 function createWatchRenderer(opts = {}) {
@@ -28,6 +39,8 @@ function createWatchRenderer(opts = {}) {
     growthBytes: null,
     growthIntervalMs: null,
     stalled: false,
+    activeWorkstreams: new Map(),
+    lastWorkstream: null,
   };
   let rendered = false;
   let timer = null;
@@ -35,10 +48,25 @@ function createWatchRenderer(opts = {}) {
 
   function lines() {
     const current = now();
+    const active = [...state.activeWorkstreams.values()];
+    const activeText = active.length === 0
+      ? "-"
+      : active.slice(0, 3).map((ws) => {
+          const elapsed = ws.startedAt == null ? "-" : duration(current - ws.startedAt);
+          return `${ws.label} ${elapsed}`;
+        }).join(", ") + (active.length > 3 ? `, +${active.length - 3}` : "");
+    const last = state.lastWorkstream;
+    const lastText = last
+      ? `${last.label} ${last.outcome}${last.durationMs == null ? "" : ` ${duration(last.durationMs)}`}`
+      : "-";
     return [
       "Stagecraft run --watch",
       `  stage:             ${state.stage || "-"}`,
       `  dispatch elapsed:  ${state.dispatchStartedAt == null ? "-" : duration(current - state.dispatchStartedAt)}`,
+      `  active:            ${activeText}`,
+      `  last workstream:   ${lastText}`,
+      `  transcript:        ${last ? shortPath(last.logPath) : "-"}`,
+      `  gate:              ${last ? shortPath(last.gatePath) : "-"}`,
       `  log growth:        ${growthRate(state.growthBytes, state.growthIntervalMs)}`,
       `  heartbeat age:     ${state.heartbeatAt == null ? "-" : duration(current - state.heartbeatAt)}`,
       `  stall detected:    ${state.stalled ? "yes" : "no"}`,
@@ -67,7 +95,33 @@ function createWatchRenderer(opts = {}) {
         state.growthBytes = null;
         state.growthIntervalMs = null;
         state.stalled = false;
+        state.activeWorkstreams.clear();
         break;
+      case "workstream-started":
+        state.stage = event.name || event.stage || state.stage;
+        state.activeWorkstreams.set(event.workstream_id || event.role || "workstream", {
+          label: workstreamName(event),
+          startedAt: at,
+          logPath: event.log_path || null,
+          gatePath: event.gate_path || null,
+        });
+        break;
+      case "workstream-finished": {
+        const key = event.workstream_id || event.role || "workstream";
+        state.activeWorkstreams.delete(key);
+        const outcome = event.skipped ? "skipped"
+          : event.timed_out ? "timed out"
+          : event.exit_code == null ? "finished"
+          : `exit ${event.exit_code}`;
+        state.lastWorkstream = {
+          label: workstreamName(event),
+          outcome,
+          durationMs: event.duration_ms,
+          logPath: event.log_path || null,
+          gatePath: event.gate_path || null,
+        };
+        break;
+      }
       case "dispatch-progress":
         state.stage = event.name || event.stage || state.stage;
         state.growthBytes = event.log_growth_bytes_last_interval;
@@ -79,6 +133,7 @@ function createWatchRenderer(opts = {}) {
       case "dispatched":
         state.stage = event.name || event.stage || state.stage;
         state.dispatchStartedAt = null;
+        state.activeWorkstreams.clear();
         state.stalled = false;
         break;
       default:

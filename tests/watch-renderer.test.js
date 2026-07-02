@@ -32,12 +32,34 @@ describe("run --watch renderer", () => {
     watch.start();
     watch.handle({ type: "heartbeat", stage: "requirements" });
     watch.handle({ type: "dispatch", name: "build", stage: "stage-04" });
+    watch.handle({
+      type: "workstream-started",
+      name: "build",
+      stage: "stage-04",
+      role: "backend",
+      host: "codex",
+      workstream_id: "stage-04.backend",
+      log_path: "pipeline/logs/stage-04.backend.log",
+      gate_path: "pipeline/gates/stage-04.backend.json",
+    });
     current = 62000;
     watch.handle({
       type: "dispatch-progress",
       stage: "build",
       interval_ms: 60000,
       log_growth_bytes_last_interval: 1024,
+    });
+    watch.handle({
+      type: "workstream-finished",
+      name: "build",
+      stage: "stage-04",
+      role: "backend",
+      host: "codex",
+      workstream_id: "stage-04.backend",
+      exit_code: 0,
+      duration_ms: 61000,
+      log_path: "pipeline/logs/stage-04.backend.log",
+      gate_path: "pipeline/gates/stage-04.backend.json",
     });
     tick();
     watch.handle({ type: "stall-detected", interval_ms: 60000, log_growth_bytes_last_interval: 0 });
@@ -46,6 +68,10 @@ describe("run --watch renderer", () => {
     assert.equal(stream.output.includes("\x1b[?25l"), true, "hides the cursor while redrawing");
     assert.match(stream.output, /stage:\s+build/);
     assert.match(stream.output, /dispatch elapsed:\s+1m 1s/);
+    assert.match(stream.output, /active:\s+backend@codex/);
+    assert.match(stream.output, /last workstream:\s+backend@codex exit 0 1m 1s/);
+    assert.match(stream.output, /transcript:\s+pipeline\/logs\/stage-04.backend.log/);
+    assert.match(stream.output, /gate:\s+pipeline\/gates\/stage-04.backend.json/);
     assert.match(stream.output, /log growth:\s+1024 B\/min/);
     assert.match(stream.output, /heartbeat age:\s+1m 1s/);
     assert.match(stream.output, /stall detected:\s+yes/);
