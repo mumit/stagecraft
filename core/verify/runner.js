@@ -11,6 +11,7 @@
 //   - resolveCommands(cwd, config) -> { lint, test }
 //   - discoverTestCommands(cwd) -> [{ id, command }]
 //   - resolveTestCommands(cwd, config) -> [{ id, command }]
+//   - resolveTestConcurrency(config) -> bounded integer concurrency
 //   - runTestCommands(commands, opts) -> aggregate result
 //
 // Commands run with shell:false where possible (split on whitespace),
@@ -25,6 +26,9 @@ const path = require("node:path");
 const { terminateChild } = require("../process-kill");
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 min; lint and tests should fit easily
+const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
+const DEFAULT_TEST_CONCURRENCY = 2;
+const MAX_TEST_CONCURRENCY = 8;
 const MAX_PYTHON_TEST_FILES = 2000;
 const MAX_PYTHON_TEST_DEPTH = 6;
 
@@ -35,6 +39,9 @@ function needsShell(command) {
 function runCommand(command, opts = {}) {
   const cwd = opts.cwd || process.cwd();
   const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const maxOutputBytes = Number.isInteger(opts.maxOutputBytes) && opts.maxOutputBytes >= 0
+    ? opts.maxOutputBytes
+    : DEFAULT_MAX_OUTPUT_BYTES;
 
   return new Promise((resolve) => {
     const started = Date.now();
@@ -50,8 +57,34 @@ function runCommand(command, opts = {}) {
 
     let stdout = "";
     let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let timedOut = false;
     let finished = false;
+
+    function capture(kind, chunk) {
+      const text = chunk.toString("utf8");
+      const bytes = Buffer.byteLength(text);
+      const current = kind === "stdout" ? stdoutBytes : stderrBytes;
+      const remaining = Math.max(0, maxOutputBytes - current);
+      let addition = text;
+      let truncated = false;
+      if (bytes > remaining) {
+        addition = remaining > 0 ? Buffer.from(text).subarray(0, remaining).toString("utf8") : "";
+        truncated = true;
+      }
+      if (kind === "stdout") {
+        stdout += addition;
+        stdoutBytes += Math.min(bytes, remaining);
+        if (truncated) stdoutTruncated = true;
+      } else {
+        stderr += addition;
+        stderrBytes += Math.min(bytes, remaining);
+        if (truncated) stderrTruncated = true;
+      }
+    }
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -59,8 +92,8 @@ function runCommand(command, opts = {}) {
     }, timeoutMs);
     timer.unref();
 
-    child.stdout.on("data", (d) => { stdout += d.toString("utf8"); });
-    child.stderr.on("data", (d) => { stderr += d.toString("utf8"); });
+    child.stdout.on("data", (d) => { capture("stdout", d); });
+    child.stderr.on("data", (d) => { capture("stderr", d); });
 
     child.on("error", (err) => {
       if (finished) return;
@@ -74,6 +107,8 @@ function runCommand(command, opts = {}) {
         command,
         timedOut: false,
         spawnError: err.code || err.message,
+        stdoutTruncated,
+        stderrTruncated,
       });
     });
 
@@ -89,6 +124,8 @@ function runCommand(command, opts = {}) {
         command,
         timedOut,
         signal: signal || null,
+        stdoutTruncated,
+        stderrTruncated,
       });
     });
   });
@@ -208,15 +245,91 @@ function resolveTestCommands(cwd, config) {
       return [{ id: "configured", command: verify.test_command.trim() }];
     }
   }
+  if (Array.isArray(verify.test_suites)) {
+    return verify.test_suites
+      .map((suite, index) => {
+        if (!suite || typeof suite !== "object") return null;
+        if (typeof suite.command !== "string" || !suite.command.trim()) return null;
+        const id = typeof suite.id === "string" && suite.id.trim()
+          ? suite.id.trim()
+          : `suite-${index + 1}`;
+        const resourceGroup = typeof suite.resource_group === "string" && suite.resource_group.trim()
+          ? suite.resource_group.trim()
+          : null;
+        return { id, command: suite.command.trim(), resource_group: resourceGroup };
+      })
+      .filter(Boolean);
+  }
   return discoverTestCommands(cwd);
 }
 
+function normalizeConcurrency(value, fallback = 1) {
+  const n = Number.isInteger(value) ? value : fallback;
+  return Math.max(1, Math.min(MAX_TEST_CONCURRENCY, n));
+}
+
+function resolveTestConcurrency(config) {
+  const verify = (config && config.pipeline && config.pipeline.verify) || {};
+  return normalizeConcurrency(verify.test_concurrency, DEFAULT_TEST_CONCURRENCY);
+}
+
+function suiteResourceGroup(suite) {
+  if (!suite) return null;
+  if (typeof suite.resource_group === "string" && suite.resource_group.trim()) return suite.resource_group.trim();
+  if (typeof suite.resourceGroup === "string" && suite.resourceGroup.trim()) return suite.resourceGroup.trim();
+  return null;
+}
+
 async function runTestCommands(commands, opts = {}) {
-  const runs = [];
-  for (const suite of commands) {
-    const result = await runCommand(suite.command, opts);
-    runs.push({ id: suite.id, ...result });
-  }
+  const concurrency = normalizeConcurrency(opts.concurrency, 1);
+  const runs = new Array(commands.length);
+  const started = new Set();
+  const activeGroups = new Set();
+  let active = 0;
+  let completed = 0;
+
+  await new Promise((resolve) => {
+    function nextRunnableIndex() {
+      for (let index = 0; index < commands.length; index += 1) {
+        if (started.has(index)) continue;
+        const group = suiteResourceGroup(commands[index]);
+        if (group && activeGroups.has(group)) continue;
+        return index;
+      }
+      return -1;
+    }
+
+    function schedule() {
+      if (completed >= commands.length) {
+        resolve();
+        return;
+      }
+      while (active < concurrency) {
+        const index = nextRunnableIndex();
+        if (index === -1) break;
+        const suite = commands[index];
+        const resourceGroup = suiteResourceGroup(suite);
+        started.add(index);
+        active += 1;
+        if (resourceGroup) activeGroups.add(resourceGroup);
+        runCommand(suite.command, opts).then((result) => {
+          runs[index] = {
+            id: suite.id,
+            resource_group: resourceGroup || undefined,
+            ...result,
+          };
+        }).finally(() => {
+          active -= 1;
+          completed += 1;
+          if (resourceGroup) activeGroups.delete(resourceGroup);
+          schedule();
+        });
+      }
+    }
+
+    schedule();
+  });
+
   return {
     passed: runs.length > 0 && runs.every((run) =>
       run.exitCode === 0 && !run.timedOut && !run.spawnError),
@@ -231,5 +344,6 @@ module.exports = {
   discoverTestCommands,
   resolveCommands,
   resolveTestCommands,
+  resolveTestConcurrency,
   runTestCommands,
 };

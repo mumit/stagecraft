@@ -27,11 +27,27 @@ however, pre-review and QA run every conservatively detected suite:
 | `pytest.ini`, pytest config in `pyproject.toml`/`setup.cfg`, or conventional Python tests under `test/` or `tests/` | `python3 -m pytest` (`py -m pytest` on Windows) |
 | `go.mod` | `go test ./...` |
 
-Discovery is bounded and does not follow symlinks. Suites run sequentially and all are
-attempted; the orchestrator stamps per-suite commands, exit codes, and durations, then
-fails the gate if any suite fails. A non-empty
+Discovery is bounded and does not follow symlinks. Suites run with bounded
+concurrency (`pipeline.verify.test_concurrency`, default 2, max 8) and all are
+attempted; the orchestrator stamps per-suite commands, exit codes, durations, resource
+groups, and output-truncation flags, then fails the gate if any suite fails. A non-empty
 `pipeline.verify.test_command` is an exclusive override for projects with another
 runner or monorepo command. Set it to `null` to disable automatic test execution.
+Set `test_concurrency: 1` to serialize fragile suites. For configured suite lists,
+`resource_group` prevents browser, database, or port-bound suites that share a resource
+from overlapping while unrelated suites still run in parallel:
+
+```yaml
+pipeline:
+  verify:
+    test_concurrency: 3
+    test_suites:
+      - id: unit
+        command: "npm test"
+      - id: browser
+        command: "npm run test:browser"
+        resource_group: browser
+```
 
 ## Test file inventory
 
