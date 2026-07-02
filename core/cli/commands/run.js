@@ -103,6 +103,12 @@ function run(positional, _flags) {
     }
     const tag = ev.failure_class ? `  [${ev.failure_class}]` : "";
     switch (ev.type) {
+      case "run-plan": {
+        const skipped = ev.stages_skipped_by_config ? `, ${ev.stages_skipped_by_config} skipped by config` : "";
+        const conditional = ev.conditional_stages ? `, ${ev.conditional_stages} conditional` : "";
+        process.stderr.write(`[devteam run] plan: ${ev.track} track, ${ev.stages_included}/${ev.stages_total} stages${skipped}${conditional}, ${ev.base_workstreams} base workstreams\n`);
+        break;
+      }
       case "dispatch":     process.stderr.write(`▶️  ${ev.name} (${ev.stage}) — dispatching…\n`); break;
       case "workstream-started":
         process.stderr.write(`   ↳ ${workstreamLabel(ev)} started${pathSuffix(ev)}\n`);
