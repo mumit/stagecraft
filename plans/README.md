@@ -3,9 +3,9 @@
 Phase plans produced from the 2026-06-10 full-framework review and subsequent audits. Each phase is a set of
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
 written to be executed one item at a time. **Phases 1–20, 22, and 24 are
-complete. Phase 21 and Phase 25 are proposed for review and are not authorized
-for implementation. Real-project evidence collection remains the active
-capability priority.**
+complete. Phase 21, Phase 25, and Phase 26 are proposed for review and are not
+authorized for implementation. Real-project evidence collection and live-run
+observability remain the active capability priorities.**
 
 | Phase | Plan | Prompts | Theme | Status |
 |---|---|---|---|---|
@@ -34,6 +34,7 @@ capability priority.**
 | 22 | [phase-22-docker-headless-runner.md](phase-22-docker-headless-runner.md) | — | Docker-based unattended local runner for long headless pipelines | ✅ complete — ADR-014 + `hosts/docker/` |
 | 24 | [phase-24-omnigent-runtime.md](phase-24-omnigent-runtime.md) | — | Omnigent as a host runtime with policy/session bridge and experimental director prototype | ✅ complete (PRs #298–#304) |
 | 25 | [phase-25-omnigent-director-hardening.md](phase-25-omnigent-director-hardening.md) | — | Harden the Omnigent director prototype through dogfood, partial resume design, session evidence, policy conformance, and topology decisions | 📝 proposed and parked (#305) |
+| 26 | [phase-26-performance-observability-usability.md](phase-26-performance-observability-usability.md) | — | Performance, live-run observability, and operator usability overhaul | 📝 proposed (#312) |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt in
 [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md) (single source of truth, with status
