@@ -245,6 +245,11 @@ Parent tracking issue: [#291](https://github.com/telus-labs/stagecraft/issues/29
    preserving the existing child gate contract. It does not replace Stagecraft
    fan-out by default.
 
+Next roadmap: [Phase 25](../plans/phase-25-omnigent-director-hardening.md) is
+proposed and parked under [#305](https://github.com/telus-labs/stagecraft/issues/305).
+It tracks director dogfooding, partial resume semantics, director session
+evidence, policy conformance, and remote execution topology decisions.
+
 ## Non-Goals
 
 - Do not move Stagecraft's gate validator or `next()` decision logic into

@@ -2,9 +2,10 @@
 
 Phase plans produced from the 2026-06-10 full-framework review and subsequent audits. Each phase is a set of
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
-written to be executed one item at a time. **Phases 1–20 are complete. Phases 21 and 22
-are proposed for review and are not authorized for implementation.
-Real-project evidence collection remains the active capability priority.**
+written to be executed one item at a time. **Phases 1–20, 22, and 24 are
+complete. Phase 21 and Phase 25 are proposed for review and are not authorized
+for implementation. Real-project evidence collection remains the active
+capability priority.**
 
 | Phase | Plan | Prompts | Theme | Status |
 |---|---|---|---|---|
@@ -31,7 +32,8 @@ Real-project evidence collection remains the active capability priority.**
 | 20 | [phase-20-run-watch.md](phase-20-run-watch.md) | — | ADR-007 foreground terminal liveness UX | ✅ complete (PR #268) |
 | 21 | [phase-21-cloud-runner-adapter.md](phase-21-cloud-runner-adapter.md) | — | A3 remote workstream execution through a transport-backed host adapter | 📝 proposed for review |
 | 22 | [phase-22-docker-headless-runner.md](phase-22-docker-headless-runner.md) | — | Docker-based unattended local runner for long headless pipelines | ✅ complete — ADR-014 + `hosts/docker/` |
-| 24 | [phase-24-omnigent-runtime.md](phase-24-omnigent-runtime.md) | — | Omnigent as a host runtime with later policy/session bridge | 24.1 initial adapter slice |
+| 24 | [phase-24-omnigent-runtime.md](phase-24-omnigent-runtime.md) | — | Omnigent as a host runtime with policy/session bridge and experimental director prototype | ✅ complete (PRs #298–#304) |
+| 25 | [phase-25-omnigent-director-hardening.md](phase-25-omnigent-director-hardening.md) | — | Harden the Omnigent director prototype through dogfood, partial resume design, session evidence, policy conformance, and topology decisions | 📝 proposed and parked (#305) |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt in
 [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md) (single source of truth, with status
