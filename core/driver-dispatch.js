@@ -90,7 +90,7 @@ function dispatchOutcomeTransition({
     const attempt = (transient[action.name] || 0) + 1;
     return transitionResult(TRANSITION_CONTROLS.CONTINUE, {
       statePatch: { transient: { ...transient, [action.name]: attempt } },
-      logEvents: [{ ...base, outcome: "transient-retry", attempt, stub_gate: stubGate || undefined }],
+      logEvents: [{ ...base, outcome: "transient-retry", attempt, delay_ms: retryDelayMs, stub_gate: stubGate || undefined }],
       emittedEvents: [{ type: "transient-retry", ...base, attempt, delay_ms: retryDelayMs }],
       details: { dispatchClass, retry: true, removeStubGate: stubGate },
     });

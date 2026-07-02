@@ -130,6 +130,11 @@ const COMMANDS = [
     description: "Generate a self-contained HTML report of the most recent pipeline run. Embeds status, per-stage timing, dispatch counts, blocker log, and all pipeline documents. Written to pipeline/report.html and opened in the default browser.",
   },
   {
+    name:        "performance",
+    synopsis:    "devteam performance critical-path [options]",
+    description: "Reconstruct run critical path from run-log.jsonl: dispatch wall, workstream compute, retry delay, telemetry coverage, and verification reuse candidates.",
+  },
+  {
     name:        "evidence",
     synopsis:    "devteam evidence <status|export|identity|accept-resolution> [options]",
     description: "Assess evidence-gated capabilities offline, export consented aggregates, manage project identity, or explicitly accept a successful fix/retry resolution.",
