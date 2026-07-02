@@ -452,12 +452,14 @@ fs.writeFileSync(record, JSON.stringify({ args }, null, 2) + "\\n");
     const cwd = track(makeTargetProject({ config: omnigentConfig() }));
     const { script, record } = makeDirectorStub(["backend", "frontend", "platform", "qa"]);
     const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    const events = [];
     process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script} ${record}`;
     try {
       const result = await runStageHeadless("build", {
         cwd,
         feature: "add hello world endpoint",
         experimentalOmnigentDirector: true,
+        onWorkstreamEvent: (event) => events.push(event),
       });
 
       assert.equal(result.experimentalDirector, "omnigent");
@@ -472,6 +474,11 @@ fs.writeFileSync(record, JSON.stringify({ args }, null, 2) + "\\n");
       assert.match(invocation.args[1], /Omnigent Director Experiment/);
       assert.match(invocation.args[1], /stage-04\.backend/);
       assert.match(invocation.args[1], /stage-04\.qa/);
+      assert.equal(events.filter((event) => event.type === "workstream-started").length, 4);
+      assert.equal(events.filter((event) => event.type === "workstream-finished").length, 4);
+      assert.ok(events.every((event) => event.director === true));
+      assert.ok(events.some((event) => event.workstream_id === "stage-04.backend" && event.gate_path.endsWith("stage-04.backend.json")));
+      assert.ok(events.some((event) => event.workstream_id === "stage-04.qa" && event.log_path.endsWith("stage-04.omnigent-director.log")));
     } finally {
       if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
       else process.env.DEVTEAM_HEADLESS_COMMAND = previous;

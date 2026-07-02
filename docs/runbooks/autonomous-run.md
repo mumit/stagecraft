@@ -202,8 +202,13 @@ Tier 2 (not yet shipped).
 
 Use `devteam status` to see a liveness snapshot at any time. During a foreground run,
 `devteam run --watch` renders a rolling block with the current stage, dispatch elapsed
-time, the latest observed log-growth rate, heartbeat age, and stall status. The display
-consumes callback events from the existing probe and does not poll pipeline files.
+time, active workstreams, the last settled workstream, transcript/gate pointers, the latest
+observed log-growth rate, heartbeat age, and stall status. The display consumes callback
+events from the existing probe and does not poll pipeline files.
+
+Line progress is enriched too: each workstream emits a start line and a finish line with
+its role, host, exit outcome, elapsed time, and gate/log paths. This keeps redirected or
+CI logs useful even when `--watch` is unavailable.
 
 **Config:** `autonomy.stall_threshold_ms` (default 300000) and
 `autonomy.stall_min_growth_bytes` (default 512) in `.devteam/config.yml`.
@@ -237,6 +242,7 @@ devteam run                           # exit 0 as before; loud line only
 ```bash
 devteam status          # human-readable liveness snapshot
 devteam status --json   # machine-readable (CI, tooling)
+devteam status --verbose # include active/last workstream details
 ```
 
 Reads `run-state.json` and the tail of `run-log.jsonl`; reports:
@@ -251,6 +257,8 @@ Reads `run-state.json` and the tail of `run-log.jsonl`; reports:
 | `last_heartbeat_age_ms` | Ms since the last heartbeat event |
 | `last_event_age_ms` | Ms since any event in run-log.jsonl |
 | `stall_detected` | `true` if the most recent dispatch event was stall-detected |
+| `active_workstreams` | Array of currently running workstreams with role, host, started time, gate path, and log path |
+| `last_workstream` | Last workstream that finished or skipped, with outcome, duration, gate path, and log path |
 
 ## Repair mode (`devteam run --repair`) (ADR-009)
 

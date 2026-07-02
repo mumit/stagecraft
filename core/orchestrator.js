@@ -14,7 +14,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel } = require("./pipeline/stages");
 const { loadConfig, changeIdFromFeature } = require("./config");
-const { gatesDir: getGatesDir, pipelineRoot, prefixPipelineRelative } = require("./paths");
+const { gatesDir: getGatesDir, logsDir: getLogsDir, pipelineRoot, prefixPipelineRelative } = require("./paths");
 const { resolveAdapter } = require("./router");
 const { withSpan, setSpanAttributes } = require("./observability");
 const { loadGateSafe } = require("./gates/load-gate");
@@ -483,6 +483,11 @@ function runStage(stageName, opts = {}) {
 // capability check; rejects if any routed host has headless: false.
 async function runStageHeadless(stageName, opts = {}) {
   const plan = runStage(stageName, opts);
+  const onWorkstreamEvent = typeof opts.onWorkstreamEvent === "function" ? opts.onWorkstreamEvent : null;
+  const emitWorkstreamEvent = (event) => {
+    if (!onWorkstreamEvent) return;
+    try { onWorkstreamEvent(event); } catch { /* progress callbacks must never break dispatch */ }
+  };
   for (const ws of plan.workstreams) {
     if (!ws.adapter.capabilities || !ws.adapter.capabilities.headless) {
       throw new Error(
@@ -516,8 +521,45 @@ async function runStageHeadless(stageName, opts = {}) {
       const directorAdapter = plan.workstreams[0].adapter;
       const descriptor = directorDescriptorForPlan(plan);
       const prompt = renderOmnigentDirectorPrompt(plan);
+      const directorLogPath = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
+        ? null
+        : path.join(getLogsDir(plan.ctx.cwd, plan.ctx.changeId), `${descriptor.workstreamId}.log`);
+      for (const ws of plan.workstreams) {
+        emitWorkstreamEvent({
+          type: "workstream-started",
+          stage: plan.stage,
+          name: stageName,
+          role: ws.role,
+          host: ws.host,
+          workstream_id: ws.descriptor.workstreamId,
+          gate_path: path.join(gatesDir, `${ws.descriptor.workstreamId}.json`),
+          log_path: directorLogPath,
+          director: true,
+        });
+      }
       process.stderr.write(`[devteam] experimental: dispatching ${plan.workstreams.length} workstreams → omnigent director (headless)\n`);
-      const r = await directorAdapter.invoke(descriptor, plan.ctx, prompt);
+      let r;
+      try {
+        r = await directorAdapter.invoke(descriptor, plan.ctx, prompt);
+      } catch (err) {
+        for (const ws of plan.workstreams) {
+          emitWorkstreamEvent({
+            type: "workstream-finished",
+            stage: plan.stage,
+            name: stageName,
+            role: ws.role,
+            host: ws.host,
+            workstream_id: ws.descriptor.workstreamId,
+            exit_code: null,
+            gate_path: null,
+            log_path: directorLogPath,
+            duration_ms: null,
+            error: err && err.message,
+            director: true,
+          });
+        }
+        throw err;
+      }
       if (Array.isArray(r.writeViolations) && r.writeViolations.length > 0) {
         for (const v of r.writeViolations) {
           process.stderr.write(`[devteam] ⛔ write-audit: unauthorized write "${v}" (not in allowedWrites for ${descriptor.workstreamId})\n`);
@@ -530,7 +572,7 @@ async function runStageHeadless(stageName, opts = {}) {
         if (exists && Array.isArray(r.writeViolations) && r.writeViolations.length > 0) {
           patchGateForWriteViolations(expectedGate, r.writeViolations);
         }
-        return {
+        const result = {
           role: ws.role,
           host: ws.host,
           descriptor: ws.descriptor,
@@ -543,6 +585,22 @@ async function runStageHeadless(stageName, opts = {}) {
           directorWorkstreamId: descriptor.workstreamId,
           writeViolations: r.writeViolations || [],
         };
+        emitWorkstreamEvent({
+          type: "workstream-finished",
+          stage: plan.stage,
+          name: stageName,
+          role: ws.role,
+          host: ws.host,
+          workstream_id: ws.descriptor.workstreamId,
+          exit_code: childExit,
+          timed_out: Boolean(r.timedOut),
+          gate_path: exists ? expectedGate : null,
+          log_path: r.logPath || directorLogPath,
+          duration_ms: r.durationMs ?? null,
+          write_violations_count: Array.isArray(r.writeViolations) ? r.writeViolations.length : 0,
+          director: true,
+        });
+        return result;
       });
       return { stage: plan.stage, name: stageName, roles: plan.roles, results, ctx: plan.ctx, experimentalDirector: "omnigent" };
     });
@@ -571,39 +629,86 @@ async function runStageHeadless(stageName, opts = {}) {
     // --workstream filtering is applied in runStage (before rendering), so
     // plan.workstreams already contains only the requested workstreams here.
     const results = await Promise.all(plan.workstreams.map(async (ws) => {
+      const wsGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
+      const expectedLogPath = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
+        ? null
+        : path.join(getLogsDir(plan.ctx.cwd, plan.ctx.changeId), `${ws.descriptor.workstreamId}.log`);
       if (opts.skipCompleted) {
-        const gateFile = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
-        if (fs.existsSync(gateFile)) {
+        if (fs.existsSync(wsGatePathExpected)) {
           process.stderr.write(`[devteam] --skip-completed: ${ws.role} already has a gate, skipping\n`);
-          return { role: ws.role, host: ws.host, descriptor: ws.descriptor, skipped: true, exitCode: 0, gatePath: gateFile, durationMs: 0 };
+          const skipped = {
+            role: ws.role, host: ws.host, descriptor: ws.descriptor, skipped: true,
+            exitCode: 0, gatePath: wsGatePathExpected, logPath: expectedLogPath, durationMs: 0,
+          };
+          emitWorkstreamEvent({
+            type: "workstream-finished",
+            stage: plan.stage,
+            name: stageName,
+            role: ws.role,
+            host: ws.host,
+            workstream_id: ws.descriptor.workstreamId,
+            skipped: true,
+            exit_code: 0,
+            gate_path: wsGatePathExpected,
+            log_path: expectedLogPath,
+            duration_ms: 0,
+          });
+          return skipped;
         }
       }
       process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)\n`);
       // G10: snapshot mtime before invoke so we can tell whether the headless
       // command actually wrote the gate (vs. a pre-existing gate that the
       // command left untouched — e.g. `devteam replay` with a no-op command).
-      const wsGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
       let preInvokeMtime = null;
       try { preInvokeMtime = fs.statSync(wsGatePathExpected).mtimeMs; } catch { preInvokeMtime = null; }
-
-      const r = await withSpan("adapter.invoke", {
-        "devteam.host": ws.host,
-        "devteam.workstream.role": ws.role,
-        "devteam.workstream.id": ws.descriptor.workstreamId,
-      }, async (span) => {
-        // E7: prepend /goal directive for hosts that support a goal loop
-        // and stages that declare a convergence condition.
-        const prompt = ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
-          ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
-          : ws.prompt;
-        const out = await ws.adapter.invoke(ws.descriptor, plan.ctx, prompt);
-        if (span) span.setAttributes({
-          "devteam.invoke.exit_code": out.exitCode,
-          "devteam.invoke.duration_ms": out.durationMs,
-          "devteam.invoke.gate_written": Boolean(out.gatePath),
-        });
-        return out;
+      emitWorkstreamEvent({
+        type: "workstream-started",
+        stage: plan.stage,
+        name: stageName,
+        role: ws.role,
+        host: ws.host,
+        workstream_id: ws.descriptor.workstreamId,
+        gate_path: wsGatePathExpected,
+        log_path: expectedLogPath,
       });
+
+      let r;
+      try {
+        r = await withSpan("adapter.invoke", {
+          "devteam.host": ws.host,
+          "devteam.workstream.role": ws.role,
+          "devteam.workstream.id": ws.descriptor.workstreamId,
+        }, async (span) => {
+          // E7: prepend /goal directive for hosts that support a goal loop
+          // and stages that declare a convergence condition.
+          const prompt = ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
+            ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
+            : ws.prompt;
+          const out = await ws.adapter.invoke(ws.descriptor, plan.ctx, prompt);
+          if (span) span.setAttributes({
+            "devteam.invoke.exit_code": out.exitCode,
+            "devteam.invoke.duration_ms": out.durationMs,
+            "devteam.invoke.gate_written": Boolean(out.gatePath),
+          });
+          return out;
+        });
+      } catch (err) {
+        emitWorkstreamEvent({
+          type: "workstream-finished",
+          stage: plan.stage,
+          name: stageName,
+          role: ws.role,
+          host: ws.host,
+          workstream_id: ws.descriptor.workstreamId,
+          exit_code: null,
+          gate_path: null,
+          log_path: expectedLogPath,
+          duration_ms: null,
+          error: err && err.message,
+        });
+        throw err;
+      }
       // C1: if write violations were detected, filter out parallel-stage
       // false positives then patch the gate to FAIL.
       //
@@ -643,7 +748,23 @@ async function runStageHeadless(stageName, opts = {}) {
           patchGateForToolBudget(budgetGatePath, ws.descriptor.toolBudget);
         }
       }
-      return { role: ws.role, host: ws.host, descriptor: ws.descriptor, ...r };
+      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, ...r };
+      emitWorkstreamEvent({
+        type: "workstream-finished",
+        stage: plan.stage,
+        name: stageName,
+        role: ws.role,
+        host: ws.host,
+        workstream_id: ws.descriptor.workstreamId,
+        exit_code: r.exitCode ?? null,
+        timed_out: Boolean(r.timedOut),
+        gate_path: r.gatePath || null,
+        log_path: r.logPath || expectedLogPath,
+        duration_ms: r.durationMs ?? null,
+        write_violations_count: Array.isArray(r.writeViolations) ? r.writeViolations.length : 0,
+        stub_gate: Boolean(r.stubGate),
+      });
+      return result;
     }));
 
     // Orchestrator-stamped verification. For stages where the gate

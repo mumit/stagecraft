@@ -67,6 +67,8 @@ describe("devteam status — running state", () => {
     assert.equal(out.current_stage, "build");
     assert.equal(out.last_action, "run-stage");
     assert.equal(out.iterations, 3);
+    assert.deepEqual(out.active_workstreams, []);
+    assert.equal(out.last_workstream, null);
     // last_heartbeat_age_ms should be approximately 30000ms (within 5s tolerance).
     assert.ok(out.last_heartbeat_age_ms != null, "last_heartbeat_age_ms must be set");
     assert.ok(out.last_heartbeat_age_ms >= 25000 && out.last_heartbeat_age_ms < 40000,
@@ -126,6 +128,64 @@ describe("devteam status — running state", () => {
     assert.equal(status, 0);
     const out = JSON.parse(stdout);
     assert.equal(out.stall_detected, false, "dispatched following stall-detected clears stall status");
+  });
+
+  it("reports active and last workstream details", () => {
+    const cwd = track(makeTargetProject());
+    const now = Date.now();
+    writeRunState(cwd, {
+      track: "full",
+      intent: "feature",
+      iterations: 7,
+      last_action: "run-stage",
+      current_stage: "build",
+      active_workstreams: {
+        "stage-04.backend": {
+          stage: "stage-04",
+          name: "build",
+          role: "backend",
+          host: "codex",
+          workstream_id: "stage-04.backend",
+          gate_path: "pipeline/gates/stage-04.backend.json",
+          log_path: "pipeline/logs/stage-04.backend.log",
+          started_at: new Date(now - 45000).toISOString(),
+        },
+      },
+      last_workstream: {
+        stage: "stage-04",
+        name: "build",
+        role: "frontend",
+        host: "omnigent",
+        workstream_id: "stage-04.frontend",
+        gate_path: "pipeline/gates/stage-04.frontend.json",
+        log_path: "pipeline/logs/stage-04.frontend.log",
+        duration_ms: 1234,
+        exit_code: 0,
+        finished_at: new Date(now - 10000).toISOString(),
+      },
+      started_at: new Date(now - 700000).toISOString(),
+    });
+    writeRunLog(cwd, [
+      { ts: new Date(now - 5000).toISOString(), outcome: "heartbeat", iteration: 7, stage: "build", action: "run-stage" },
+    ]);
+
+    const json = runCLI(["status", "--json", "--cwd", cwd], {
+      env: { CI: "true", DEVTEAM_NO_LOG: "1" },
+    });
+    assert.equal(json.status, 0);
+    const out = JSON.parse(json.stdout);
+    assert.equal(out.active_workstreams.length, 1);
+    assert.equal(out.active_workstreams[0].workstream_id, "stage-04.backend");
+    assert.equal(out.last_workstream.workstream_id, "stage-04.frontend");
+
+    const human = runCLI(["status", "--verbose", "--cwd", cwd], {
+      env: { CI: "true", DEVTEAM_NO_LOG: "1" },
+    });
+    assert.equal(human.status, 0);
+    assert.match(human.stdout, /active_streams:\s+1/);
+    assert.match(human.stdout, /backend@codex/);
+    assert.match(human.stdout, /frontend@omnigent/);
+    assert.match(human.stdout, /pipeline\/logs\/stage-04.backend.log/);
   });
 });
 

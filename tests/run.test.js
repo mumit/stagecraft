@@ -125,6 +125,68 @@ describe("driver: dispatch loop (injected deps)", () => {
     assert.deepEqual(s.stages_advanced, ["build"]);
   });
 
+  it("records workstream lifecycle progress in callbacks, run log, and run state", async () => {
+    const cwd = track(makeTargetProject());
+    const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+    const logPath = path.join(cwd, "pipeline", "logs", "stage-04.backend.log");
+    const actions = [
+      { action: "run-stage", stage: "stage-04", name: "build" },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    const events = [];
+    let index = 0;
+
+    const s = await run({
+      cwd,
+      next: () => actions[index++],
+      onEvent: (event) => events.push(event),
+      runStageHeadless: async (_stageName, opts = {}) => {
+        opts.onWorkstreamEvent({
+          type: "workstream-started",
+          stage: "stage-04",
+          name: "build",
+          role: "backend",
+          host: "codex",
+          workstream_id: "stage-04.backend",
+          gate_path: gatePath,
+          log_path: logPath,
+        });
+        opts.onWorkstreamEvent({
+          type: "workstream-finished",
+          stage: "stage-04",
+          name: "build",
+          role: "backend",
+          host: "codex",
+          workstream_id: "stage-04.backend",
+          exit_code: 0,
+          gate_path: gatePath,
+          log_path: logPath,
+          duration_ms: 17,
+        });
+        return [{ role: "backend", host: "codex", gatePath, logPath, exitCode: 0, durationMs: 17 }];
+      },
+    });
+
+    assert.equal(s.completed, true);
+    const started = events.find((event) => event.type === "workstream-started");
+    const finished = events.find((event) => event.type === "workstream-finished");
+    assert.equal(started.workstream_id, "stage-04.backend");
+    assert.equal(started.gate_path, "pipeline/gates/stage-04.backend.json");
+    assert.equal(started.log_path, "pipeline/logs/stage-04.backend.log");
+    assert.equal(finished.exit_code, 0);
+    assert.equal(finished.duration_ms, 17);
+
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.deepEqual(state.active_workstreams, {});
+    assert.equal(state.last_workstream.workstream_id, "stage-04.backend");
+    assert.equal(state.last_workstream.log_path, "pipeline/logs/stage-04.backend.log");
+
+    const logEvents = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line));
+    assert.ok(logEvents.some((event) => event.outcome === "workstream-started" && event.log_path === "pipeline/logs/stage-04.backend.log"));
+    assert.ok(logEvents.some((event) => event.outcome === "workstream-finished" && event.duration_ms === 17));
+  });
+
   it("records allowlisted per-workstream dispatch evidence in the durable run log", async () => {
     const cwd = track(makeTargetProject());
     const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");

@@ -21,6 +21,22 @@ function appendRunLog(logPath, entry) {
   } catch { /* logging must never break the run */ }
 }
 
+function msLabel(ms) {
+  return Number.isFinite(ms) ? `${ms} ms` : "? ms";
+}
+
+function pathSuffix(event) {
+  const parts = [];
+  if (event.gate_path) parts.push(`gate: ${event.gate_path}`);
+  if (event.log_path) parts.push(`log: ${event.log_path}`);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+function workstreamLabel(event) {
+  const role = event.role || event.workstream_id || "workstream";
+  return event.host ? `${role} → ${event.host}` : role;
+}
+
 const name = "run";
 
 const flags = {
@@ -88,6 +104,17 @@ function run(positional, _flags) {
     const tag = ev.failure_class ? `  [${ev.failure_class}]` : "";
     switch (ev.type) {
       case "dispatch":     process.stderr.write(`▶️  ${ev.name} (${ev.stage}) — dispatching…\n`); break;
+      case "workstream-started":
+        process.stderr.write(`   ↳ ${workstreamLabel(ev)} started${pathSuffix(ev)}\n`);
+        break;
+      case "workstream-finished": {
+        const outcome = ev.skipped ? "skipped"
+          : ev.timed_out ? "timed out"
+          : ev.exit_code == null ? "finished"
+          : `exit ${ev.exit_code}`;
+        process.stderr.write(`   ↳ ${workstreamLabel(ev)} ${outcome} in ${msLabel(ev.duration_ms)}${pathSuffix(ev)}\n`);
+        break;
+      }
       case "dispatched":   process.stderr.write(`   ✓ ${ev.name} dispatched (${ev.duration_ms} ms${ev.timed_out ? ", TIMED OUT" : ""})\n`); break;
       case "merge":        process.stderr.write(`🔀 merge ${ev.name}\n`); break;
       case "complete":     process.stderr.write(`🎉 pipeline-complete\n`); break;

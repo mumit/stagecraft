@@ -137,12 +137,16 @@ performance effort:
 - [#313](https://github.com/telus-labs/stagecraft/issues/313) — critical-path
   telemetry and coverage report
 - [#314](https://github.com/telus-labs/stagecraft/issues/314) — rich live run
-  narrative, status, and logs
+  narrative, status, and logs. The first slice is implemented: `devteam run`
+  emits per-workstream start/finish lines, `run-log.jsonl` records
+  `workstream-started` / `workstream-finished`, `run-state.json` tracks
+  `active_workstreams` and `last_workstream`, `devteam run --watch` shows active
+  workstreams and artifact pointers, and `devteam status --verbose` exposes the
+  same state for post-hoc inspection.
 
-The immediate gap is answering "what is Stagecraft doing right now?" without
-requiring a tracing backend or raw transcript tailing. The planned work enriches
-driver events, `devteam run`, `--watch`, `status`, and `log` while preserving the
-existing JSON and redirected-output contracts.
+The next gap is timing depth: queue/invoke/stamp/merge/retry breakdowns and
+critical-path reporting so performance work can be measured before scheduling
+changes land.
 
 ## Backend-specific cookbooks
 

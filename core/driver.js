@@ -493,6 +493,10 @@ function seedDeployContext(cwd, config, changeId, opts = {}) {
 
 function defaultSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
+function relPath(cwd, filePath) {
+  return filePath ? path.relative(cwd, filePath).replace(/\\/g, "/") : null;
+}
+
 // ADR-007 Tier 1: observe-only stall probe. Runs fire-and-forget alongside
 // each run-stage/continue-stage dispatch. Wakes every stallPollIntervalMs
 // and checks whether the workstream log grew or a gate appeared. If neither
@@ -844,6 +848,8 @@ async function run(opts = {}) {
   state.transient = state.transient || {};        // no-gate transient retries per stage
   state.srcFingerprints = state.srcFingerprints || {}; // content hashes for no-source-change detection
   state.targetedFix = state.targetedFix || null;  // one-shot fix-and-retry dispatch hint
+  state.active_workstreams = {};
+  state.last_workstream = state.last_workstream || null;
   // Phase 12.2: commit-cursor fields (resilient to resumed pre-12.2 states).
   if (!Array.isArray(state.stages_advanced)) state.stages_advanced = [];
   if (!("last_committed_stage_index" in state)) state.last_committed_stage_index = null;
@@ -1378,6 +1384,49 @@ async function run(opts = {}) {
         const targetedFixSnapshot = targetedFix
           ? hashTargetedFixFiles(cwd, targetedFix.files)
           : null;
+        const onWorkstreamEvent = (event) => {
+          const key = event.workstream_id || `${event.stage || r.stage}.${event.role || "unknown"}`;
+          const normalized = {
+            ...base,
+            ...event,
+            gate_path: relPath(cwd, event.gate_path),
+            log_path: relPath(cwd, event.log_path),
+          };
+          if (event.type === "workstream-started") {
+            state.active_workstreams[key] = {
+              stage: event.stage || r.stage,
+              name: event.name || r.name,
+              role: event.role || null,
+              host: event.host || null,
+              workstream_id: key,
+              gate_path: normalized.gate_path,
+              log_path: normalized.log_path,
+              started_at: nowIso(),
+            };
+          } else if (event.type === "workstream-finished") {
+            delete state.active_workstreams[key];
+            state.last_workstream = {
+              stage: event.stage || r.stage,
+              name: event.name || r.name,
+              role: event.role || null,
+              host: event.host || null,
+              workstream_id: key,
+              gate_path: normalized.gate_path,
+              log_path: normalized.log_path,
+              duration_ms: event.duration_ms ?? null,
+              exit_code: event.exit_code ?? null,
+              timed_out: Boolean(event.timed_out),
+              skipped: Boolean(event.skipped),
+              finished_at: nowIso(),
+            };
+          }
+          saveRunState(cwd, changeId, state);
+          logEvent(cwd, changeId, {
+            ...normalized,
+            outcome: event.type,
+          });
+          onEvent(normalized);
+        };
         // §stub-gate: pre-seed a stub gate for stages that frequently exhaust
         // context before reaching the gate write (preSeedGate: true).
         const stageDef = STAGES[r.name];
@@ -1398,6 +1447,7 @@ async function run(opts = {}) {
             ...(repairPatchItems
               ? { patchItems: repairPatchItems }
               : targetedFix ? { patchItems: targetedFix.patchItems } : {}),
+            onWorkstreamEvent,
           });
         } finally {
           // Dispatch settled — cancel the probe so it never fires a stale event.
