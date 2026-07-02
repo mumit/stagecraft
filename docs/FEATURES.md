@@ -74,13 +74,17 @@ Runs automatically after QA on `full`, `quick`, and `hotfix` tracks.
 ### Polyglot QA — verify every detected test suite
 
 Orchestrator stamping at pre-review and QA discovers and runs all applicable project
-test suites in stable order: `npm test` when `package.json` has `scripts.test`, pytest
-when pytest configuration or conventional Python test files are present, and
-`go test ./...` when `go.mod` is present. Every suite must pass. The gate's
-`_orchestrator_stamped.runs.test.suites` records each command, exit code, and duration;
-one failing language adds a named blocker without preventing the remaining suites from
-running. Set `pipeline.verify.test_command` for an exclusive custom command, or `null`
-to disable test discovery. See [Testing](TESTING.md#target-project-test-discovery).
+test suites: `npm test` when `package.json` has `scripts.test`, pytest when pytest
+configuration or conventional Python test files are present, and `go test ./...` when
+`go.mod` is present. Independent suites run with bounded concurrency while stamped
+results stay in stable order; `pipeline.verify.test_concurrency: 1` serializes fragile
+projects, and configured `resource_group` values keep shared browser/database/port-bound
+suites exclusive. Every suite must pass. The gate's
+`_orchestrator_stamped.runs.test.suites` records each command, exit code, duration,
+resource group, and output-truncation flags; one failing language adds a named blocker
+without preventing the remaining suites from running. Set `pipeline.verify.test_command`
+for an exclusive custom command, or `null` to disable test discovery. See
+[Testing](TESTING.md#target-project-test-discovery).
 
 ### Observability gate — confirm metrics, logs, and traces are wired
 
@@ -545,6 +549,7 @@ A deterministic code loop around `devteam next` that advances the pipeline unatt
 - **Run plan preview (Phase 26 / #316).** Before dispatch, non-JSON `devteam run` prints the effective track/custom plan, included/total stage count, configured skip count, conditional-stage count, and base workstream count. The same typed `run-plan` event is written to `run-log.jsonl` so tools can answer "how big is this run?" without parsing terminal prose.
 - **Audit trail.** Every transition — including each auto-fix and auto-ruling with its `grant_class` and authority — is appended to `pipeline/run-log.jsonl`. Autonomous dispatches also append a privacy-bounded `dispatch-observation` per non-skipped workstream (stage, role, host, model, status, gate-written/timeout flags, and optional numeric cost/duration), giving `devteam evidence` durable routing history without copying free-form gate text. Explicit accepted-resolution events bind a human decision to a successful retry using only typed categories and hashes.
 - **Liveness heartbeat + observe-only stall detection (ADR-007 Tier 1).** A `heartbeat` event is emitted to `run-log.jsonl` (and via `onEvent`) at the start of every driver loop iteration, bounding the last-event age. Alongside each dispatch a fire-and-forget stall probe watches for silent hangs: it emits `stall-detected` (`stall_class: "observed"`) when neither the workstream log (`pipeline/logs/`) grew ≥ 512 bytes nor any gate updated within 5 minutes — the dispatch is never killed (observe-only; no `Promise.race`). Config: `autonomy.stall_threshold_ms` and `autonomy.stall_min_growth_bytes` in `.devteam/config.yml`. Query a snapshot with `devteam status --verbose`, or use `devteam run --watch` for rolling stage, active/last workstreams, gate/log pointers, dispatch-time, log-growth, heartbeat-age, and stall status. Watch mode redraws only on an interactive terminal and preserves line-oriented output when redirected; redirected line progress still includes per-workstream start/finish lines.
+- **Critical-path report (Phase 26 / #313).** `devteam performance critical-path` reads `run-log.jsonl` plus orchestrator-stamped gates and reports dispatch wall time, merge time, retry delay, summed workstream compute, estimated parallel savings, telemetry coverage, and repeated verification-command candidates. JSON output is available for p50/p95 baselines across real projects.
 - **Advisory sweep on completion + `--fail-on-advisory` (ADR-008).** After `pipeline-complete` the driver runs an in-process advisory sweep (reusing `core/advise.js`: `QA_BLOCKER` / `PEER_REVIEW_RISK` / `A11Y_FIX`), adds `advisory_blockers_count` and `advisory_breakdown` to the `--json` summary, and prints a loud stderr line when blockers remain. Default exit is unchanged; opt in to exit **3** with `--fail-on-advisory` (QA_BLOCKER + A11Y_FIX threshold; `=all` adds PEER_REVIEW_RISK).
 - Exit codes: `0` complete or a clean configured stop (`--until` / ceiling); `1` needs attention; `2` lock held; `3` `--fail-on-advisory` and blocker-class items remain.
 

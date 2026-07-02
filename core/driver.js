@@ -1396,8 +1396,13 @@ async function run(opts = {}) {
           } catch { /* best-effort — diagnosis gate may not exist yet */ }
         }
 
-        onEvent({ type: "dispatch", ...base });
         const t0 = Date.now();
+        logEvent(cwd, changeId, {
+          ...base,
+          outcome: "dispatch-started",
+          queue_ms: 0,
+        });
+        onEvent({ type: "dispatch", ...base });
         // ADR-007 Tier 1: start the observe-only stall probe fire-and-forget.
         // The probe emits stall-detected if the workstream log and gate are both
         // flat for stallThresholdMs. It NEVER kills or alters the dispatch — the
@@ -1585,7 +1590,17 @@ async function run(opts = {}) {
 
       if (r.action === "merge") {
         onEvent({ type: "merge", ...base });
+        logEvent(cwd, changeId, { ...base, outcome: "merge-started" });
+        const mergeStart = Date.now();
         const m = _merge(r.name, { cwd, track: effectiveTrack, changeId });
+        const mergeDurationMs = Date.now() - mergeStart;
+        logEvent(cwd, changeId, {
+          ...base,
+          outcome: "merge-finished",
+          duration_ms: mergeDurationMs,
+          merged: Boolean(m.merged),
+          reason: m.reason || null,
+        });
         const result = mergeTransition({ base, mergeResult: m });
         applyTransition(result);
         if (result.control === TRANSITION_CONTROLS.HALT) {

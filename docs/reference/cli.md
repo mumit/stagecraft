@@ -3,7 +3,7 @@
 
 # CLI Reference
 
-Full `devteam` command reference. 36 commands.
+Full `devteam` command reference. 37 commands.
 Derived from the per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
@@ -263,6 +263,16 @@ Generate a self-contained HTML report of the most recent pipeline run. Embeds st
 | --feature | string | Feature name (for bounded-isolation runs)   |
 | --json    | bool   | Print raw data as JSON; skip HTML           |
 | --no-open | bool   | Write file but don't open browser           |
+
+### `devteam performance critical-path [options]`
+
+Reconstruct run critical path from run-log.jsonl: dispatch wall, workstream compute, retry delay, telemetry coverage, and verification reuse candidates.
+
+| Flag      | Type   | Description                           |
+| --------- | ------ | ------------------------------------- |
+| --cwd     | string | Target project directory              |
+| --feature | string | Feature name (bounded isolation mode) |
+| --json    | bool   | JSON output                           |
 
 ### `devteam evidence <status|export|identity|accept-resolution> [options]`
 

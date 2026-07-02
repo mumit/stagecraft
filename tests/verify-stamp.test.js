@@ -218,6 +218,35 @@ describe("verify/stamp: stampStage06 — AC mapping", () => {
     }
   });
 
+  it("stamps configured suite resource groups and stable suite order", async () => {
+    const cwd = track(makeTargetProject({
+      config: configWith({
+        test_concurrency: 2,
+        test_suites: [
+          { id: "slow", command: "node slow.js", resource_group: "browser" },
+          { id: "fast", command: "node fast.js" },
+        ],
+      }),
+    }));
+    fs.writeFileSync(path.join(cwd, "slow.js"), "setTimeout(()=>{}, 80)");
+    fs.writeFileSync(path.join(cwd, "fast.js"), "setTimeout(()=>{}, 10)");
+    seedBrief(cwd, "## Criteria\n- AC-1: foo\n");
+    seedReport(cwd, "| AC | Test |\n|---|---|\n| AC-1 | t1 |\n");
+    const gatePath = seedGateRaw(cwd, "stage-06", {
+      stage: "stage-06", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "full", timestamp: "2026-06-19T12:00:00Z",
+      blockers: [], warnings: [], all_acceptance_criteria_met: true,
+      tests_total: 2, tests_passed: 2, tests_failed: 0, failing_tests: [],
+      criterion_to_test_mapping_is_one_to_one: true,
+    });
+    const result = await stampStage06(cwd, gatePath);
+    const suites = result.gate._orchestrator_stamped.runs.test.suites;
+    assert.equal(result.gate.status, "PASS");
+    assert.deepEqual(suites.map((suite) => suite.id), ["slow", "fast"]);
+    assert.equal(suites[0].resource_group, "browser");
+    assert.equal(suites[1].resource_group, undefined);
+  });
+
   it("flips status to FAIL when an AC is unmapped (model claimed met)", async () => {
     const cwd = track(makeTargetProject({
       config: configWith({ test_command: "true" }),

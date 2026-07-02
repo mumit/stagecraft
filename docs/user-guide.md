@@ -968,6 +968,7 @@ devteam run --budget-usd 10       # stop before a dispatch once spend ≥ $10
 devteam run --allow-stage sign-off --allow-stage deploy   # grant the consequence ceiling
 devteam run --auto-rule formatting-only,doc-only          # auto-resolve bounded escalation classes
 devteam status --verbose                                  # inspect active/last workstream details
+devteam performance critical-path                         # inspect where run time went
 ```
 
 It never advances into `sign-off`/`deploy` without `--allow-stage`, and by default halts on every escalation (the Principal isn't dispatched unless you pass `--auto-rule`). It writes `pipeline/run.lock`, a resumable `run-state.json` (`--resume`), and an audit-trail `run-log.jsonl`. At startup, non-JSON runs print the effective track, stage count, configured skips, conditional-stage count, and base workstream count; `run-log.jsonl` records the same data as `run-plan`. During dispatch, line progress now reports each workstream start/finish with its host plus gate/log pointers; `--watch` redraws a rolling liveness block only on a TTY and includes active workstreams, the last settled workstream, transcript, and gate pointers. Redirected output remains line-oriented and ANSI-free. See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the full launch guide, halt reasons, and limitations.
@@ -1495,11 +1496,28 @@ pipeline:
   verify:
     lint_command: "npm run lint"
     test_command: "make test"  # replaces automatic Node/pytest/Go discovery
+    test_concurrency: 2        # use 1 for fragile suites; maximum is 8
 ```
 
 Set either value to `null` to disable that check explicitly. See
 [`docs/TESTING.md`](TESTING.md#target-project-test-discovery) for discovery signals and
 the stamped aggregate result.
+
+For multiple custom suites without a single monorepo command, omit `test_command` and
+use `test_suites`. Suites sharing a `resource_group` never overlap, while unrelated
+suites can still run up to `test_concurrency`:
+
+```yaml
+pipeline:
+  verify:
+    test_concurrency: 3
+    test_suites:
+      - id: unit
+        command: "npm test"
+      - id: browser
+        command: "npm run test:browser"
+        resource_group: browser
+```
 
 ### Controlling token cost
 

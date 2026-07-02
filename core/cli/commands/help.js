@@ -162,6 +162,11 @@ Commands:
                                    last_action / iterations / cost_usd /
                                    last_heartbeat_age_ms / last_event_age_ms /
                                    stall_detected. Read-only; no --watch.
+  performance critical-path        Reconstruct run critical path from
+       [--feature "..."] [--json]  run-log.jsonl: dispatch wall time,
+                                   workstream compute, parallel savings,
+                                   retry delay, telemetry coverage, and
+                                   repeated verification-command candidates.
   evidence status [--json]         Read-only evidence readiness for #142-#145.
        [--feature <name>]          Aggregates bounded run logs, current gates,
                                    and gate archives; reports local threshold

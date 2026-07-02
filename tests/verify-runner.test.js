@@ -9,6 +9,7 @@ const {
   discoverTestCommands,
   resolveCommands,
   resolveTestCommands,
+  resolveTestConcurrency,
   runTestCommands,
 } = require("../core/verify/runner");
 
@@ -38,6 +39,16 @@ describe("verify/runner: runCommand", () => {
     assert.match(r.stdout, /ok/);
     assert.ok(r.durationMs >= 0);
     assert.equal(r.timedOut, false);
+  });
+
+  it("bounds captured stdout and marks truncation", async () => {
+    const d = tmpdir();
+    const f = writeScript(d, "chatty.js", "process.stdout.write('x'.repeat(100))");
+    const r = await runCommand(`node ${f}`, { maxOutputBytes: 10 });
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.stdout.length, 10);
+    assert.equal(r.stdoutTruncated, true);
+    assert.equal(r.stderrTruncated, false);
   });
 
   it("captures non-zero exit codes", async () => {
@@ -157,6 +168,25 @@ describe("verify/runner: polyglot test discovery", () => {
     }), []);
   });
 
+  it("uses configured test_suites when no exclusive test_command is set", () => {
+    const d = tmpdir();
+    fs.writeFileSync(path.join(d, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+    assert.deepEqual(resolveTestCommands(d, {
+      pipeline: {
+        verify: {
+          test_suites: [
+            { id: "unit", command: "npm test", resource_group: "cpu" },
+            { command: "npm run integration" },
+            { id: "ignored" },
+          ],
+        },
+      },
+    }), [
+      { id: "unit", command: "npm test", resource_group: "cpu" },
+      { id: "suite-2", command: "npm run integration", resource_group: null },
+    ]);
+  });
+
   it("runs every suite and reports aggregate failure without short-circuiting", async () => {
     const d = tmpdir();
     const pass = writeScript(d, "pass.js", "process.exit(0)");
@@ -168,6 +198,41 @@ describe("verify/runner: polyglot test discovery", () => {
     assert.equal(result.passed, false);
     assert.deepEqual(result.runs.map((run) => run.exitCode), [0, 3]);
     assert.ok(result.durationMs >= 0);
+  });
+
+  it("runs independent suites concurrently while preserving result order", async () => {
+    const d = tmpdir();
+    const slow = writeScript(d, "slow.js", "setTimeout(()=>{ console.log('slow'); }, 220)");
+    const fast = writeScript(d, "fast.js", "setTimeout(()=>{ console.log('fast'); }, 20)");
+    const started = Date.now();
+    const result = await runTestCommands([
+      { id: "slow", command: `node ${slow}` },
+      { id: "fast", command: `node ${fast}` },
+    ], { cwd: d, concurrency: 2 });
+    const elapsed = Date.now() - started;
+    assert.equal(result.passed, true);
+    assert.deepEqual(result.runs.map((run) => run.id), ["slow", "fast"]);
+    assert.ok(elapsed < 400, `expected concurrent wall time, got ${elapsed}ms`);
+  });
+
+  it("does not run suites with the same resource group at the same time", async () => {
+    const d = tmpdir();
+    const script = writeScript(d, "grouped.js", `
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const lock = path.join(process.cwd(), 'exclusive.lock');
+      if (fs.existsSync(lock)) process.exit(9);
+      fs.writeFileSync(lock, process.argv[2]);
+      setTimeout(() => {
+        fs.unlinkSync(lock);
+      }, 80);
+    `);
+    const result = await runTestCommands([
+      { id: "a", command: `node ${script} a`, resource_group: "exclusive" },
+      { id: "b", command: `node ${script} b`, resource_group: "exclusive" },
+    ], { cwd: d, concurrency: 2 });
+    assert.equal(result.passed, true);
+    assert.deepEqual(result.runs.map((run) => run.resource_group), ["exclusive", "exclusive"]);
   });
 });
 
@@ -210,5 +275,12 @@ describe("verify/runner: resolveCommands", () => {
     const d = tmpdir();
     const r = resolveCommands(d, {});
     assert.deepEqual(r, { lint: null, test: null });
+  });
+
+  it("resolves bounded test concurrency from config", () => {
+    assert.equal(resolveTestConcurrency({ pipeline: { verify: { test_concurrency: 4 } } }), 4);
+    assert.equal(resolveTestConcurrency({ pipeline: { verify: { test_concurrency: 0 } } }), 1);
+    assert.equal(resolveTestConcurrency({ pipeline: { verify: { test_concurrency: 99 } } }), 8);
+    assert.equal(resolveTestConcurrency({}), 2);
   });
 });

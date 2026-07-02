@@ -22,7 +22,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig } = require("../config");
 const {
-  runCommand, resolveCommands, resolveTestCommands, runTestCommands,
+  runCommand, resolveCommands, resolveTestCommands, resolveTestConcurrency, runTestCommands,
 } = require("./runner");
 const { loadGateSafe } = require("../gates/load-gate");
 const { verify: specVerify, generateScaffold, extractAcsFromBrief: extractAcsFromBriefSpec } = require("../spec/verify");
@@ -38,6 +38,9 @@ function testRunRecord(execution) {
     duration_ms: run.durationMs,
     timed_out: run.timedOut || undefined,
     spawn_error: run.spawnError || undefined,
+    resource_group: run.resource_group || undefined,
+    stdout_truncated: run.stdoutTruncated || undefined,
+    stderr_truncated: run.stderrTruncated || undefined,
   }));
   if (suites.length === 1) {
     const [run] = suites;
@@ -60,7 +63,7 @@ function testRunRecord(execution) {
 async function executeTests(cwd, config) {
   const commands = resolveTestCommands(cwd, config);
   if (commands.length === 0) return null;
-  return runTestCommands(commands, { cwd });
+  return runTestCommands(commands, { cwd, concurrency: resolveTestConcurrency(config) });
 }
 
 function appendTestFailures(blockers, execution) {
