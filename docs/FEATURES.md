@@ -74,13 +74,17 @@ Runs automatically after QA on `full`, `quick`, and `hotfix` tracks.
 ### Polyglot QA — verify every detected test suite
 
 Orchestrator stamping at pre-review and QA discovers and runs all applicable project
-test suites in stable order: `npm test` when `package.json` has `scripts.test`, pytest
-when pytest configuration or conventional Python test files are present, and
-`go test ./...` when `go.mod` is present. Every suite must pass. The gate's
-`_orchestrator_stamped.runs.test.suites` records each command, exit code, and duration;
-one failing language adds a named blocker without preventing the remaining suites from
-running. Set `pipeline.verify.test_command` for an exclusive custom command, or `null`
-to disable test discovery. See [Testing](TESTING.md#target-project-test-discovery).
+test suites: `npm test` when `package.json` has `scripts.test`, pytest when pytest
+configuration or conventional Python test files are present, and `go test ./...` when
+`go.mod` is present. Independent suites run with bounded concurrency while stamped
+results stay in stable order; `pipeline.verify.test_concurrency: 1` serializes fragile
+projects, and configured `resource_group` values keep shared browser/database/port-bound
+suites exclusive. Every suite must pass. The gate's
+`_orchestrator_stamped.runs.test.suites` records each command, exit code, duration,
+resource group, and output-truncation flags; one failing language adds a named blocker
+without preventing the remaining suites from running. Set `pipeline.verify.test_command`
+for an exclusive custom command, or `null` to disable test discovery. See
+[Testing](TESTING.md#target-project-test-discovery).
 
 ### Observability gate — confirm metrics, logs, and traces are wired
 

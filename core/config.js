@@ -22,6 +22,8 @@ const DEFAULTS = {
     // for stages that the orchestrator can verify directly (stage-04a
     // and stage-06 today). Absent test config discovers Node, pytest,
     // and Go suites; explicit null means "skip even if discoverable."
+    // test_concurrency bounds independent suite fanout; test_suites can
+    // declare resource_group for exclusive browser/database/port-bound suites.
     // See core/verify/runner.js.
     verify: {},
     // G6: custom_stages overrides default_track when set. An array of
@@ -237,6 +239,13 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  # verify:             # orchestrator-stamped verification commands");
   lines.push("  #   lint_command: \"npm run lint\"   # override; defaults to package.json scripts.lint");
   lines.push("  #   test_command: \"npm test\"      # exclusive override; null disables auto-discovery");
+  lines.push("  #   test_concurrency: 2           # 1 serializes suites; maximum is 8");
+  lines.push("  #   test_suites:                  # optional replacement for auto-discovered suites");
+  lines.push("  #     - id: unit");
+  lines.push("  #       command: \"npm test\"");
+  lines.push("  #     - id: browser");
+  lines.push("  #       command: \"npm run test:browser\"");
+  lines.push("  #       resource_group: browser   # suites sharing a group never overlap");
   lines.push("");
   if (opts.adapter) {
     lines.push("deploy:");

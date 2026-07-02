@@ -1496,11 +1496,28 @@ pipeline:
   verify:
     lint_command: "npm run lint"
     test_command: "make test"  # replaces automatic Node/pytest/Go discovery
+    test_concurrency: 2        # use 1 for fragile suites; maximum is 8
 ```
 
 Set either value to `null` to disable that check explicitly. See
 [`docs/TESTING.md`](TESTING.md#target-project-test-discovery) for discovery signals and
 the stamped aggregate result.
+
+For multiple custom suites without a single monorepo command, omit `test_command` and
+use `test_suites`. Suites sharing a `resource_group` never overlap, while unrelated
+suites can still run up to `test_concurrency`:
+
+```yaml
+pipeline:
+  verify:
+    test_concurrency: 3
+    test_suites:
+      - id: unit
+        command: "npm test"
+      - id: browser
+        command: "npm run test:browser"
+        resource_group: browser
+```
 
 ### Controlling token cost
 
