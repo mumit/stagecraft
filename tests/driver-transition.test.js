@@ -340,7 +340,7 @@ describe("driver transition characterization", () => {
       iterations: 2,
     });
     assert.deepEqual(persisted.outcomes, [
-      "run-start", "heartbeat", "dispatch-started", "dispatch-observation", "dispatched", "heartbeat", "complete",
+      "run-plan", "run-start", "heartbeat", "dispatch-started", "dispatch-observation", "dispatched", "heartbeat", "complete",
     ]);
     assert.equal(persisted.state.last_action, "pipeline-complete");
     assert.equal(persisted.state.retries.requirements, 1);
@@ -374,7 +374,7 @@ describe("driver transition characterization", () => {
 
     assert.equal(summary.completed, true);
     assert.deepEqual(persisted.outcomes, [
-      "run-start",
+      "run-plan", "run-start",
       "heartbeat", "dispatch-started", "dispatch-observation", "dispatched", "transient-retry",
       "heartbeat", "dispatch-started", "dispatch-observation", "dispatched",
       "heartbeat", "complete",
@@ -433,8 +433,8 @@ describe("driver transition characterization", () => {
       assert.equal(summary.halt_action, scenario.haltAction);
       assert.equal(summary.halt_failure_class, scenario.failureClass);
       const expected = scenario.action.action === "merge"
-        ? ["run-start", "heartbeat", "merge-started", "merge-finished", scenario.terminalOutcome]
-        : ["run-start", "heartbeat", scenario.terminalOutcome];
+        ? ["run-plan", "run-start", "heartbeat", "merge-started", "merge-finished", scenario.terminalOutcome]
+        : ["run-plan", "run-start", "heartbeat", scenario.terminalOutcome];
       assert.deepEqual(persisted.outcomes, expected);
       assert.equal(persisted.state.last_action, scenario.action.action);
     }

@@ -12,7 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup, runCLI } = require("./_helpers");
 const { run } = require(path.join(REPO_ROOT, "core", "driver"));
-const { orderedStageNamesForTrack } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
+const { orderedStageNamesForTrack, STAGES } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -107,6 +107,35 @@ describe("driver: halt paths (real next)", () => {
 });
 
 describe("driver: dispatch loop (injected deps)", () => {
+  it("emits a run-plan event with stage and base-workstream counts", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: quick\n  skip_stages:\n    - qa\n",
+    }));
+    const events = [];
+    await run({
+      cwd,
+      budgetUsd: 10,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+      onEvent: (event) => events.push(event),
+    });
+    const plan = events.find((event) => event.type === "run-plan");
+    const order = orderedStageNamesForTrack("quick");
+    const expectedIncluded = order.filter((name) => name !== "qa");
+    const expectedWorkstreams = expectedIncluded.reduce((sum, name) => sum + STAGES[name].roles.length, 0);
+    assert.ok(plan, "run-plan event emitted");
+    assert.equal(plan.track, "quick");
+    assert.equal(plan.stages_total, order.length);
+    assert.equal(plan.stages_included, expectedIncluded.length);
+    assert.equal(plan.stages_skipped_by_config, 1);
+    assert.equal(plan.base_workstreams, expectedWorkstreams);
+
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.ok(log.some((entry) => entry.outcome === "run-plan" && entry.base_workstreams === expectedWorkstreams));
+  });
+
   it("advances run-stage → merge → complete", async () => {
     const cwd = track(makeTargetProject());
     const actions = [
@@ -1564,6 +1593,15 @@ describe("run CLI: advisory loud line + --fail-on-advisory exit code (ADR-008)",
 
     const r = runCLI(["run", "--cwd", cwd, "--fail-on-advisory=all"]);
     assert.equal(r.status, 3, "--fail-on-advisory=all must exit 3 when PEER_REVIEW_RISK items remain");
+  });
+
+  it("non-json run prints the expected run plan before completion", () => {
+    const cwd = track(makeTargetProject());
+    seedAllPass(cwd);
+    const r = runCLI(["run", "--cwd", cwd, "--budget-usd", "10"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /\[devteam run\] plan: full track, \d+\/\d+ stages/);
+    assert.match(r.stderr, /base workstreams/);
   });
 
   it("clean pipeline → exit 0, no loud advisory line", () => {
