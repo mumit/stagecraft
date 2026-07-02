@@ -968,6 +968,7 @@ devteam run --budget-usd 10       # stop before a dispatch once spend ≥ $10
 devteam run --allow-stage sign-off --allow-stage deploy   # grant the consequence ceiling
 devteam run --auto-rule formatting-only,doc-only          # auto-resolve bounded escalation classes
 devteam status --verbose                                  # inspect active/last workstream details
+devteam performance critical-path                         # inspect where run time went
 ```
 
 It never advances into `sign-off`/`deploy` without `--allow-stage`, and by default halts on every escalation (the Principal isn't dispatched unless you pass `--auto-rule`). It writes `pipeline/run.lock`, a resumable `run-state.json` (`--resume`), and an audit-trail `run-log.jsonl`. During dispatch, line progress now reports each workstream start/finish with its host plus gate/log pointers; `--watch` redraws a rolling liveness block only on a TTY and includes active workstreams, the last settled workstream, transcript, and gate pointers. Redirected output remains line-oriented and ANSI-free. See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the full launch guide, halt reasons, and limitations.

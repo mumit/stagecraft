@@ -213,6 +213,29 @@ CI logs useful even when `--watch` is unavailable.
 **Config:** `autonomy.stall_threshold_ms` (default 300000) and
 `autonomy.stall_min_growth_bytes` (default 512) in `.devteam/config.yml`.
 
+## Critical-path reporting
+
+Use the run-log backed performance report after a long or surprising run:
+
+```bash
+devteam performance critical-path
+devteam performance critical-path --json
+devteam performance critical-path --feature "bounded feature name"
+```
+
+The report reconstructs dispatch wall time, merge time, retry delay, summed
+workstream compute, estimated parallel savings, telemetry coverage, and repeated
+orchestrator-stamped verification commands. It reads `run-log.jsonl` and
+`_orchestrator_stamped` gate metadata; it does not trust model-authored claims
+about tests or elapsed time.
+
+For real-project baselines, collect at least five successful or cleanly halted
+runs per project and retain the JSON output. Compute p50/p95 over
+`reported_critical_path_ms`, per-dispatch `duration_ms`, retry delay, and merge
+wall time. Compare projects only by aggregate timing and stage/workstream
+categories; do not export prompts, transcript excerpts, blockers, feature text,
+or repository identity.
+
 ## Advisory sweep on completion (ADR-008)
 
 After `pipeline-complete`, the driver runs an in-process advisory sweep (the same
