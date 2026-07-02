@@ -102,6 +102,10 @@ devteam run --repair "symptom" --repair-at src/auth.js:42      # skip diagnosis;
 
 `--repair` and `--feature` are mutually exclusive. See [§ Repair mode](#repair-mode-devteam-run---repair-adr-009) below and [`docs/runbooks/repair-flow.md`](repair-flow.md) for the diagnosis gate, scope-gate FAIL recovery, and tri-state reproduction.
 
+At startup, non-JSON runs print a plan preview to **stderr** with the effective track,
+included/total stages, configured skips, conditional stages, and base workstream count;
+the same data is recorded as a typed `run-plan` event in `run-log.jsonl`.
+
 Progress prints to **stderr**; the `--json` summary prints to **stdout**. `--watch`
 and `--json` are mutually exclusive. When watch output is redirected or stderr is
 not a TTY, Stagecraft prints a warning and uses the existing line-per-event format

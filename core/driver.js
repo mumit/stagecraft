@@ -415,6 +415,24 @@ function resolveTrack(opts, config, cwd) {
   return { track: config.pipeline.default_track || "full", source: "config", confidence: null };
 }
 
+function summarizeRunPlan(order, config = {}) {
+  const skipStages = new Set((config.pipeline && config.pipeline.skip_stages) || []);
+  const included = order.filter((name) => !skipStages.has(name));
+  const skipped = order.filter((name) => skipStages.has(name));
+  const baseWorkstreams = included.reduce((sum, name) => {
+    const stage = STAGES[name];
+    return sum + (stage && Array.isArray(stage.roles) ? stage.roles.length : 0);
+  }, 0);
+  return {
+    stages_total: order.length,
+    stages_included: included.length,
+    stages_skipped_by_config: skipped.length,
+    base_workstreams: baseWorkstreams,
+    conditional_stages: included.filter((name) => STAGES[name] && STAGES[name].conditionalOn).length,
+    skipped_stage_names: skipped,
+  };
+}
+
 const RUN_BLOCKERS_BEGIN = "<!-- devteam:run-blockers:begin -->";
 const RUN_BLOCKERS_END = "<!-- devteam:run-blockers:end -->";
 
@@ -864,6 +882,7 @@ async function run(opts = {}) {
     iterations: 0,
     cost_usd: 0,
   };
+  const runPlan = summarizeRunPlan(order, config);
   const applyTransition = (result) => applyTransitionResult(result, {
     summary,
     state,
@@ -895,6 +914,23 @@ async function run(opts = {}) {
   let repairPatchItems = opts.repair ? [opts.repair] : null;
 
   try {
+    logEvent(cwd, changeId, {
+      outcome: "run-plan",
+      track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
+      track_source: trackSource,
+      track_confidence: trackConfidence,
+      intent,
+      ...runPlan,
+    });
+    onEvent({
+      type: "run-plan",
+      track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
+      track_source: trackSource,
+      track_confidence: trackConfidence,
+      intent,
+      ...runPlan,
+    });
+
     // Log the repair stoplist upgrade event (computed before lock/state were set up).
     if (repairStoplistMatches.length > 0) {
       logEvent(cwd, changeId, {
