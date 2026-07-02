@@ -53,6 +53,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration
 - [../plans/phase-25-omnigent-director-hardening.md](../plans/phase-25-omnigent-director-hardening.md) — proposed and parked plan for hardening the Omnigent director prototype
+- [../plans/phase-26-performance-observability-usability.md](../plans/phase-26-performance-observability-usability.md) — proposed plan for critical-path telemetry, live run UX, verification speed, scheduling, and context/routing improvements
 - [spec-authoring.md](spec-authoring.md) — writing AC-N criteria and scaffolding the spec file
 - [migration-safety.md](migration-safety.md) — veto criteria, gate fields, and the migration heuristic
 - [red-team.md](red-team.md) — 10 attack surfaces, gate fields, routing, and how it differs from security review

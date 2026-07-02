@@ -108,6 +108,8 @@ No open items. B7 moved to [Shipped](#shipped) in Phase 19.
 | # | Idea | I | E | Notes |
 |---|---|---|---|---|
 | D5 | **D5 maturation — continuous adaptive routing** | 5 | 3 | Today D5 proposes role-level swaps; the mature form re-routes the *next* run based on the prior run's outcomes automatically. Phase 17 makes per-workstream dispatch history durable and privacy-bounded; the gate stays shut pending ≥5 dispatches per (role, host) pair across ≥2 real user projects and cost telemetry. |
+| D8 | **Critical-path telemetry and performance report** ([#312](https://github.com/telus-labs/stagecraft/issues/312), [#313](https://github.com/telus-labs/stagecraft/issues/313)) | 5 | 3 | Proposed in [Phase 26](../plans/phase-26-performance-observability-usability.md). Add orchestrator-owned timing coverage, a critical-path report, queue/invoke/stamp/merge/retry breakdowns, and real-run p50/p95 baselines before changing scheduling. |
+| D9 | **Verification efficiency: concurrency and receipts** ([#315](https://github.com/telus-labs/stagecraft/issues/315)) | 4 | 4 | Proposed in Phase 26. Run independent suites concurrently with resource groups, then add content-addressed verification receipts that cannot go stale across source/test/dependency/command/env changes. |
 
 ## E. Developer experience
 
@@ -116,6 +118,7 @@ No open items. B7 moved to [Shipped](#shipped) in Phase 19.
 | E3 | **VS Code extension** | 3 | 3 | Sidebar with stage status, "run next stage" button, gate viewer. |
 | E9 | **Conversational stage mode** `[cmp-E-4]` | 3 | 3 | `devteam stage requirements --interactive` opens a conversation with the PM subagent to refine the brief through Q&A before producing the artifact. Useful specifically for upstream stages (requirements, design, clarification) where the artifact benefits from refinement before being rendered. Architecture supports it (adapters could expose streaming-conversation alongside one-shot render). Implement if user feedback indicates the gate-driven loop is too rigid for upstream stages. Related to E7 but different mechanism: E7 is host-loops-until-condition; E9 is stage-manager-converses-with-agent. |
 | E11 | **Prototype mode** | 4 | 2 | `devteam prototype` creates a lightweight pre-SDLC packet, can run the build prompt in a packet workspace, captures feedback, and records explicit discard/iterate/promote decisions. It is deliberately not a production gate track; promotion hands off into `devteam run --feature-file ... --track <t>`. |
+| E12 | **Rich live run UX** ([#314](https://github.com/telus-labs/stagecraft/issues/314)) | 4 | 2 | Proposed in Phase 26. Make `devteam run`, `--watch`, `status`, and `log` explain active workstreams, host/log/gate paths, elapsed time, verification substeps, retry/backoff, queue state, and latest progress without requiring raw transcript tailing. |
 
 ## F. Integrations — where the team plugs in
 

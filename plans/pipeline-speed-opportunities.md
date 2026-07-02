@@ -1,6 +1,8 @@
 # Stagecraft Pipeline Speed Opportunities
 
-**Status:** Analysis and proposed optimization roadmap; no implementation authorized.
+**Status:** Analysis background. Actionable follow-up now lives in
+[`phase-26-performance-observability-usability.md`](phase-26-performance-observability-usability.md);
+no implementation authorized from this file alone.
 **Date:** 2026-06-21
 **Goal:** reduce wall-clock time from `devteam run` start to a safely deployable change,
 without weakening Stagecraft's gate, audit, verification, authority, or multi-host

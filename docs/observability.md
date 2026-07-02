@@ -8,6 +8,7 @@ Stagecraft emits [OpenTelemetry](https://opentelemetry.io) spans for every pipel
 - [What gets traced](#what-gets-traced)
 - [What's NOT traced (yet)](#whats-not-traced-yet)
 - [Pipeline log JSON](#pipeline-log-json)
+- [Next roadmap](#next-roadmap)
 - [Backend-specific cookbooks](#backend-specific-cookbooks)
 - [Testing your instrumentation](#testing-your-instrumentation)
 - [Cost / overhead](#cost--overhead)
@@ -124,6 +125,24 @@ Example:
 ```
 
 When `--follow` is combined with `--json`, newly discovered events use the same object shape. Consumers should parse line-by-line and ignore unknown future fields.
+
+## Next roadmap
+
+OpenTelemetry is useful when a tracing backend is configured, but it is not the
+whole operator experience. The Phase 26 plan tracks a broader run-visibility and
+performance effort:
+
+- [#312](https://github.com/telus-labs/stagecraft/issues/312) — parent performance,
+  observability, and run-usability overhaul
+- [#313](https://github.com/telus-labs/stagecraft/issues/313) — critical-path
+  telemetry and coverage report
+- [#314](https://github.com/telus-labs/stagecraft/issues/314) — rich live run
+  narrative, status, and logs
+
+The immediate gap is answering "what is Stagecraft doing right now?" without
+requiring a tracing backend or raw transcript tailing. The planned work enriches
+driver events, `devteam run`, `--watch`, `status`, and `log` while preserving the
+existing JSON and redirected-output contracts.
 
 ## Backend-specific cookbooks
 
