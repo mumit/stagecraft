@@ -135,7 +135,11 @@ performance effort:
 - [#312](https://github.com/telus-labs/stagecraft/issues/312) — parent performance,
   observability, and run-usability overhaul
 - [#313](https://github.com/telus-labs/stagecraft/issues/313) — critical-path
-  telemetry and coverage report
+  telemetry and coverage report. The first slice adds
+  `devteam performance critical-path`, backed by durable `run-log.jsonl` events:
+  dispatch start/finish, merge start/finish, retry delay, workstream lifecycle,
+  telemetry coverage, and repeated orchestrator-stamped verification-command
+  candidates.
 - [#314](https://github.com/telus-labs/stagecraft/issues/314) — rich live run
   narrative, status, and logs. The first slice is implemented: `devteam run`
   emits per-workstream start/finish lines, `run-log.jsonl` records
@@ -144,9 +148,10 @@ performance effort:
   workstreams and artifact pointers, and `devteam status --verbose` exposes the
   same state for post-hoc inspection.
 
-The next gap is timing depth: queue/invoke/stamp/merge/retry breakdowns and
-critical-path reporting so performance work can be measured before scheduling
-changes land.
+The next timing gap is deeper verification and stamping substeps: today the
+critical-path report can detect repeated stamped commands and dispatch/merge
+wall time, but individual stamp phases are still summarized inside gate metadata
+rather than streamed as first-class run-log events.
 
 ## Backend-specific cookbooks
 

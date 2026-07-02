@@ -57,6 +57,7 @@ const COMMAND_MODULES = Object.freeze({
   evidence: "evidence",
   report: "report",
   prototype: "prototype",
+  performance: "performance",
 });
 
 const commandCache = Object.create(null);
