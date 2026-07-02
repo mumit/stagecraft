@@ -126,7 +126,7 @@ stagecraft/
 │   │       └── skills/              ← .codex/skills/*
 │   ├── omnigent/
 │   │   ├── adapter.js
-│   │   └── capabilities.json        ← installs .omnigent/stagecraft/agent.yaml
+│   │   └── capabilities.json        ← installs .omnigent/stagecraft/agent/config.yaml
 │   ├── openai-compat/
 │   │   ├── adapter.js
 │   │   ├── capabilities.json

@@ -27,6 +27,7 @@ const flags = {
   from:              { type: "string",  description: "Stage to read patch items from (default: red-team)" },
   "skip-completed":  { type: "boolean", description: "Skip workstreams whose gate file already exists" },
   workstream:        { type: "list",    description: "Dispatch only this workstream (repeatable)" },
+  "experimental-omnigent-director": { type: "boolean", description: "EXPERIMENTAL: run planned Omnigent workstreams through one director session" },
   force:             { type: "boolean", description: "Bypass stoplist guard" },
   json:              { type: "boolean", description: "JSON output" },
   "skip-preflight":  { type: "boolean", description: "Skip automatic preflight check before peer-review" },
@@ -200,7 +201,16 @@ function run(positional, _flags) {
     } catch { /* adapter absent or capabilities unreadable — keep current mode */ }
   }
 
+  if (_flags.experimentalOmnigentDirector && !_flags.headless) {
+    console.error("devteam stage: --experimental-omnigent-director requires --headless.");
+    process.exit(2);
+  }
+
   if (_flags.headless) {
+    if (_flags.experimentalOmnigentDirector && _flags.skipCompleted) {
+      console.error("devteam stage: --experimental-omnigent-director cannot be combined with --skip-completed.");
+      process.exit(2);
+    }
     runStageHeadless(stageName, _flags)
       .then((result) => {
         let anyFail = false;

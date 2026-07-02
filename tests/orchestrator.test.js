@@ -1,9 +1,10 @@
 const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
-const { runStage, mergeWorkstreamGates, buildDescriptor, summary, patchGateForUnpricedModel } =
+const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel } =
   require(path.join(REPO_ROOT, "core", "orchestrator"));
 const { listArchives } = require(path.join(REPO_ROOT, "core", "gates", "archive"));
 const { STAGES, getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
@@ -390,6 +391,117 @@ pipeline:
     assert.equal(r.workstreams.length, 1);
     assert.equal(r.workstreams[0].role, "platform");
     assert.equal(r.workstreams[0].descriptor.workstreamId, "stage-04.platform");
+  });
+});
+
+describe("orchestrator: experimental Omnigent director", () => {
+  function omnigentConfig() {
+    return `routing:
+  default_host: omnigent
+pipeline:
+  default_track: full
+`;
+  }
+
+  function makeDirectorStub(roles) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-director-stub-"));
+    _dirs.push(dir);
+    const script = path.join(dir, "director-stub.js");
+    const record = path.join(dir, "invocation.json");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const record = process.argv[2];
+const args = process.argv.slice(3);
+const gatesDir = path.join(process.cwd(), "pipeline", "gates");
+fs.mkdirSync(gatesDir, { recursive: true });
+for (const role of ${JSON.stringify(roles)}) {
+  fs.writeFileSync(path.join(gatesDir, \`stage-04.\${role}.json\`), JSON.stringify({
+    stage: "stage-04",
+    workstream: role,
+    host: "omnigent",
+    status: "PASS",
+    track: "full",
+    blockers: [],
+    warnings: [],
+    orchestrator: "devteam@test",
+    timestamp: "2026-07-02T00:00:00.000Z"
+  }, null, 2) + "\\n");
+}
+fs.writeFileSync(record, JSON.stringify({ args }, null, 2) + "\\n");
+`, "utf8");
+    return { script, record };
+  }
+
+  it("renders a director prompt with every child gate and original workstream prompt", () => {
+    const cwd = track(makeTargetProject({ config: omnigentConfig() }));
+    const plan = runStage("build", { cwd, feature: "add health endpoint" });
+    const prompt = renderOmnigentDirectorPrompt(plan);
+
+    assert.match(prompt, /Omnigent Director Experiment/);
+    assert.match(prompt, /Feature: add health endpoint/);
+    assert.match(prompt, /pipeline\/gates\/stage-04\.backend\.json/);
+    assert.match(prompt, /pipeline\/gates\/stage-04\.frontend\.json/);
+    assert.match(prompt, /pipeline\/gates\/stage-04\.platform\.json/);
+    assert.match(prompt, /pipeline\/gates\/stage-04\.qa\.json/);
+    assert.match(prompt, /Do not write a director gate/);
+    assert.match(prompt, /### backend \(stage-04\.backend\)/);
+    assert.match(prompt, /Workstream: stage-04\.qa/);
+  });
+
+  it("invokes Omnigent once and maps generated child gates back to workstreams", async () => {
+    const cwd = track(makeTargetProject({ config: omnigentConfig() }));
+    const { script, record } = makeDirectorStub(["backend", "frontend", "platform", "qa"]);
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script} ${record}`;
+    try {
+      const result = await runStageHeadless("build", {
+        cwd,
+        feature: "add hello world endpoint",
+        experimentalOmnigentDirector: true,
+      });
+
+      assert.equal(result.experimentalDirector, "omnigent");
+      assert.equal(result.results.length, 4);
+      assert.ok(result.results.every((r) => r.exitCode === 0));
+      assert.ok(result.results.every((r) => r.director === true));
+      assert.ok(result.results.every((r) => r.directorWorkstreamId === "stage-04.omnigent-director"));
+      assert.ok(result.results.every((r) => r.gatePath && fs.existsSync(r.gatePath)));
+
+      const invocation = JSON.parse(fs.readFileSync(record, "utf8"));
+      assert.equal(invocation.args[0], "--prompt");
+      assert.match(invocation.args[1], /Omnigent Director Experiment/);
+      assert.match(invocation.args[1], /stage-04\.backend/);
+      assert.match(invocation.args[1], /stage-04\.qa/);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("rejects director mode for single-workstream stages", async () => {
+    const cwd = track(makeTargetProject({ config: omnigentConfig() }));
+
+    await assert.rejects(
+      () => runStageHeadless("requirements", { cwd, experimentalOmnigentDirector: true }),
+      /requires a multi-workstream stage/,
+    );
+  });
+
+  it("rejects director mode when any planned workstream routes away from Omnigent", async () => {
+    const cwd = track(makeTargetProject({
+      config: `routing:
+  default_host: omnigent
+  roles:
+    qa: codex
+pipeline:
+  default_track: full
+`,
+    }));
+
+    await assert.rejects(
+      () => runStageHeadless("build", { cwd, experimentalOmnigentDirector: true }),
+      /qa:codex/,
+    );
   });
 });
 

@@ -281,6 +281,76 @@ function nameForStage(stage) {
   return stage;
 }
 
+function uniqueStrings(items) {
+  return [...new Set((items || []).filter((item) => typeof item === "string" && item.length > 0))];
+}
+
+function renderOmnigentDirectorPrompt(plan) {
+  const lines = [
+    "# Omnigent Director Experiment",
+    "",
+    "You are running an explicit experimental Stagecraft director session.",
+    "Coordinate the workstreams listed below, but preserve Stagecraft's normal",
+    "contract: every child workstream must write its own gate file exactly where",
+    "specified. Do not write a director gate.",
+    "",
+    `Stage: ${plan.stage} — ${plan.name}`,
+    `Track: ${trackLabel(plan.ctx.track)}`,
+  ];
+  if (plan.ctx.feature) lines.push(`Feature: ${plan.ctx.feature}`);
+  lines.push("");
+  lines.push("## Required Child Gates");
+  lines.push("");
+  for (const ws of plan.workstreams) {
+    lines.push(`- ${ws.role}: \`pipeline/gates/${ws.descriptor.workstreamId}.json\``);
+  }
+  lines.push("");
+  lines.push("A missing or malformed child gate blocks the stage exactly like normal");
+  lines.push("Stagecraft fan-out. Each gate must use the child workstream id and role");
+  lines.push("from its workstream prompt. Do not add Omnigent-specific fields to gates.");
+  lines.push("");
+  lines.push("## Workstream Prompts");
+  for (const ws of plan.workstreams) {
+    lines.push("");
+    lines.push(`### ${ws.role} (${ws.descriptor.workstreamId})`);
+    lines.push("");
+    lines.push("```markdown");
+    lines.push(ws.prompt);
+    lines.push("```");
+  }
+  lines.push("");
+  lines.push("## Done When");
+  lines.push("");
+  lines.push("All required child gates exist, and each referenced artifact requested by");
+  lines.push("the child prompt has been written. Exit after the gates are on disk.");
+  return lines.join("\n");
+}
+
+function directorDescriptorForPlan(plan) {
+  const allowedWrites = uniqueStrings(plan.workstreams.flatMap((ws) => ws.descriptor.allowedWrites || []));
+  const readFirst = uniqueStrings(plan.workstreams.flatMap((ws) => ws.descriptor.readFirst || []));
+  return {
+    stage: plan.stage,
+    name: plan.name,
+    role: "director",
+    rolesInStage: plan.roles,
+    workstreamId: `${plan.stage}.omnigent-director`,
+    objective: `Coordinate ${plan.name} workstreams through one Omnigent director session.`,
+    readFirst,
+    allowedWrites,
+    artifact: null,
+    template: null,
+    goalCondition: plan.workstreams
+      .map((ws) => `pipeline/gates/${ws.descriptor.workstreamId}.json exists`)
+      .join("; "),
+    expectedGate: null,
+    requiredCapabilities: null,
+    changeId: plan.ctx.changeId,
+    toolBudget: null,
+    experimentalDirector: true,
+  };
+}
+
 function runStage(stageName, opts = {}) {
   const stageDef = getStage(stageName);
   if (!stageDef) {
@@ -426,6 +496,57 @@ async function runStageHeadless(stageName, opts = {}) {
     }
   }
   const gatesDir = getGatesDir(plan.ctx.cwd, plan.ctx.changeId);
+  if (opts.experimentalOmnigentDirector) {
+    if (plan.workstreams.length <= 1) {
+      throw new Error("--experimental-omnigent-director requires a multi-workstream stage.");
+    }
+    const nonOmnigent = plan.workstreams.filter((ws) => ws.host !== "omnigent");
+    if (nonOmnigent.length > 0) {
+      throw new Error(
+        "--experimental-omnigent-director requires every planned workstream to route to omnigent; " +
+        `non-omnigent workstreams: ${nonOmnigent.map((ws) => `${ws.role}:${ws.host}`).join(", ")}`,
+      );
+    }
+    return withSpan("pipeline.stage.omnigent_director", {
+      "devteam.stage": plan.stage,
+      "devteam.stage.name": stageName,
+      "devteam.workstream_count": plan.workstreams.length,
+      "devteam.experimental": "omnigent-director",
+    }, async () => {
+      const directorAdapter = plan.workstreams[0].adapter;
+      const descriptor = directorDescriptorForPlan(plan);
+      const prompt = renderOmnigentDirectorPrompt(plan);
+      process.stderr.write(`[devteam] experimental: dispatching ${plan.workstreams.length} workstreams → omnigent director (headless)\n`);
+      const r = await directorAdapter.invoke(descriptor, plan.ctx, prompt);
+      if (Array.isArray(r.writeViolations) && r.writeViolations.length > 0) {
+        for (const v of r.writeViolations) {
+          process.stderr.write(`[devteam] ⛔ write-audit: unauthorized write "${v}" (not in allowedWrites for ${descriptor.workstreamId})\n`);
+        }
+      }
+      const results = plan.workstreams.map((ws) => {
+        const expectedGate = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
+        const exists = fs.existsSync(expectedGate);
+        const childExit = r.exitCode === 0 && exists && (!r.writeViolations || r.writeViolations.length === 0) ? 0 : 1;
+        if (exists && Array.isArray(r.writeViolations) && r.writeViolations.length > 0) {
+          patchGateForWriteViolations(expectedGate, r.writeViolations);
+        }
+        return {
+          role: ws.role,
+          host: ws.host,
+          descriptor: ws.descriptor,
+          exitCode: childExit,
+          gatePath: exists ? expectedGate : null,
+          durationMs: r.durationMs,
+          timedOut: r.timedOut,
+          logPath: r.logPath,
+          director: true,
+          directorWorkstreamId: descriptor.workstreamId,
+          writeViolations: r.writeViolations || [],
+        };
+      });
+      return { stage: plan.stage, name: stageName, roles: plan.roles, results, ctx: plan.ctx, experimentalDirector: "omnigent" };
+    });
+  }
   return withSpan("pipeline.stage.headless", {
     "devteam.stage": plan.stage,
     "devteam.stage.name": stageName,
@@ -1333,6 +1454,7 @@ module.exports = {
   summary,
   buildDescriptor,
   computeDispatchPlan,
+  renderOmnigentDirectorPrompt,
   patchGateForUnpricedModel,
   ORCHESTRATOR_ID,
   rolesPath,
