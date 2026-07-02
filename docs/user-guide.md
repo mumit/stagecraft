@@ -763,6 +763,20 @@ hosts:
 
 If Omnigent prints a session or conversation identifier, Stagecraft writes an adapter-private sidecar at `pipeline/logs/<workstreamId>.omnigent.json`. The sidecar keeps IDs and policy verdict counts only; prompts, transcript excerpts, and raw policy lines are not copied into that metadata file, and gate JSON schemas remain host-neutral.
 
+For all-Omnigent multi-workstream stages, an experimental director prototype can
+dispatch the whole planned stage to one Omnigent session:
+
+```bash
+devteam stage build --headless --experimental-omnigent-director
+```
+
+This mode is intentionally narrow: every planned workstream must route to
+`omnigent`, `--headless` is required, and `--skip-completed` is not supported.
+The director receives the normal child workstream prompts and must write the
+normal child gates, such as `pipeline/gates/stage-04.backend.json` and
+`pipeline/gates/stage-04.qa.json`. Stagecraft does not consume a director gate;
+missing or malformed child gates block the stage exactly like ordinary fan-out.
+
 ### Using openai-compat (OpenAI-compatible APIs)
 
 `openai-compat` is Stagecraft's HTTP-native host adapter. Instead of spawning a CLI subprocess, it calls any provider that exposes an OpenAI-compatible Chat Completions API. That includes OpenAI, OpenRouter, Fireworks AI, Fuel iX, DeepSeek-compatible endpoints, Moonshot-compatible endpoints, and internal API gateways that expose `/v1/chat/completions`. No CLI to install.

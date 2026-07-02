@@ -1,8 +1,8 @@
 # Phase 24 — Omnigent Runtime Adapter
 
 Status: initial adapter, launch-profile, prompt-transport, policy-file bridge,
-and session-evidence slices implemented; director-mode design remains planned
-under parent issue
+session-evidence, and experimental director-prototype slices implemented under
+parent issue
 [#291](https://github.com/telus-labs/stagecraft/issues/291).
 
 ## Goal
@@ -21,10 +21,13 @@ That means:
 - use the existing routing config to send roles/stages to Omnigent
 - keep Stagecraft's Node orchestrator as the owner of stages, gates, bounded
   autonomy, retries, and validation
-- let Omnigent choose/run the underlying harness for a single prompt
+- let Omnigent choose/run the underlying harness for a single workstream prompt
+  by default, with an explicit experimental director mode for selected
+  all-Omnigent multi-workstream stages
 
 Replacing `core/orchestrator.js` with an Omnigent director is out of scope for
-this phase.
+this phase. The director prototype keeps Stagecraft in charge of stage planning,
+gate validation, merge behavior, retries, and `next()` decisions.
 
 ## Phase 24.1 — Minimal Adapter
 
@@ -162,15 +165,27 @@ Tracking issue: [#296](https://github.com/telus-labs/stagecraft/issues/296).
 
 Deliverables:
 
-- design only, then prototype behind an explicit experimental flag
-- one Omnigent director session may run several Stagecraft workstreams
-- director must write every expected `pipeline/gates/<stage>.<role>.json`
+- prototype behind `devteam stage <name> --headless --experimental-omnigent-director`
+- one Omnigent director session may run several Stagecraft workstreams when
+  every planned workstream routes to `omnigent`
+- director prompt includes each original child workstream prompt and every
+  expected `pipeline/gates/<stage>.<role>.json`
+- director results are mapped back onto normal child workstreams; no director
+  gate is written or consumed
 
 Acceptance:
 
 - existing per-workstream merge behavior remains unchanged
 - a missing or malformed child gate blocks the stage exactly as it does today
 - no change to the stable gate identity fields
+- `--skip-completed` is rejected with director mode until partial-resume
+  semantics are designed
+
+Verification:
+
+```bash
+node --test tests/orchestrator.test.js tests/cli.test.js tests/omnigent-adapter.test.js
+```
 
 ## Open Questions
 

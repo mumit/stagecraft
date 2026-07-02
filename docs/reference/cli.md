@@ -15,21 +15,22 @@ All flags are optional unless marked otherwise. `--help` is available on every c
 
 Render stage prompt(s) for <name>, or drive the host CLI non-interactively with --headless.
 
-| Flag             | Type   | Description                                         |
-| ---------------- | ------ | --------------------------------------------------- |
-| --feature        | string | Feature description passed to the prompt            |
-| --feature-file   | string | Read feature description from a UTF-8 text file     |
-| --track          | string | Override the pipeline track                         |
-| --cwd            | string | Target project directory                            |
-| --headless       | bool   | Drive host CLI non-interactively                    |
-| --timeout-ms     | number | Per-workstream wall-clock cap (default 600000)      |
-| --patch          | bool   | Scope build agents to patch items from a prior gate |
-| --from           | string | Stage to read patch items from (default: red-team)  |
-| --skip-completed | bool   | Skip workstreams whose gate file already exists     |
-| --workstream     | list   | Dispatch only this workstream (repeatable)          |
-| --force          | bool   | Bypass stoplist guard                               |
-| --json           | bool   | JSON output                                         |
-| --skip-preflight | bool   | Skip automatic preflight check before peer-review   |
+| Flag                             | Type   | Description                                                                 |
+| -------------------------------- | ------ | --------------------------------------------------------------------------- |
+| --feature                        | string | Feature description passed to the prompt                                    |
+| --feature-file                   | string | Read feature description from a UTF-8 text file                             |
+| --track                          | string | Override the pipeline track                                                 |
+| --cwd                            | string | Target project directory                                                    |
+| --headless                       | bool   | Drive host CLI non-interactively                                            |
+| --timeout-ms                     | number | Per-workstream wall-clock cap (default 600000)                              |
+| --patch                          | bool   | Scope build agents to patch items from a prior gate                         |
+| --from                           | string | Stage to read patch items from (default: red-team)                          |
+| --skip-completed                 | bool   | Skip workstreams whose gate file already exists                             |
+| --workstream                     | list   | Dispatch only this workstream (repeatable)                                  |
+| --experimental-omnigent-director | bool   | EXPERIMENTAL: run planned Omnigent workstreams through one director session |
+| --force                          | bool   | Bypass stoplist guard                                                       |
+| --json                           | bool   | JSON output                                                                 |
+| --skip-preflight                 | bool   | Skip automatic preflight check before peer-review                           |
 
 ### `devteam next [options]`
 

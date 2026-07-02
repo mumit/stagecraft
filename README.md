@@ -216,7 +216,7 @@ For `--host claude-code` in a target project:
 | `.claude/settings.local.json` | Hooks: validator on `Stop`/`SubagentStop`; approval-derivation on `PostToolUse`; secret-scan on `PreToolUse` |
 | `pipeline/gates/` | Empty workspace dir for gate files |
 
-For `--host codex` or `--host gemini-cli`: similar but rendered into the host's markdown prompt/skill directories, with no hooks or slash commands. For `--host omnigent`: rendered into `.omnigent/stagecraft/roles/`, `.omnigent/stagecraft/skills/`, plus a default `.omnigent/stagecraft/agent.yaml`. For `--host openai-compat`: rendered into `.openai-compat/prompts/roles/` and `.openai-compat/skills/`.
+For `--host codex` or `--host gemini-cli`: similar but rendered into the host's markdown prompt/skill directories, with no hooks or slash commands. For `--host omnigent`: rendered into `.omnigent/stagecraft/roles/`, `.omnigent/stagecraft/skills/`, plus a default `.omnigent/stagecraft/agent/config.yaml` bundle. For `--host openai-compat`: rendered into `.openai-compat/prompts/roles/` and `.openai-compat/skills/`.
 
 For multi-host (`--host claude-code,codex` or `--host claude-code,omnigent`): both surfaces installed side-by-side; the routing config decides who handles what at runtime.
 

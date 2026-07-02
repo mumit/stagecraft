@@ -179,6 +179,32 @@ does not keep raw transcript excerpts, and does not store raw policy lines.
 This gives operators a pointer back to the Omnigent session while preserving
 Stagecraft's host-neutral gate schemas and evidence export posture.
 
+## Experimental Director Mode
+
+By default, Stagecraft dispatches one Omnigent process per workstream. For
+all-Omnigent multi-workstream stages, an explicit prototype mode can ask one
+Omnigent director session to coordinate the planned child workstreams:
+
+```bash
+devteam stage build --headless --experimental-omnigent-director
+```
+
+Guardrails:
+
+- every planned workstream for the stage must route to `omnigent`
+- `--headless` is required
+- `--skip-completed` is rejected until partial-resume semantics are designed
+- the director must write the normal child gates, such as
+  `pipeline/gates/stage-04.backend.json` and
+  `pipeline/gates/stage-04.qa.json`
+- Stagecraft does not write or consume a director gate
+
+The director prompt embeds each original child workstream prompt and lists every
+expected child gate. After Omnigent exits, Stagecraft maps the result back onto
+the normal workstream result list and then uses the same merge, validation,
+write-audit, and `devteam next` behavior as ordinary fan-out. Missing or
+malformed child gates block the stage exactly as they do without director mode.
+
 Mixed routing:
 
 ```yaml
@@ -213,10 +239,11 @@ Parent tracking issue: [#291](https://github.com/telus-labs/stagecraft/issues/29
    capture Omnigent conversation/session IDs and policy verdict counts in an
    adapter-private log sidecar without adding host-specific fields to gate
    schemas.
-5. **Optional stage consolidation** ([#296](https://github.com/telus-labs/stagecraft/issues/296)). Explore a separate mode where one
-   Omnigent director session handles multiple Stagecraft workstreams and writes
-   every expected workstream gate. This must preserve the workstream gate
-   contract before it can replace Stagecraft fan-out.
+5. **Optional stage consolidation** ([#296](https://github.com/telus-labs/stagecraft/issues/296)). Implemented as an experimental prototype:
+   `--experimental-omnigent-director` lets one Omnigent director session handle
+   all planned workstreams for an all-Omnigent multi-workstream stage while
+   preserving the existing child gate contract. It does not replace Stagecraft
+   fan-out by default.
 
 ## Non-Goals
 
