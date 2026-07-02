@@ -26,7 +26,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [observability.md](observability.md) — OpenTelemetry span schema and collector setup
 - [evidence.md](evidence.md) — offline readiness, explicit resolution acceptance, and privacy-safe export
 - [reproducibility.md](reproducibility.md) — gate fingerprint fields, replay readiness, drift detection
-- [omnigent-runtime.md](omnigent-runtime.md) — Omnigent as a Stagecraft host runtime: adapter boundary, shipped slice, and phased policy/session bridge
+- [omnigent-runtime.md](omnigent-runtime.md) — Omnigent as a Stagecraft host runtime: adapter boundary, shipped slice, experimental director mode, and Phase 25 hardening pointer
 - [runbooks/escalation.md](runbooks/escalation.md) — what to read and decide when `devteam next` says `resolve-escalation`
 - [runbooks/fix-and-retry.md](runbooks/fix-and-retry.md) — fix-and-retry halt: red-team, QA, pre-review, peer-review (11 cases)
 - [runbooks/open-followups.md](runbooks/open-followups.md) — extract ticket stubs from `open_followups[]` after a run
@@ -51,7 +51,8 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [adr/014-docker-headless-runner.md](adr/014-docker-headless-runner.md) — Docker runner trust boundary and packaging decision
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
-- [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — phased plan for Omnigent runtime integration
+- [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration
+- [../plans/phase-25-omnigent-director-hardening.md](../plans/phase-25-omnigent-director-hardening.md) — proposed and parked plan for hardening the Omnigent director prototype
 - [spec-authoring.md](spec-authoring.md) — writing AC-N criteria and scaffolding the spec file
 - [migration-safety.md](migration-safety.md) — veto criteria, gate fields, and the migration heuristic
 - [red-team.md](red-team.md) — 10 attack surfaces, gate fields, routing, and how it differs from security review
