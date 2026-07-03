@@ -72,6 +72,10 @@ The default manifest cap is measured in
 [`docs/reference/prompt-budget.md`](reference/prompt-budget.md). Treat the cap
 as part of the prompt budget: increasing it should be justified by better
 first-try pass rate, blocker recall, or fewer structural-input failures.
+Autonomous runs also record `prompt_bytes`, `context_manifest_files`, and
+`context_manifest_omitted` as numeric run-log metadata, so prompt slimming can be
+compared against routing outcomes without storing prompt text or file paths in
+durable dispatch observations.
 
 ## Persistent Sessions
 

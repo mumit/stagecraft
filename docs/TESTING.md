@@ -63,7 +63,7 @@ results are never reused, and uncertain lookup falls back to execution. Set
 |---|---|
 | `contract.test.js` | Cross-artifact consistency — every stage in `stages.js` has a matching schema, every role has a matching brief, every schema's fields align with `rules/gates-core.md` and per-stage `rules/stage-NN.md`. |
 | `gate-validator.test.js` | Validator exit codes (PASS=0, FAIL=2, ESCALATE=3, malformed=1), bypassed-escalation detection, retry-protocol enforcement, malformed reinforced-lines surfacing. |
-| `orchestrator.test.js` | `runStage` decomposition, `buildDescriptor` with `roleWrites` + `subagent` overrides, `mergeWorkstreamGates` aggregation (ESCALATE > FAIL > WARN > PASS), `summary` rendering. |
+| `orchestrator.test.js` | `runStage` decomposition, changed-file manifest prompt facts, `buildDescriptor` with `roleWrites` + `subagent` overrides, `mergeWorkstreamGates` aggregation (ESCALATE > FAIL > WARN > PASS), `summary` rendering. |
 | `next.test.js` | All `next()` scenarios: empty, run-stage, continue-stage, merge, fix-and-retry, resolve-escalation, pipeline-complete, conditional skip, track filter, `--json`. |
 | `right-sizing.test.js` | High-confidence auto-track guardrails, path-derived active-role candidates, deterministic applicability skips, and `force_stages` override behavior. |
 | `router.test.js` | Resolution precedence (`stages > roles > default_host`), missing-adapter error path, multi-host install. |
@@ -79,8 +79,8 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `observability.test.js` | OpenTelemetry spans emitted at every instrumented call site, with expected attributes, via `InMemorySpanExporter`. |
 | `context-manifest.test.js` | Changed-file manifest collection: Git porcelain parsing, process-path exclusions, byte/digest facts, no content leakage, manifest caps. |
 | `secret-scan.test.js` | PreToolUse hook: pattern detection, false-positive guards, magic-comment override, path allowlist, end-to-end stdin parsing, snippet redaction. |
-| `evidence-status.test.js` | Bounded evidence readers, aggregate-only readiness analysis, malformed/oversized input handling, bounded isolation, and read-only CLI behavior. |
-| `evidence-export.test.js` | Pseudonymous identity lifecycle, consent and exclusive writes, strict bundle validation/digests, sparse-cell suppression, hostile-value exclusion, symlink refusal, portfolio de-duplication, and cross-project readiness. |
+| `evidence-status.test.js` | Bounded evidence readers, aggregate-only readiness analysis, prompt-byte routing aggregates, malformed/oversized input handling, bounded isolation, and read-only CLI behavior. |
+| `evidence-export.test.js` | Pseudonymous identity lifecycle, consent and exclusive writes, strict bundle validation/digests, prompt-byte aggregate export, sparse-cell suppression, hostile-value exclusion, symlink refusal, portfolio de-duplication, and cross-project readiness. |
 | `fanout.test.js` | `computeDispatchPlan` correctness with/without fanout; end-to-end `runStage` producing N×M workstream prompts; `mergeWorkstreamGates` aggregation across all fanout gates. |
 | `dashboard.test.js` | Gate→row expansion (merged stage gates split into workstream rows); per-host / per-role attribution; multi-project rollup; time-window filter; ASCII chart + JSON output. |
 | `performance.test.js` | `scripts/performance.js`: workstream expansion, per-(role, host) aggregation, first-try pass rate, cost/pass, p50/p95 duration, retry-adjusted completion, Markdown/JSON output. |
@@ -92,7 +92,7 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `budget.test.js` | `scripts/budget.js`: `parseBudgetMd` round-trip; config parsing; init/update/check sequence; contract-F gate on escalation. |
 | `release.test.js` | `scripts/release.js notes` extraction: `[Unreleased]` default, middle section, last section (no trailing header to anchor to), missing-version error, blank-line preservation, trailing `---` stripping. |
 | `headless.test.js` | `core/adapters/headless.js`: command resolution, env override, missing-command rejection, exit-code propagation, spawn-ENOENT message, gatePath detection, EPIPE swallowing, whitespace-split. |
-| `run.test.js` | `devteam run` driver: happy-path loop, auto-fix `code-defect` retry, transient dispatch retry with backoff, `--auto-rule` escalation resolution, consequence-ceiling halt, `--until` boundary stop. |
+| `run.test.js` | `devteam run` driver: happy-path loop, workstream lifecycle/prompt-byte telemetry, auto-fix `code-defect` retry, transient dispatch retry with backoff, `--auto-rule` escalation resolution, consequence-ceiling halt, `--until` boundary stop. |
 | `scheduler.test.js` | Per-host workstream scheduler: host/default limits, stable result ordering, queue-depth and queue-time behavior. |
 | `classify.test.js` | `classifyDispatch` failure-class derivation: `code-defect`, `judgment-gate`, `state-corruption`, `external-blocked`, `transient`, `structural-input`. |
 | `escalation.test.js` | Escalation-handling end-to-end: `devteam ruling` dispatch, `fix-escalation` encoding, auto-rule grant/deny, `PRINCIPAL-CANNOT-DECIDE` halt. |

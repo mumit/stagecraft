@@ -43,6 +43,7 @@ function copyRouting(row) {
     pass: row.pass, warn: row.warn, fail: row.fail, escalate: row.escalate,
     cost_observations: row.cost_observations, total_cost_usd: row.total_cost_usd,
     duration_observations: row.duration_observations, total_duration_ms: row.total_duration_ms,
+    prompt_observations: row.prompt_observations || 0, total_prompt_bytes: row.total_prompt_bytes || 0,
   };
 }
 
@@ -246,8 +247,8 @@ function validateBundle(bundle, opts = {}) {
   }
   validateRows(bundle.routing, {
     categories: ["role", "host", "model"],
-    counts: ["gate_observations", "pass", "warn", "fail", "escalate", "cost_observations", "duration_observations"],
-    numbers: ["total_cost_usd", "total_duration_ms"],
+    counts: ["gate_observations", "pass", "warn", "fail", "escalate", "cost_observations", "duration_observations", "prompt_observations"],
+    numbers: ["total_cost_usd", "total_duration_ms", "total_prompt_bytes"],
   }, "routing", errors);
   validateRows(bundle.recovery, {
     categories: ["stage", "failure_class"], counts: ["observations", "runs"],

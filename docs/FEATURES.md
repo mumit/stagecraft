@@ -299,7 +299,7 @@ Standard OTel spans for every workstream, compatible with any collector. See `do
 - Latency is exposed as p50/p95 and retry-adjusted completion time, but only breaks ties after first-try quality and cost
 - `--apply` rewrites the config after a confirmation prompt; `--yes` skips the prompt for CI
 - Remote capacity and prompt-cache policy lives in [`docs/capacity-strategy.md`](capacity-strategy.md); mutable shared model sessions across roles or projects are rejected by default
-- Stage prompts include a bounded changed-file manifest (path/status/bytes/SHA-256 only) so agents inspect changed file bodies on demand instead of receiving repeated file contents up front
+- Stage prompts include a bounded changed-file manifest (path/status/bytes/SHA-256 only) so agents inspect changed file bodies on demand instead of receiving repeated file contents up front; run-log observations record prompt byte counts and manifest counts as numeric telemetry
 
 ### Project memory — the pipeline remembers what it has seen
 

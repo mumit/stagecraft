@@ -149,6 +149,7 @@ function run(positional, _flags) {
         const started = ws.started_at ? Date.parse(ws.started_at) : null;
         const elapsed = started ? ageStr(now - started) : "—";
         process.stdout.write(`    - ${workstreamText(ws)} (${ws.workstream_id || "—"}, ${elapsed})\n`);
+        if (ws.prompt_bytes != null) process.stdout.write(`      prompt: ${ws.prompt_bytes} bytes, manifest files: ${ws.context_manifest_files ?? 0}\n`);
         if (ws.log_path) process.stdout.write(`      log:  ${ws.log_path}\n`);
         if (ws.gate_path) process.stdout.write(`      gate: ${ws.gate_path}\n`);
       }
@@ -164,6 +165,7 @@ function run(positional, _flags) {
         : `exit ${ws.exit_code}`;
       process.stdout.write(`    ${workstreamText(ws)} (${ws.workstream_id || "—"}, ${outcome})\n`);
       if (ws.duration_ms != null) process.stdout.write(`      duration: ${ws.duration_ms}ms\n`);
+      if (ws.prompt_bytes != null) process.stdout.write(`      prompt:   ${ws.prompt_bytes} bytes, manifest files: ${ws.context_manifest_files ?? 0}\n`);
       if (ws.log_path) process.stdout.write(`      log:      ${ws.log_path}\n`);
       if (ws.gate_path) process.stdout.write(`      gate:     ${ws.gate_path}\n`);
     }

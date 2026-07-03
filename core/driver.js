@@ -169,8 +169,14 @@ function dispatchObservation(base, result) {
   const cost = nonNegativeNumber(gate && gate.cost_usd);
   const duration = nonNegativeNumber(gate && gate.duration_ms)
     ?? nonNegativeNumber(result.durationMs);
+  const promptBytes = nonNegativeNumber(result.promptBytes);
+  const contextManifestFiles = nonNegativeNumber(result.contextManifestFiles);
+  const contextManifestOmitted = nonNegativeNumber(result.contextManifestOmitted);
   if (cost !== null) observation.cost_usd = cost;
   if (duration !== null) observation.duration_ms = duration;
+  if (promptBytes !== null) observation.prompt_bytes = promptBytes;
+  if (contextManifestFiles !== null) observation.context_manifest_files = contextManifestFiles;
+  if (contextManifestOmitted !== null) observation.context_manifest_omitted = contextManifestOmitted;
   return observation;
 }
 
@@ -1551,6 +1557,9 @@ async function run(opts = {}) {
               workstream_id: key,
               gate_path: normalized.gate_path,
               log_path: normalized.log_path,
+              prompt_bytes: event.prompt_bytes ?? null,
+              context_manifest_files: event.context_manifest_files ?? null,
+              context_manifest_omitted: event.context_manifest_omitted ?? null,
               started_at: nowIso(),
             };
           } else if (event.type === "workstream-finished") {
@@ -1564,6 +1573,9 @@ async function run(opts = {}) {
               gate_path: normalized.gate_path,
               log_path: normalized.log_path,
               duration_ms: event.duration_ms ?? null,
+              prompt_bytes: event.prompt_bytes ?? null,
+              context_manifest_files: event.context_manifest_files ?? null,
+              context_manifest_omitted: event.context_manifest_omitted ?? null,
               exit_code: event.exit_code ?? null,
               timed_out: Boolean(event.timed_out),
               skipped: Boolean(event.skipped),

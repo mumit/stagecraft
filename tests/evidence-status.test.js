@@ -241,6 +241,7 @@ describe("evidence analyzer", () => {
           status: "PASS",
           cost_usd: 0.1,
           duration_ms: 100,
+          prompt_bytes: 2048,
           reason: "excluded free-form value",
         });
       }
@@ -260,6 +261,8 @@ describe("evidence analyzer", () => {
 
     assert.equal(extractDurableRouting(events).length, 2);
     assert.equal(report.routing.length, 2);
+    assert.ok(report.routing.every((row) => row.prompt_observations === 5));
+    assert.ok(report.routing.every((row) => row.total_prompt_bytes === 10240));
     assert.ok(report.routing.every((row) => row.host !== "legacy-host"));
     const routingReadiness = report.readiness.find(
       (item) => item.capability === "d5-continuous-routing",

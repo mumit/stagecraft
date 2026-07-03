@@ -43,7 +43,7 @@ function evidenceReport(options = {}) {
       events.push({
         outcome: "dispatch-observation", stage: "stage-04", role: "backend", host,
         model: `${host}-model`, status: "PASS", gate_written: true, timed_out: false,
-        cost_usd: 0.2, duration_ms: 100,
+        cost_usd: 0.2, duration_ms: 100, prompt_bytes: 4000,
       });
     }
     if (index < 3) {
@@ -147,6 +147,8 @@ describe("evidence bundle", () => {
     assert.equal(sparseBundle.suppressed_observations, 1);
     const denseBundle = createBundle(evidenceReport(), projectRef("2".repeat(32)));
     assert.equal(denseBundle.routing.length, 2);
+    assert.ok(denseBundle.routing.every((row) => row.prompt_observations === 5));
+    assert.ok(denseBundle.routing.every((row) => row.total_prompt_bytes === 20000));
     assert.equal(denseBundle.resolutions[0].observations, 5);
     assert.equal(denseBundle.resolutions[0].derivable, 4);
     assert.deepEqual(validateBundle(denseBundle, { verifyDigest: true }), []);
