@@ -91,6 +91,26 @@ function toolBudgetSection(toolBudget, enforcementLevel) {
   ].join("\n");
 }
 
+function renderContextManifest(lines, descriptor) {
+  const manifest = descriptor.contextManifest;
+  if (!manifest || !Array.isArray(manifest.files) || manifest.files.length === 0) return;
+
+  lines.push("## Changed-file manifest (inspect on demand)");
+  lines.push("Only paths, byte sizes, and SHA-256 digests are preloaded here. Read file contents only when they are relevant to this workstream.");
+  for (const file of manifest.files) {
+    const facts = [
+      `status=${file.status || "?"}`,
+      file.bytes === null || file.bytes === undefined ? "bytes=missing" : `bytes=${file.bytes}`,
+      file.sha256 || "sha256=missing",
+    ];
+    lines.push(`- ${file.path} (${facts.join(", ")})`);
+  }
+  if (manifest.truncated) {
+    lines.push(`- ... ${manifest.omitted_count} additional changed file(s) omitted from the prompt; inspect git status if needed.`);
+  }
+  lines.push("");
+}
+
 // Append the gate footer to a partially-assembled prompt. This is the
 // last thing every adapter pushes before returning lines.join("\n").
 // It writes:
@@ -131,4 +151,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderPatchBlock, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderPatchBlock, toolBudgetSection };

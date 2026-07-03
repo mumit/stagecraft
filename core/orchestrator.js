@@ -22,6 +22,7 @@ const { classifyGate, MAX_RETRIES_DEFAULT } = require("./gates/classify");
 const { pricingFor } = require("./pricing");
 const { getRecipe } = require("./pipeline/fix-recipes");
 const { deterministicSkipForStage } = require("./pipeline/right-sizing");
+const { collectChangedFileManifest } = require("./context-manifest");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
@@ -268,6 +269,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // G10: per-role tool budget declared by the adapter (e.g. ["Read","Glob","Grep"]).
     // null means the adapter declared no budget (full host surface applies).
     toolBudget: opts.toolBudget ?? null,
+    contextManifest: opts.contextManifest || null,
     // When set, all workstreams of this stage dispatch to the same
     // subagent regardless of role (used by peer-review where the
     // workstreams are areas being reviewed but the dispatched agent
@@ -428,6 +430,7 @@ function runStage(stageName, opts = {}) {
     "devteam.fanout": effectivePlan.some((p) => p.fanout) || undefined,
     "devteam.feature": ctx.feature || undefined,
   }, () => {
+    const contextManifest = collectChangedFileManifest(ctx.cwd);
     const dispatches = effectivePlan.map((entry) => withSpan("pipeline.workstream", {
       "devteam.stage": stageDef.stage,
       "devteam.workstream.role": entry.role,
@@ -453,7 +456,7 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const descriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent });
+      const descriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, contextManifest });
       const prompt = withSpan("adapter.renderStagePrompt", {
         "devteam.host": hostName,
         "devteam.stage": stageDef.stage,

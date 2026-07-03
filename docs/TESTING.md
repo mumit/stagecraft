@@ -77,6 +77,7 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `schemas.test.js` | Each `stage-NN.schema.json` is a valid JSON Schema 2020-12; example gates in `rules/stage-NN.md` validate against their declared schema. |
 | `cli.test.js` | `bin/devteam` exit codes for known/unknown commands; `--json` outputs valid JSON; `--cwd` honored uniformly. |
 | `observability.test.js` | OpenTelemetry spans emitted at every instrumented call site, with expected attributes, via `InMemorySpanExporter`. |
+| `context-manifest.test.js` | Changed-file manifest collection: Git porcelain parsing, process-path exclusions, byte/digest facts, no content leakage, manifest caps. |
 | `secret-scan.test.js` | PreToolUse hook: pattern detection, false-positive guards, magic-comment override, path allowlist, end-to-end stdin parsing, snippet redaction. |
 | `evidence-status.test.js` | Bounded evidence readers, aggregate-only readiness analysis, malformed/oversized input handling, bounded isolation, and read-only CLI behavior. |
 | `evidence-export.test.js` | Pseudonymous identity lifecycle, consent and exclusive writes, strict bundle validation/digests, sparse-cell suppression, hostile-value exclusion, symlink refusal, portfolio de-duplication, and cross-project readiness. |
@@ -84,6 +85,7 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `dashboard.test.js` | Gate→row expansion (merged stage gates split into workstream rows); per-host / per-role attribution; multi-project rollup; time-window filter; ASCII chart + JSON output. |
 | `performance.test.js` | `scripts/performance.js`: workstream expansion, per-(role, host) aggregation, first-try pass rate, cost/pass, p50/p95 duration, retry-adjusted completion, Markdown/JSON output. |
 | `routing-suggest.test.js` | `scripts/routing-suggest.js`: recommendation thresholds, quality-first scoring, cost and latency tiebreakers, YAML patch rendering. |
+| `render-helpers.test.js` | Shared prompt rendering helpers: allowed-write captions, changed-file manifest section, gate footer, cost telemetry hint, system-prompt hashing. |
 | `pr-publish.test.js` | Gate→check-run translation: PASS→success / WARN→neutral / FAIL+ESCALATE→failure; blockers + warnings + workstreams in summary; auto-detect repo + PR; `--dry-run`. |
 | `ui.test.js` | Pure helpers, route correctness, path-traversal rejection, SSE plumbing. |
 | `memory.test.js` | Ingest, query, stats, clear, reindex; chunker by level-2 heading; `stagecraft-no-memory` opt-out; embedder mismatch warning; stub embedder for offline CI. |

@@ -647,7 +647,7 @@ Routing precedence: **`stages` → `roles` → `default_host`**. The stage-level
 
 When a stage with multiple workstreams runs, each workstream is independently routed. `devteam stage build` (four workstreams: backend, frontend, platform, QA) with the config above routes all four to Codex. `devteam stage design` (Principal role) routes to Claude Code. The gate merge is host-agnostic. The orchestrator reads JSON files, and the merged gate's `workstreams[]` array records `"host"` per row so you can see which CLI handled what.
 
-Use `npm run performance` and `npm run routing:suggest` after several real runs to compare hosts by first-try pass rate, cost per pass, p50/p95 duration, and retry-adjusted completion time. Recommendations remain quality-first: latency only breaks ties after first-try quality and cost. See [`docs/capacity-strategy.md`](capacity-strategy.md) before moving work to remote capacity or enabling provider prompt caches.
+Use `npm run performance` and `npm run routing:suggest` after several real runs to compare hosts by first-try pass rate, cost per pass, p50/p95 duration, and retry-adjusted completion time. Recommendations remain quality-first: latency only breaks ties after first-try quality and cost. Stage prompts include a compact changed-file manifest with paths, byte sizes, and SHA-256 digests; agents should read file bodies on demand for their workstream instead of relying on preloaded changed-file contents. See [`docs/capacity-strategy.md`](capacity-strategy.md) before moving work to remote capacity or enabling provider prompt caches.
 
 ### Choosing models within a single host
 

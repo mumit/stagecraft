@@ -64,6 +64,19 @@ Advisories are non-blocking (they print but do not fail CI).
 | Stage rule file    | 8 KB    |
 | AGENTS.md          | 10 KB   |
 
+## Runtime changed-file manifest
+
+Each dispatch may also include a compact changed-file manifest with paths, byte sizes,
+and SHA-256 digests only. It is intentionally excluded from the framework growth guard
+because it is project/runtime dependent, but it is bounded and measurable.
+
+| Limit | Estimated bytes | Tokens~ |
+| ----- | --------------- | ------- |
+| 40 files | 5,988 | 1497 |
+
+This replaces eager changed-file content loading: agents inspect file bodies on demand
+when the manifest shows a relevant path or digest change.
+
 <!-- budget-data
 stage-01,22265
 stage-02,26503

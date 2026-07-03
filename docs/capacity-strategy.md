@@ -60,6 +60,19 @@ and role content hashes, and selected project context digests.
 Do not use a cache hit as evidence that a role read project state. Agents must
 still receive current artifact pointers and changed-file manifests for the run.
 
+## Changed-File Manifests
+
+Stagecraft prompts include a bounded changed-file manifest when Git status is
+available. The manifest contains only path, status, byte size, and SHA-256
+digest facts; it does not preload file contents. This gives each role a compact
+map of the current change surface while preserving on-demand reads for files
+that matter to that workstream.
+
+The default manifest cap is measured in
+[`docs/reference/prompt-budget.md`](reference/prompt-budget.md). Treat the cap
+as part of the prompt budget: increasing it should be justified by better
+first-try pass rate, blocker recall, or fewer structural-input failures.
+
 ## Persistent Sessions
 
 Mutable shared model sessions are rejected by default across roles and projects.
@@ -83,6 +96,7 @@ first-try pass rate do not regress.
 Prompt slimming is acceptable only when measured against quality:
 
 - before/after prompt bytes by stage and role
+- changed-file manifest bytes versus eager changed-file content loading
 - first-try pass rate by `(role, host)`
 - blocker recall for review and verification stages
 - retry-adjusted completion time
