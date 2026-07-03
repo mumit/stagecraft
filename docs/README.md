@@ -24,6 +24,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [reference/environment-variables.md](reference/environment-variables.md) — all environment variables Stagecraft reads, grouped by subsystem
 - [memory.md](memory.md) — persistent project memory: embedder options and shared store
 - [observability.md](observability.md) — OpenTelemetry span schema and collector setup
+- [capacity-strategy.md](capacity-strategy.md) — latency-aware routing, remote capacity, prompt caching, and persistent-session policy
 - [evidence.md](evidence.md) — offline readiness, explicit resolution acceptance, and privacy-safe export
 - [reproducibility.md](reproducibility.md) — gate fingerprint fields, replay readiness, drift detection
 - [omnigent-runtime.md](omnigent-runtime.md) — Omnigent as a Stagecraft host runtime: adapter boundary, shipped slice, experimental director mode, and Phase 25 hardening pointer

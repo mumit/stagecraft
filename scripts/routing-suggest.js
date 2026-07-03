@@ -18,7 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const yaml = require("js-yaml");
 const { loadGatesFrom, filterSince } = require("./dashboard");
-const { aggregatePerformance, summarize } = require("./performance");
+const { aggregatePerformance, summarize, formatDuration } = require("./performance");
 const { formatUsd } = require("../core/pricing");
 
 // Minimum dispatches per (role, host) pair before we'll consider it for a
@@ -59,12 +59,14 @@ function parseArgs(argv) {
 }
 
 // Score a (role, host) summary for routing decisions. Higher is better.
-// Currently: pass_rate_first_try is the primary signal; cost_per_pass is
-// the tiebreaker. When cost data is missing, fall back to pass rate alone.
+// Pass rate is always primary. Cost is the first tiebreaker; retry-adjusted
+// latency is only a second tiebreaker. That keeps routing quality-first:
+// a faster host cannot win unless it is quality-equivalent under policy.
 function scoreFor(summary) {
   return {
     passRate: summary.pass_rate_first_try,
     costPerPass: summary.cost_per_pass_usd === null ? Infinity : summary.cost_per_pass_usd,
+    retryAdjustedMs: summary.retry_adjusted_completion_ms === null ? Infinity : summary.retry_adjusted_completion_ms,
   };
 }
 
@@ -72,7 +74,30 @@ function scoreFor(summary) {
 function compareScores(a, b) {
   if (a.passRate !== b.passRate) return a.passRate - b.passRate;
   // Lower cost_per_pass wins on a pass-rate tie.
-  return b.costPerPass - a.costPerPass;
+  if (a.costPerPass !== b.costPerPass) return b.costPerPass - a.costPerPass;
+  // Lower retry-adjusted completion time wins only after quality and cost tie.
+  if (a.retryAdjustedMs === b.retryAdjustedMs) return 0;
+  return b.retryAdjustedMs - a.retryAdjustedMs;
+}
+
+function routingMetrics(s) {
+  return {
+    host: s.host,
+    dispatches: s.total_dispatches,
+    pass_rate_first_try: s.pass_rate_first_try,
+    cost_per_pass_usd: s.cost_per_pass_usd,
+    mean_duration_ms: s.mean_duration_ms ?? null,
+    p50_duration_ms: s.p50_duration_ms ?? null,
+    p95_duration_ms: s.p95_duration_ms ?? null,
+    retry_adjusted_completion_ms: s.retry_adjusted_completion_ms ?? null,
+  };
+}
+
+function metricsText(s) {
+  return `${s.pass_rate_first_try.toFixed(0)}% first-try, ` +
+    `${formatUsd(s.cost_per_pass_usd)} per pass, ` +
+    `p95 ${formatDuration(s.p95_duration_ms ?? null)}, ` +
+    `retry-adjusted ${formatDuration(s.retry_adjusted_completion_ms ?? null)}`;
 }
 
 // Build a per-role recommendation table. For each role observed:
@@ -115,6 +140,8 @@ function buildRecommendations(summaries, currentRouting, opts) {
           host: s.host,
           pass_rate_first_try: s.pass_rate_first_try,
           cost_per_pass_usd: s.cost_per_pass_usd,
+          p95_duration_ms: s.p95_duration_ms ?? null,
+          retry_adjusted_completion_ms: s.retry_adjusted_completion_ms ?? null,
         })),
       });
       continue;
@@ -134,6 +161,8 @@ function buildRecommendations(summaries, currentRouting, opts) {
             host: s.host,
             pass_rate_first_try: s.pass_rate_first_try,
             cost_per_pass_usd: s.cost_per_pass_usd,
+            p95_duration_ms: s.p95_duration_ms ?? null,
+            retry_adjusted_completion_ms: s.retry_adjusted_completion_ms ?? null,
           })),
         });
         continue;
@@ -142,21 +171,23 @@ function buildRecommendations(summaries, currentRouting, opts) {
 
     // Recommend the swap.
     const incumbentDesc = incumbent
-      ? `vs incumbent ${current} at ${incumbent.pass_rate_first_try.toFixed(0)}% / ${formatUsd(incumbent.cost_per_pass_usd)} per pass`
+      ? `vs incumbent ${current} at ${metricsText(incumbent)}`
       : `(current host "${current}" had no recorded dispatches; first-time recommendation)`;
     recs.push({
       role,
       current_host: current,
       suggested_host: winner.host,
-      reason: `${winner.host} passes first-try ${winner.pass_rate_first_try.toFixed(0)}% at ${formatUsd(winner.cost_per_pass_usd)} per pass, ${incumbentDesc}`,
+      reason: `${winner.host} has ${metricsText(winner)}, ${incumbentDesc}`,
       data: {
-        winner: { host: winner.host, dispatches: winner.total_dispatches, pass_rate_first_try: winner.pass_rate_first_try, cost_per_pass_usd: winner.cost_per_pass_usd },
-        incumbent: incumbent ? { host: incumbent.host, dispatches: incumbent.total_dispatches, pass_rate_first_try: incumbent.pass_rate_first_try, cost_per_pass_usd: incumbent.cost_per_pass_usd } : null,
+        winner: routingMetrics(winner),
+        incumbent: incumbent ? routingMetrics(incumbent) : null,
       },
       alternates: ranked.slice(2).map((s) => ({
         host: s.host,
         pass_rate_first_try: s.pass_rate_first_try,
         cost_per_pass_usd: s.cost_per_pass_usd,
+        p95_duration_ms: s.p95_duration_ms ?? null,
+        retry_adjusted_completion_ms: s.retry_adjusted_completion_ms ?? null,
       })),
     });
   }
@@ -200,7 +231,7 @@ function renderRecommendations(recs) {
       if (r.alternates.length > 0) {
         out.push(`Other alternates with sufficient data:`);
         for (const alt of r.alternates) {
-          out.push(`- ${alt.host}: ${alt.pass_rate_first_try.toFixed(0)}% first-try, ${formatUsd(alt.cost_per_pass_usd)} per pass`);
+          out.push(`- ${alt.host}: ${alt.pass_rate_first_try.toFixed(0)}% first-try, ${formatUsd(alt.cost_per_pass_usd)} per pass, p95 ${formatDuration(alt.p95_duration_ms ?? null)}, retry-adjusted ${formatDuration(alt.retry_adjusted_completion_ms ?? null)}`);
         }
         out.push("");
       }
@@ -305,11 +336,13 @@ Usage:
 
 How it works:
   - Reads pipeline/gates/ from each --from project (default: cwd).
-  - Aggregates per-(role, host) pass-rate-first-try + cost-per-pass.
+  - Aggregates per-(role, host) pass-rate-first-try, cost-per-pass,
+    p50/p95 duration, and retry-adjusted completion time.
   - For each role: if a different host has ≥ --min-dispatches AND beats
     the current host by ≥ --min-delta percentage points, suggest the swap.
   - Output: a YAML diff (default) or JSON. --apply rewrites the config
-    file in place after confirmation.
+    file in place after confirmation. Latency is evidence and tie-breaker
+    only; routing never trades away first-try quality outside this policy.
 
 Intent filtering (ADR-009 §Decision.7 — advisory only):
   --intent repair limits analysis to gates from repair-mode runs.

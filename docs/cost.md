@@ -81,8 +81,8 @@ Lookup is exact-match first, then prefix-match, so a dated model id like `claude
 
 D6 is the data layer; **D4 and D5 are now built** and turn the data into decisions:
 
-- **D4 — Per-role per-model performance scores** (`npm run performance` / `scripts/performance.js`). For each `(role, host)` pair, computes first-try pass rate, mean retries, mean cost, **cost per pass** (unit cost of a successful dispatch). Headlines pairwise comparisons when 2+ hosts are seen for a role.
-- **D5 — Adaptive routing** (`npm run routing:suggest` / `scripts/routing-suggest.js`). Reads the same gates, compares against the current `.devteam/config.yml`, proposes role-level routing changes. Minimum dispatch threshold (5 default) + minimum pass-rate delta (10pp default) prevent recommendations on noisy data. Outputs a YAML diff by default; `--apply` rewrites the config after a confirmation prompt.
+- **D4 — Per-role per-model performance scores** (`npm run performance` / `scripts/performance.js`). For each `(role, host)` pair, computes first-try pass rate, mean retries, mean cost, **cost per pass** (unit cost of a successful dispatch), p50/p95 duration, and retry-adjusted completion time. Headlines pairwise comparisons when 2+ hosts are seen for a role.
+- **D5 — Adaptive routing** (`npm run routing:suggest` / `scripts/routing-suggest.js`). Reads the same gates, compares against the current `.devteam/config.yml`, proposes role-level routing changes. Minimum dispatch threshold (5 default) + minimum pass-rate delta (10pp default) prevent recommendations on noisy data. Latency breaks ties only after first-try quality and cost; `--apply` rewrites the config after a confirmation prompt.
 
 Together they answer which model performs best at which role, based on measurement rather than assumption. Try it:
 

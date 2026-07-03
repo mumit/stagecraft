@@ -104,6 +104,10 @@ test("summarize: computes cost aggregates when gates carry cost data", () => {
   assert.ok(Math.abs(s.mean_cost_usd - (0.23 / 3)) < 0.001);
   // cost_per_pass = total / (pass+warn) = 0.23 / 2 = 0.115
   assert.ok(Math.abs(s.cost_per_pass_usd - 0.115) < 0.001);
+  assert.equal(s.mean_duration_ms, 28000 / 3);
+  assert.equal(s.p50_duration_ms, 10000);
+  assert.equal(s.p95_duration_ms, 12000);
+  assert.equal(s.retry_adjusted_completion_ms, 11000);
   assert.deepEqual(s.models, ["gpt-5"]);
 });
 

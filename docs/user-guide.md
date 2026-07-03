@@ -647,6 +647,8 @@ Routing precedence: **`stages` → `roles` → `default_host`**. The stage-level
 
 When a stage with multiple workstreams runs, each workstream is independently routed. `devteam stage build` (four workstreams: backend, frontend, platform, QA) with the config above routes all four to Codex. `devteam stage design` (Principal role) routes to Claude Code. The gate merge is host-agnostic. The orchestrator reads JSON files, and the merged gate's `workstreams[]` array records `"host"` per row so you can see which CLI handled what.
 
+Use `npm run performance` and `npm run routing:suggest` after several real runs to compare hosts by first-try pass rate, cost per pass, p50/p95 duration, and retry-adjusted completion time. Recommendations remain quality-first: latency only breaks ties after first-try quality and cost. See [`docs/capacity-strategy.md`](capacity-strategy.md) before moving work to remote capacity or enabling provider prompt caches.
+
 ### Choosing models within a single host
 
 If you're using only Claude Code and want different models per role, you don't need multi-host at all. The installed agent files already have model tiers set:
@@ -1564,7 +1566,7 @@ What to keep vs. cut:
 
 Note: track restarts don't reset `context.md`. Running `--track quick` on top of a completed full-track run reads the same file in full. Run `devteam compact` then prune any remaining human-authored stale content before starting a new feature, or switch to `isolation: bounded` (see below) so each feature gets its own context.
 
-**2. Role routing.** Opus costs ~5× more per token than Sonnet, and Sonnet costs more than Haiku. Route expensive models to roles that require sustained reasoning (Principal and Security); use cheaper models for build workstreams. See [Multi-host setups](#multi-host-setups).
+**2. Role routing.** Opus costs ~5× more per token than Sonnet, and Sonnet costs more than Haiku. Route expensive models to roles that require sustained reasoning (Principal and Security); use cheaper models for build workstreams. Use `npm run routing:suggest` to compare first-try pass rate, cost per pass, p95 duration, and retry-adjusted completion time before changing defaults. See [Multi-host setups](#multi-host-setups).
 
 **3. Stage selection.** Stages like `verification-beyond-tests` and `red-team` spawn long-running Opus agents. Use `skip_stages` or `--track quick` to skip them on incremental changes where the risk profile is low.
 
