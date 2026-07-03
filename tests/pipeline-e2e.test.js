@@ -180,7 +180,7 @@ describe("e2e: nano track walks init → ... → pipeline-complete", () => {
 describe("e2e: full track walks all 17 stages end-to-end", () => {
   it("walks the full track through every stage, including multi-role merges", () => {
     const cwd = track(makeTargetProject({
-      config: "routing:\n  default_host: generic\npipeline:\n  default_track: full\n",
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: full\n  right_sizing: false\n",
     }));
     // Seed brief.md + test-report.md. If Stage 7 auto-fold is enabled
     // on this branch (PR #9 merged), these inputs let it fire; if not,

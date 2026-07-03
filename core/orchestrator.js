@@ -21,6 +21,7 @@ const { loadGateSafe } = require("./gates/load-gate");
 const { classifyGate, MAX_RETRIES_DEFAULT } = require("./gates/classify");
 const { pricingFor } = require("./pricing");
 const { getRecipe } = require("./pipeline/fix-recipes");
+const { deterministicSkipForStage } = require("./pipeline/right-sizing");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
@@ -1023,6 +1024,7 @@ function next(opts = {}) {
       auditSkips: opts.auditSkips === true,
       auditedSkips: opts.auditedSkips || [],
       forceStages,
+      rightSizing: config.pipeline.right_sizing !== false,
     });
     setSpanAttributes({
       "devteam.next.action": result.action,
@@ -1258,6 +1260,7 @@ function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX
   const auditSkips = opts.auditSkips === true;
   const auditedSkips = new Set(opts.auditedSkips || []);
   const forceStages = new Set(opts.forceStages || []);
+  const rightSizingEnabled = opts.rightSizing !== false;
   for (const stageName of stageList) {
     const stageDef = getStage(stageName);
     const stageGatePath = path.join(gatesDir, `${stageDef.stage}.json`);
@@ -1279,6 +1282,30 @@ function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX
         };
       }
       continue;
+    }
+
+    if (rightSizingEnabled
+        && !forceStages.has(stageName)
+        && !fs.existsSync(stageGatePath)
+        && !workstreamGatesExistFor(stageDef, gatesDir)) {
+      const rightSized = deterministicSkipForStage(stageName, cwd, { changeId });
+      if (rightSized) {
+        if (auditSkips && !auditedSkips.has(stageName)) {
+          return {
+            action: "skip-stage",
+            stage: stageDef.stage,
+            name: stageName,
+            skip_kind: rightSized.skip_kind,
+            trigger_inputs: {
+              ...rightSized.trigger_inputs,
+              force_stages: Array.from(forceStages),
+            },
+            reason: rightSized.reason,
+            command: "devteam next",
+          };
+        }
+        continue;
+      }
     }
 
     // Stage 7 auto-fold. When Stage 6 cleanly satisfies the AC→test
