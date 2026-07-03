@@ -49,6 +49,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [adr/012-explicit-resolution-acceptance.md](adr/012-explicit-resolution-acceptance.md) — hash-bound human acceptance evidence for H3
 - [adr/013-openai-compat-shell-execution.md](adr/013-openai-compat-shell-execution.md) — openai-compat shell execution: native bash tool, first-class host status
 - [adr/014-docker-headless-runner.md](adr/014-docker-headless-runner.md) — Docker runner trust boundary and packaging decision
+- [adr/015-workstream-scheduling.md](adr/015-workstream-scheduling.md) — per-host workstream concurrency, queue telemetry, and retry backoff reasons
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration

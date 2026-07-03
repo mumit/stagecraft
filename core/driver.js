@@ -45,6 +45,7 @@ const {
 const {
   dispatchGuardTransition,
   normalizeDispatchResults,
+  transientDelayPlan,
   dispatchOutcomeTransition,
   targetedFixNoChangeTransition,
   scopeGateTransition,
@@ -1614,7 +1615,7 @@ async function run(opts = {}) {
           });
         }
         const dispatch = normalizeDispatchResults(runResult);
-        const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode } = dispatch;
+        const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs } = dispatch;
         const durationMs = Date.now() - t0;
         for (const result of results) {
           const observation = dispatchObservation(base, result);
@@ -1629,18 +1630,27 @@ async function run(opts = {}) {
           ...base, outcome: "dispatched",
           duration_ms: durationMs, workstreams: results.length,
           timed_out: anyTimedOut, no_gate: !wroteGate,
+          queue_ms: queueWaitMs,
         });
-        onEvent({ type: "dispatched", ...base, duration_ms: durationMs, timed_out: anyTimedOut });
+        onEvent({ type: "dispatched", ...base, duration_ms: durationMs, timed_out: anyTimedOut, queue_ms: queueWaitMs });
 
         // Dispatch-time classification (PR-B) — replaces PR-A's no-progress
         // guard. A dispatch that wrote no gate is transient (backoff + retry)
         // until the transient budget is spent, then structural (halt).
+        const retryPlan = transientDelayPlan({
+          retryDelayMs,
+          timedOut: anyTimedOut,
+          stubGate: anyStubGate,
+          exitCode,
+        });
         const outcomeTransition = dispatchOutcomeTransition({
           action: r,
           base,
           transient: state.transient,
           maxTransientRetries,
-          retryDelayMs,
+          retryDelayMs: retryPlan.delayMs,
+          retryReason: retryPlan.retryReason,
+          backoffClass: retryPlan.backoffClass,
           wroteGate,
           exitCode,
           timedOut: anyTimedOut,
@@ -1690,7 +1700,7 @@ async function run(opts = {}) {
           if (outcomeTransition.details.removeStubGate && r.stage) {
             try { fs.unlinkSync(path.join(gatesDir(cwd, changeId), `${r.stage}.json`)); } catch { /* already gone */ }
           }
-          await _sleep(retryDelayMs);
+          await _sleep(outcomeTransition.details.delayMs);
           continue;
         }
         break;

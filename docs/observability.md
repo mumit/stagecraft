@@ -138,8 +138,8 @@ performance effort:
   telemetry and coverage report. The first slice adds
   `devteam performance critical-path`, backed by durable `run-log.jsonl` events:
   dispatch start/finish, merge start/finish, retry delay, workstream lifecycle,
-  telemetry coverage, and repeated orchestrator-stamped verification-command
-  candidates.
+  queue wait, telemetry coverage, and repeated orchestrator-stamped
+  verification-command candidates.
 - [#314](https://github.com/telus-labs/stagecraft/issues/314) — rich live run
   narrative, status, and logs. The first slice is implemented: `devteam run`
   emits per-workstream start/finish lines, `run-log.jsonl` records

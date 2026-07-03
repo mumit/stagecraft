@@ -54,13 +54,33 @@ function dispatchGuardTransition({
 function normalizeDispatchResults(runResult) {
   const results = Array.isArray(runResult) ? runResult : (runResult.results || []);
   const nonSkipped = results.filter((result) => !result.skipped);
+  const queueWaitMs = results.reduce((total, result) => {
+    const value = result.queueMs ?? result.queue_ms;
+    return total + (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  }, 0);
   return {
     results,
     timedOut: results.some((result) => result.timedOut),
     wroteGate: nonSkipped.every((result) => result.gatePath),
     stubGate: nonSkipped.some((result) => result.stubGate),
     exitCode: nonSkipped.length > 0 && nonSkipped.every((result) => result.exitCode === 0) ? 0 : 1,
+    queueWaitMs,
   };
+}
+
+function transientDelayPlan({ retryDelayMs, timedOut, stubGate, exitCode }) {
+  const base = typeof retryDelayMs === "number" && Number.isFinite(retryDelayMs)
+    ? Math.max(0, retryDelayMs)
+    : 30000;
+  if (base === 0) return { delayMs: 0, retryReason: "disabled", backoffClass: "none" };
+  if (timedOut) return { delayMs: base, retryReason: "timeout", backoffClass: "full" };
+  if (stubGate) {
+    return { delayMs: Math.min(base, 5000), retryReason: "stub-gate", backoffClass: "short" };
+  }
+  if (exitCode !== 0) {
+    return { delayMs: Math.min(base, 5000), retryReason: "nonzero-exit-no-gate", backoffClass: "short" };
+  }
+  return { delayMs: base, retryReason: "unknown-no-gate", backoffClass: "full" };
 }
 
 function dispatchOutcomeTransition({
@@ -69,6 +89,8 @@ function dispatchOutcomeTransition({
   transient,
   maxTransientRetries,
   retryDelayMs,
+  retryReason,
+  backoffClass,
   wroteGate,
   exitCode,
   timedOut,
@@ -90,9 +112,24 @@ function dispatchOutcomeTransition({
     const attempt = (transient[action.name] || 0) + 1;
     return transitionResult(TRANSITION_CONTROLS.CONTINUE, {
       statePatch: { transient: { ...transient, [action.name]: attempt } },
-      logEvents: [{ ...base, outcome: "transient-retry", attempt, delay_ms: retryDelayMs, stub_gate: stubGate || undefined }],
-      emittedEvents: [{ type: "transient-retry", ...base, attempt, delay_ms: retryDelayMs }],
-      details: { dispatchClass, retry: true, removeStubGate: stubGate },
+      logEvents: [{
+        ...base,
+        outcome: "transient-retry",
+        attempt,
+        delay_ms: retryDelayMs,
+        retry_reason: retryReason || null,
+        backoff_class: backoffClass || null,
+        stub_gate: stubGate || undefined,
+      }],
+      emittedEvents: [{
+        type: "transient-retry",
+        ...base,
+        attempt,
+        delay_ms: retryDelayMs,
+        retry_reason: retryReason || null,
+        backoff_class: backoffClass || null,
+      }],
+      details: { dispatchClass, retry: true, removeStubGate: stubGate, delayMs: retryDelayMs, retryReason, backoffClass },
     });
   }
 
@@ -162,6 +199,7 @@ function scopeGateTransition({ base, outOfScope }) {
 module.exports = {
   dispatchGuardTransition,
   normalizeDispatchResults,
+  transientDelayPlan,
   dispatchOutcomeTransition,
   targetedFixNoChangeTransition,
   scopeGateTransition,

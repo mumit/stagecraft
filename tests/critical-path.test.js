@@ -27,11 +27,11 @@ describe("critical-path analyzer", () => {
     const events = [
       { ts: "2026-07-02T00:00:00.000Z", outcome: "run-start" },
       { ts: "2026-07-02T00:00:01.000Z", outcome: "dispatch-started", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", queue_ms: 0 },
-      { ts: "2026-07-02T00:00:01.000Z", outcome: "workstream-started", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "backend", host: "codex", workstream_id: "stage-04.backend" },
-      { ts: "2026-07-02T00:00:01.000Z", outcome: "workstream-started", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "frontend", host: "claude-code", workstream_id: "stage-04.frontend" },
-      { ts: "2026-07-02T00:00:01.060Z", outcome: "workstream-finished", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "backend", host: "codex", workstream_id: "stage-04.backend", duration_ms: 60, exit_code: 0 },
-      { ts: "2026-07-02T00:00:01.100Z", outcome: "workstream-finished", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "frontend", host: "claude-code", workstream_id: "stage-04.frontend", duration_ms: 100, exit_code: 0 },
-      { ts: "2026-07-02T00:00:01.100Z", outcome: "dispatched", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", duration_ms: 100, workstreams: 2 },
+      { ts: "2026-07-02T00:00:01.000Z", outcome: "workstream-started", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "backend", host: "codex", workstream_id: "stage-04.backend", queue_ms: 0 },
+      { ts: "2026-07-02T00:00:01.000Z", outcome: "workstream-started", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "frontend", host: "claude-code", workstream_id: "stage-04.frontend", queue_ms: 15 },
+      { ts: "2026-07-02T00:00:01.060Z", outcome: "workstream-finished", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "backend", host: "codex", workstream_id: "stage-04.backend", duration_ms: 60, queue_ms: 0, exit_code: 0 },
+      { ts: "2026-07-02T00:00:01.100Z", outcome: "workstream-finished", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", role: "frontend", host: "claude-code", workstream_id: "stage-04.frontend", duration_ms: 100, queue_ms: 15, exit_code: 0 },
+      { ts: "2026-07-02T00:00:01.100Z", outcome: "dispatched", iteration: 1, stage: "stage-04", name: "build", action: "run-stage", duration_ms: 100, workstreams: 2, queue_ms: 15 },
       { ts: "2026-07-02T00:00:01.200Z", outcome: "complete", iteration: 2 },
     ];
 
@@ -42,7 +42,9 @@ describe("critical-path analyzer", () => {
     assert.equal(report.parallel_savings_ms, 60);
     assert.equal(report.telemetry_coverage.dispatch_duration, 1);
     assert.equal(report.telemetry_coverage.workstream_duration, 1);
-    assert.equal(report.dispatches[0].queue_ms, 0);
+    assert.equal(report.queue_wait_ms, 15);
+    assert.equal(report.dispatches[0].queue_ms, 15);
+    assert.equal(report.dispatches[0].workstreams[1].queue_ms, 15);
   });
 
   it("reports missing durations rather than inventing precision", () => {
@@ -105,6 +107,7 @@ describe("critical-path analyzer", () => {
     ], { generatedAt: "2026-07-02T00:00:02.000Z" }));
     assert.match(md, /critical path/i);
     assert.match(md, /requirements/);
+    assert.match(md, /Queue/);
     assert.match(md, /Telemetry Coverage/);
   });
 });
