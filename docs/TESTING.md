@@ -57,6 +57,7 @@ pipeline:
 | `gate-validator.test.js` | Validator exit codes (PASS=0, FAIL=2, ESCALATE=3, malformed=1), bypassed-escalation detection, retry-protocol enforcement, malformed reinforced-lines surfacing. |
 | `orchestrator.test.js` | `runStage` decomposition, `buildDescriptor` with `roleWrites` + `subagent` overrides, `mergeWorkstreamGates` aggregation (ESCALATE > FAIL > WARN > PASS), `summary` rendering. |
 | `next.test.js` | All `next()` scenarios: empty, run-stage, continue-stage, merge, fix-and-retry, resolve-escalation, pipeline-complete, conditional skip, track filter, `--json`. |
+| `right-sizing.test.js` | High-confidence auto-track guardrails, path-derived active-role candidates, deterministic applicability skips, and `force_stages` override behavior. |
 | `router.test.js` | Resolution precedence (`stages > roles > default_host`), missing-adapter error path, multi-host install. |
 | `config.test.js` | YAML loader: missing → defaults, bad YAML → clear error, routing fields parsed; `writeConfigIfAbsent` idempotency. |
 | `adapter-contract.test.js` | Every adapter under `hosts/` exports the required surface (`capabilities`, `install`, `renderStagePrompt`, `status`, `uninstall`) and parses `capabilities.json`. |

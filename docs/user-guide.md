@@ -971,7 +971,9 @@ devteam status --verbose                                  # inspect active/last 
 devteam performance critical-path                         # inspect where run time went
 ```
 
-It never advances into `sign-off`/`deploy` without `--allow-stage`, and by default halts on every escalation (the Principal isn't dispatched unless you pass `--auto-rule`). It writes `pipeline/run.lock`, a resumable `run-state.json` (`--resume`), and an audit-trail `run-log.jsonl`. At startup, non-JSON runs print the effective track, stage count, configured skips, conditional-stage count, and base workstream count; `run-log.jsonl` records the same data as `run-plan`. During dispatch, line progress now reports each workstream start/finish with its host plus gate/log pointers; `--watch` redraws a rolling liveness block only on a TTY and includes active workstreams, the last settled workstream, transcript, and gate pointers. Redirected output remains line-oriented and ANSI-free. See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the full launch guide, halt reasons, and limitations.
+It never advances into `sign-off`/`deploy` without `--allow-stage`, and by default halts on every escalation (the Principal isn't dispatched unless you pass `--auto-rule`). It writes `pipeline/run.lock`, a resumable `run-state.json` (`--resume`), and an audit-trail `run-log.jsonl`. At startup, non-JSON runs print the effective track, stage count, configured skips, deterministic right-sized skips, conditional-stage count, base workstream count, and expected workstream count after active-role candidates. `run-log.jsonl` records the same data as `run-plan`. During dispatch, line progress now reports each workstream start/finish with its host plus gate/log pointers; `--watch` redraws a rolling liveness block only on a TTY and includes active workstreams, the last settled workstream, transcript, and gate pointers. Redirected output remains line-oriented and ANSI-free. See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the full launch guide, halt reasons, and limitations.
+
+When no `--track` is passed, the driver may select a lighter track from the same rule engine as `devteam assess`, but only at `high` confidence. Medium and low confidence never auto-lighten the run. Changed paths also seed a `Right-sizing candidates` section in `pipeline/context.md`; Stage 01 should confirm or correct `active_roles` rather than inventing the workstream set from scratch.
 
 **Iteration budget.** Each call to `devteam next` — one examine-and-act cycle, regardless of what it does — counts as one iteration. The default cap is **100** (`--max-iterations N` to override). Hitting the cap halts with `halt_action: "max-iterations"`. For most pipelines this is invisible: a clean full-track run is roughly 20–25 iterations. Where it matters is the fix-and-retry loop: when a stage FAILs with a `code-defect`, the driver clears its gates, injects the blockers into `context.md`, and re-dispatches — each such cycle consumes approximately 3 iterations (dispatch → fix dispatch → merge). A stage that exhausts its entire per-stage retry budget (default 2 retries, configurable via `autonomy.max_retries` in `.devteam/config.yml`) before escalating costs ~6–9 iterations on its own. Lower `--max-iterations` in CI to bound spend; raise it (or increase `max_retries`) only when you want the driver to attempt more self-correction before escalating.
 
@@ -1481,7 +1483,7 @@ pipeline:
     - red-team
 ```
 
-Skipped stages are silently passed over by `devteam next` and shown as `skipped (pipeline.skip_stages)` in `devteam summary`. During `devteam run`, each configured or conditional skip is recorded once in `pipeline/run-log.jsonl` as `skip-stage` with the trigger inputs that caused the skip. No gate file is required. The skip applies to all runs in the project. Use `--track` for per-run exclusions instead.
+Skipped stages are silently passed over by `devteam next` and shown as `skipped (pipeline.skip_stages)` in `devteam summary`. During `devteam run`, each configured, conditional, or deterministic right-sized skip is recorded once in `pipeline/run-log.jsonl` as `skip-stage` with the trigger inputs that caused the skip. No gate file is required. The configured skip applies to all runs in the project. Use `--track` for per-run exclusions instead.
 
 To temporarily override either `skip_stages` or a conditional skip, list the stage under `pipeline.force_stages`:
 
@@ -1494,6 +1496,13 @@ pipeline:
 ```
 
 Note that `skip_stages` and `force_stages` accept stage names (e.g. `red-team`, `verification-beyond-tests`), not stage IDs (e.g. `stage-04c`). Run `devteam stages` to see valid names.
+
+Deterministic right-sizing is enabled by default. It skips stages only when the orchestrator can prove no trigger exists from changed files or brief/design context, such as no UI signal for `accessibility-audit` or no observability signal for `observability-gate`. Disable it globally with:
+
+```yaml
+pipeline:
+  right_sizing: false
+```
 
 ### Verification commands
 
