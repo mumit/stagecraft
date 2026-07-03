@@ -25,6 +25,9 @@ function summary(role, host, opts = {}) {
     mean_cost_usd: opts.meanCost ?? 0.1,
     cost_per_pass_usd: opts.costPerPass ?? 0.11,
     mean_duration_ms: opts.meanDuration ?? 10000,
+    p50_duration_ms: opts.p50Duration ?? opts.meanDuration ?? 10000,
+    p95_duration_ms: opts.p95Duration ?? opts.meanDuration ?? 10000,
+    retry_adjusted_completion_ms: opts.retryAdjusted ?? opts.meanDuration ?? 10000,
     models: opts.models ?? [],
   };
 }
@@ -36,9 +39,17 @@ test("compareScores: higher pass rate wins", () => {
 });
 
 test("compareScores: tie on pass rate breaks on lower cost-per-pass", () => {
-  const a = { passRate: 80, costPerPass: 0.05 };
-  const b = { passRate: 80, costPerPass: 0.10 };
+  const a = { passRate: 80, costPerPass: 0.05, retryAdjustedMs: 30000 };
+  const b = { passRate: 80, costPerPass: 0.10, retryAdjustedMs: 1000 };
   assert.ok(compareScores(a, b) > 0);
+});
+
+test("compareScores: latency breaks ties only after pass rate and cost", () => {
+  const fast = { passRate: 80, costPerPass: 0.10, retryAdjustedMs: 1000 };
+  const slow = { passRate: 80, costPerPass: 0.10, retryAdjustedMs: 30000 };
+  const betterQuality = { passRate: 90, costPerPass: 0.50, retryAdjustedMs: 60000 };
+  assert.ok(compareScores(fast, slow) > 0);
+  assert.ok(compareScores(fast, betterQuality) < 0);
 });
 
 test("buildRecommendations: suggests a swap when a better-performing host is available", () => {
@@ -54,7 +65,10 @@ test("buildRecommendations: suggests a swap when a better-performing host is ava
   assert.equal(r.role, "backend");
   assert.equal(r.current_host, "claude-code");
   assert.equal(r.suggested_host, "codex");
-  assert.match(r.reason, /codex passes first-try 85%/);
+  assert.match(r.reason, /codex has 85% first-try/);
+  assert.match(r.reason, /p95/);
+  assert.equal(r.data.winner.p95_duration_ms, 10000);
+  assert.equal(r.data.winner.retry_adjusted_completion_ms, 10000);
 });
 
 test("buildRecommendations: no change when winner is already current host", () => {

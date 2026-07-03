@@ -288,7 +288,7 @@ Standard OTel spans for every workstream, compatible with any collector. See `do
 `npm run performance` (or `scripts/performance.js`) computes, for each (role, host) pair:
 
 - Dispatch count, first-try pass rate, mean retries to pass
-- Total cost, mean cost, cost per pass, mean duration
+- Total cost, mean cost, cost per pass, mean/p50/p95 duration, retry-adjusted completion time
 - Pairwise comparisons when two or more hosts serve the same role
 
 ### Adaptive routing — let your own data reconfigure the pipeline
@@ -296,7 +296,9 @@ Standard OTel spans for every workstream, compatible with any collector. See `do
 `npm run routing:suggest` reads performance scores, compares them against the current `.devteam/config.yml`, and proposes role-level host swaps.
 
 - Minimum dispatch threshold (5 by default) and minimum pass-rate delta (10pp) prevent noisy suggestions
+- Latency is exposed as p50/p95 and retry-adjusted completion time, but only breaks ties after first-try quality and cost
 - `--apply` rewrites the config after a confirmation prompt; `--yes` skips the prompt for CI
+- Remote capacity and prompt-cache policy lives in [`docs/capacity-strategy.md`](capacity-strategy.md); mutable shared model sessions across roles or projects are rejected by default
 
 ### Project memory — the pipeline remembers what it has seen
 

@@ -10,7 +10,8 @@
 //   - pass_rate_first_try (pass_first_try / total_dispatches × 100)
 //   - mean_retries_to_pass (retry_number averaged across gates that PASSed)
 //   - total_cost_usd / mean_cost_usd
-//   - mean_duration_ms
+//   - mean/p50/p95 duration_ms
+//   - retry_adjusted_completion_ms
 //   - cost_per_pass (total cost / count of passes — the unit cost of one
 //     passing dispatch; useful for "which host is cheapest per success?")
 //
@@ -63,6 +64,8 @@ function emptyPerfRec() {
     cost_usd: 0,
     has_cost: 0,
     duration_ms: 0,
+    durations: [],
+    retry_adjusted_durations: [],
     has_duration: 0,
     models: new Set(),   // distinct models seen for this (role, host)
   };
@@ -87,7 +90,14 @@ function bump(rec, w) {
   }
 
   if (typeof w.cost_usd === "number") { rec.cost_usd += w.cost_usd; rec.has_cost += 1; }
-  if (typeof w.duration_ms === "number") { rec.duration_ms += w.duration_ms; rec.has_duration += 1; }
+  if (typeof w.duration_ms === "number") {
+    rec.duration_ms += w.duration_ms;
+    rec.durations.push(w.duration_ms);
+    rec.has_duration += 1;
+    if (status === "PASS" || status === "WARN") {
+      rec.retry_adjusted_durations.push(w.duration_ms * (retry + 1));
+    }
+  }
   if (typeof w.model === "string") rec.models.add(w.model);
 }
 
@@ -109,6 +119,13 @@ function mean(xs) {
   return xs.reduce((s, x) => s + x, 0) / xs.length;
 }
 
+function percentile(xs, p) {
+  if (!xs || xs.length === 0) return null;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+}
+
 function summarize(rec) {
   const passRateFirstTry = rec.total_dispatches > 0
     ? (rec.pass_first_try / rec.total_dispatches) * 100
@@ -116,6 +133,7 @@ function summarize(rec) {
   const meanRetries = mean(rec.retry_numbers);
   const meanCost = rec.has_cost > 0 ? rec.cost_usd / rec.has_cost : null;
   const meanDuration = rec.has_duration > 0 ? rec.duration_ms / rec.has_duration : null;
+  const retryAdjustedCompletion = mean(rec.retry_adjusted_durations);
   // cost_per_pass — divide total cost by count of PASS+WARN (anything
   // that successfully ended a workstream).
   const successCount = rec.pass + rec.warn;
@@ -136,8 +154,18 @@ function summarize(rec) {
     mean_cost_usd: meanCost,
     cost_per_pass_usd: costPerPass,
     mean_duration_ms: meanDuration,
+    p50_duration_ms: percentile(rec.durations, 50),
+    p95_duration_ms: percentile(rec.durations, 95),
+    retry_adjusted_completion_ms: retryAdjustedCompletion,
     models: [...rec.models],
   };
+}
+
+function formatDuration(ms) {
+  if (ms === null || ms === undefined) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60_000).toFixed(1)}m`;
 }
 
 function renderMarkdown(args, summaries) {
@@ -155,8 +183,8 @@ function renderMarkdown(args, summaries) {
 
   out.push(`## Performance by (role, host) pair`);
   out.push("");
-  out.push(`| Role | Host | Dispatches | First-try pass | Mean retries | Mean cost | Cost/pass | Mean duration |`);
-  out.push(`|---|---|---:|---:|---:|---:|---:|---:|`);
+  out.push(`| Role | Host | Dispatches | First-try pass | Mean retries | Mean cost | Cost/pass | Mean duration | p95 duration | Retry-adjusted completion |`);
+  out.push(`|---|---|---:|---:|---:|---:|---:|---:|---:|---:|`);
   // Sort by role then by descending dispatch count so the most-used
   // (role, host) pair for each role shows up first.
   const sorted = [...summaries].sort((a, b) => {
@@ -168,11 +196,7 @@ function renderMarkdown(args, summaries) {
     const retries = s.mean_retries_to_pass === null ? "—" : s.mean_retries_to_pass.toFixed(2);
     const meanCost = formatUsd(s.mean_cost_usd);
     const costPerPass = formatUsd(s.cost_per_pass_usd);
-    const meanDur = s.mean_duration_ms === null ? "—"
-      : s.mean_duration_ms < 1000 ? `${Math.round(s.mean_duration_ms)}ms`
-      : s.mean_duration_ms < 60_000 ? `${(s.mean_duration_ms / 1000).toFixed(1)}s`
-      : `${(s.mean_duration_ms / 60_000).toFixed(1)}m`;
-    out.push(`| ${s.role} | ${s.host} | ${s.total_dispatches} | ${passRate} | ${retries} | ${meanCost} | ${costPerPass} | ${meanDur} |`);
+    out.push(`| ${s.role} | ${s.host} | ${s.total_dispatches} | ${passRate} | ${retries} | ${meanCost} | ${costPerPass} | ${formatDuration(s.mean_duration_ms)} | ${formatDuration(s.p95_duration_ms)} | ${formatDuration(s.retry_adjusted_completion_ms)} |`);
   }
   out.push("");
 
@@ -198,9 +222,9 @@ function renderMarkdown(args, summaries) {
     const second = sorted[1];
     headlines.push(
       `- **${role}**: ${best.host} (${best.pass_rate_first_try.toFixed(0)}% first-try, ` +
-      `${formatUsd(best.cost_per_pass_usd)} per pass) ` +
+      `${formatUsd(best.cost_per_pass_usd)} per pass, p95 ${formatDuration(best.p95_duration_ms)}) ` +
       `vs ${second.host} (${second.pass_rate_first_try.toFixed(0)}%, ` +
-      `${formatUsd(second.cost_per_pass_usd)}).`,
+      `${formatUsd(second.cost_per_pass_usd)}, p95 ${formatDuration(second.p95_duration_ms)}).`,
     );
   }
   if (headlines.length > 0) {
@@ -233,10 +257,10 @@ Usage:
   node scripts/performance.js --json                Machine-readable output.
 
 Output: per-(role, host) dispatch count, first-try pass rate, mean
-retries to pass, mean cost (USD), cost per successful pass, and mean
-duration. The cost figures require gates to carry tokens_in / tokens_out
-/ model (see D6 / docs/cost.md); gates without those fields are counted
-but don't contribute to cost aggregates.
+retries to pass, mean cost (USD), cost per successful pass, mean/p50/p95
+duration, and retry-adjusted completion time. The cost figures require gates
+to carry tokens_in / tokens_out / model (see D6 / docs/cost.md); gates without
+those fields are counted but don't contribute to cost aggregates.
 
 This is the data layer for D5 — \`scripts/routing-suggest.js\` reads
 the same gates and proposes routing-config changes based on these scores.
@@ -273,4 +297,6 @@ module.exports = {
   summarize,
   renderMarkdown,
   renderJSON,
+  percentile,
+  formatDuration,
 };

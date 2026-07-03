@@ -82,6 +82,8 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `evidence-export.test.js` | Pseudonymous identity lifecycle, consent and exclusive writes, strict bundle validation/digests, sparse-cell suppression, hostile-value exclusion, symlink refusal, portfolio de-duplication, and cross-project readiness. |
 | `fanout.test.js` | `computeDispatchPlan` correctness with/without fanout; end-to-end `runStage` producing N×M workstream prompts; `mergeWorkstreamGates` aggregation across all fanout gates. |
 | `dashboard.test.js` | Gate→row expansion (merged stage gates split into workstream rows); per-host / per-role attribution; multi-project rollup; time-window filter; ASCII chart + JSON output. |
+| `performance.test.js` | `scripts/performance.js`: workstream expansion, per-(role, host) aggregation, first-try pass rate, cost/pass, p50/p95 duration, retry-adjusted completion, Markdown/JSON output. |
+| `routing-suggest.test.js` | `scripts/routing-suggest.js`: recommendation thresholds, quality-first scoring, cost and latency tiebreakers, YAML patch rendering. |
 | `pr-publish.test.js` | Gate→check-run translation: PASS→success / WARN→neutral / FAIL+ESCALATE→failure; blockers + warnings + workstreams in summary; auto-detect repo + PR; `--dry-run`. |
 | `ui.test.js` | Pure helpers, route correctness, path-traversal rejection, SSE plumbing. |
 | `memory.test.js` | Ingest, query, stats, clear, reindex; chunker by level-2 heading; `stagecraft-no-memory` opt-out; embedder mismatch warning; stub embedder for offline CI. |

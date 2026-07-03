@@ -47,8 +47,8 @@ Completed backlog items are preserved here so the active backlog tables stay sca
 | D | D1 | OpenTelemetry tracing per stage | 5 | 3 | v0.2.0 · [CHANGELOG](../CHANGELOG.md#020--2026-05-27) |
 | D | D2 | Gate-pass-rate dashboards | 4 | 2 | v0.2.0 · [CHANGELOG](../CHANGELOG.md#020--2026-05-27) |
 | D | D3 | Lessons-learned across projects (org-shared) | 5 | 4 | v0.3.0 · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
-| D | D4 | Per-role per-model performance scores | 5 | 3 | v0.3.0 · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
-| D | D5 | Adaptive routing | 5 | 3 | v0.3.0 · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
+| D | D4 | Per-role per-model performance scores | 5 | 3 | v0.3.0 + Phase 26 latency metrics ([#318](https://github.com/telus-labs/stagecraft/issues/318)) · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
+| D | D5 | Adaptive routing | 5 | 3 | v0.3.0 + Phase 26 p50/p95/retry-adjusted routing evidence ([#318](https://github.com/telus-labs/stagecraft/issues/318)) · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
 | D | D6 | Cost telemetry | 4 | 2 | v0.3.0 · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
 | D | D7 | Persistent project memory (embeddings index) | 5 | 4 | v0.2.0 · [CHANGELOG](../CHANGELOG.md#020--2026-05-27) |
 | E | E1 | `devteam status` rich CLI output | 3 | 1 | v0.1.0 as `devteam summary`; Phase 11.1-11.3 updates · [CHANGELOG](../CHANGELOG.md#unreleased) |
