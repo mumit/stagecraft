@@ -299,6 +299,7 @@ Standard OTel spans for every workstream, compatible with any collector. See `do
 - Latency is exposed as p50/p95 and retry-adjusted completion time, but only breaks ties after first-try quality and cost
 - `--apply` rewrites the config after a confirmation prompt; `--yes` skips the prompt for CI
 - Remote capacity and prompt-cache policy lives in [`docs/capacity-strategy.md`](capacity-strategy.md); mutable shared model sessions across roles or projects are rejected by default
+- Stage prompts include a bounded changed-file manifest (path/status/bytes/SHA-256 only) so agents inspect changed file bodies on demand instead of receiving repeated file contents up front; run-log observations record prompt byte counts and manifest counts as numeric telemetry
 
 ### Project memory — the pipeline remembers what it has seen
 
@@ -509,7 +510,7 @@ Machine-derived docs stay in sync with the codebase by construction — a CI adv
 
 **`npm run prompt:budget`** regenerates:
 
-- **[`docs/reference/prompt-budget.md`](reference/prompt-budget.md)** — per-stage framework context size in bytes and estimated tokens (bytes ÷ 4), plus the top-5 heaviest files per stage. Used to track readFirst weight over time; a CI advisory fires when any stage grows >10% from its committed baseline.
+- **[`docs/reference/prompt-budget.md`](reference/prompt-budget.md)** — per-stage framework context size in bytes and estimated tokens (bytes ÷ 4), plus the top-5 heaviest files per stage and the bounded runtime changed-file manifest estimate. Used to track readFirst weight over time; a CI advisory fires when any stage grows >10% from its committed baseline.
 
 **`npm run consistency`** — cross-artifact consistency checker. Catches prose-vs-code drift across stage names, track lists, command surface, referenced-file existence, file-size ceilings, schema vocabulary, runtime/platform support claims, and EXAMPLE.md freshness. Runs in CI; advisory-only checks print without failing the build; hard checks exit non-zero. Audit and historical archives are excluded from current-fact vocabulary checks.
 

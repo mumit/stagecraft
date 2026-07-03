@@ -39,6 +39,7 @@ test("prompt-budget: generator is importable without CLI side-effects", () => {
   const mod = require(BUDGET_JS);
   assert.equal(typeof mod.generateBlock,        "function", "generateBlock must be exported");
   assert.equal(typeof mod.computeStageStats,    "function", "computeStageStats must be exported");
+  assert.equal(typeof mod.estimateChangedManifestBytes, "function", "estimateChangedManifestBytes must be exported");
   assert.equal(typeof mod.parseCommittedBudget, "function", "parseCommittedBudget must be exported");
   assert.equal(typeof mod.FENCE_OPEN,  "string", "FENCE_OPEN must be exported");
   assert.equal(typeof mod.FENCE_CLOSE, "string", "FENCE_CLOSE must be exported");
@@ -122,8 +123,18 @@ test("prompt-budget: generateBlock output contains required markers and sections
   assert.ok(block.includes("# Prompt Budget Reference"), "must include title");
   assert.ok(block.includes("## Per-dispatch framework cost"), "must include per-dispatch section");
   assert.ok(block.includes("## Top 5 heaviest framework files"), "must include top-5 section");
+  assert.ok(block.includes("## Runtime changed-file manifest"), "must include runtime manifest section");
   assert.ok(block.includes("<!-- budget-data"), "must include machine-readable budget-data block");
   assert.ok(block.includes("bytes ÷ 4"), "must state token estimation method");
+});
+
+test("prompt-budget: changed-file manifest estimate is bounded and positive", () => {
+  const { estimateChangedManifestBytes } = require(BUDGET_JS);
+  const one = estimateChangedManifestBytes(1);
+  const many = estimateChangedManifestBytes(40);
+  assert.ok(one > 0, "one-file manifest estimate must be positive");
+  assert.ok(many > one, "larger manifest limit must cost more prompt bytes");
+  assert.ok(many < 8000, "default manifest estimate should stay compact");
 });
 
 test("prompt-budget: generated table contains AGENTS.md framework column with non-zero bytes", () => {

@@ -63,7 +63,7 @@ results are never reused, and uncertain lookup falls back to execution. Set
 |---|---|
 | `contract.test.js` | Cross-artifact consistency — every stage in `stages.js` has a matching schema, every role has a matching brief, every schema's fields align with `rules/gates-core.md` and per-stage `rules/stage-NN.md`. |
 | `gate-validator.test.js` | Validator exit codes (PASS=0, FAIL=2, ESCALATE=3, malformed=1), bypassed-escalation detection, retry-protocol enforcement, malformed reinforced-lines surfacing. |
-| `orchestrator.test.js` | `runStage` decomposition, `buildDescriptor` with `roleWrites` + `subagent` overrides, `mergeWorkstreamGates` aggregation (ESCALATE > FAIL > WARN > PASS), `summary` rendering. |
+| `orchestrator.test.js` | `runStage` decomposition, changed-file manifest prompt facts, `buildDescriptor` with `roleWrites` + `subagent` overrides, `mergeWorkstreamGates` aggregation (ESCALATE > FAIL > WARN > PASS), `summary` rendering. |
 | `next.test.js` | All `next()` scenarios: empty, run-stage, continue-stage, merge, fix-and-retry, resolve-escalation, pipeline-complete, conditional skip, track filter, `--json`. |
 | `right-sizing.test.js` | High-confidence auto-track guardrails, path-derived active-role candidates, deterministic applicability skips, and `force_stages` override behavior. |
 | `router.test.js` | Resolution precedence (`stages > roles > default_host`), missing-adapter error path, multi-host install. |
@@ -77,20 +77,22 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `schemas.test.js` | Each `stage-NN.schema.json` is a valid JSON Schema 2020-12; example gates in `rules/stage-NN.md` validate against their declared schema. |
 | `cli.test.js` | `bin/devteam` exit codes for known/unknown commands; `--json` outputs valid JSON; `--cwd` honored uniformly. |
 | `observability.test.js` | OpenTelemetry spans emitted at every instrumented call site, with expected attributes, via `InMemorySpanExporter`. |
+| `context-manifest.test.js` | Changed-file manifest collection: Git porcelain parsing, process-path exclusions, byte/digest facts, no content leakage, manifest caps. |
 | `secret-scan.test.js` | PreToolUse hook: pattern detection, false-positive guards, magic-comment override, path allowlist, end-to-end stdin parsing, snippet redaction. |
-| `evidence-status.test.js` | Bounded evidence readers, aggregate-only readiness analysis, malformed/oversized input handling, bounded isolation, and read-only CLI behavior. |
-| `evidence-export.test.js` | Pseudonymous identity lifecycle, consent and exclusive writes, strict bundle validation/digests, sparse-cell suppression, hostile-value exclusion, symlink refusal, portfolio de-duplication, and cross-project readiness. |
+| `evidence-status.test.js` | Bounded evidence readers, aggregate-only readiness analysis, prompt-byte routing aggregates, malformed/oversized input handling, bounded isolation, and read-only CLI behavior. |
+| `evidence-export.test.js` | Pseudonymous identity lifecycle, consent and exclusive writes, strict bundle validation/digests, prompt-byte aggregate export, sparse-cell suppression, hostile-value exclusion, symlink refusal, portfolio de-duplication, and cross-project readiness. |
 | `fanout.test.js` | `computeDispatchPlan` correctness with/without fanout; end-to-end `runStage` producing N×M workstream prompts; `mergeWorkstreamGates` aggregation across all fanout gates. |
 | `dashboard.test.js` | Gate→row expansion (merged stage gates split into workstream rows); per-host / per-role attribution; multi-project rollup; time-window filter; ASCII chart + JSON output. |
 | `performance.test.js` | `scripts/performance.js`: workstream expansion, per-(role, host) aggregation, first-try pass rate, cost/pass, p50/p95 duration, retry-adjusted completion, Markdown/JSON output. |
 | `routing-suggest.test.js` | `scripts/routing-suggest.js`: recommendation thresholds, quality-first scoring, cost and latency tiebreakers, YAML patch rendering. |
+| `render-helpers.test.js` | Shared prompt rendering helpers: allowed-write captions, changed-file manifest section, gate footer, cost telemetry hint, system-prompt hashing. |
 | `pr-publish.test.js` | Gate→check-run translation: PASS→success / WARN→neutral / FAIL+ESCALATE→failure; blockers + warnings + workstreams in summary; auto-detect repo + PR; `--dry-run`. |
 | `ui.test.js` | Pure helpers, route correctness, path-traversal rejection, SSE plumbing. |
 | `memory.test.js` | Ingest, query, stats, clear, reindex; chunker by level-2 heading; `stagecraft-no-memory` opt-out; embedder mismatch warning; stub embedder for offline CI. |
 | `budget.test.js` | `scripts/budget.js`: `parseBudgetMd` round-trip; config parsing; init/update/check sequence; contract-F gate on escalation. |
 | `release.test.js` | `scripts/release.js notes` extraction: `[Unreleased]` default, middle section, last section (no trailing header to anchor to), missing-version error, blank-line preservation, trailing `---` stripping. |
 | `headless.test.js` | `core/adapters/headless.js`: command resolution, env override, missing-command rejection, exit-code propagation, spawn-ENOENT message, gatePath detection, EPIPE swallowing, whitespace-split. |
-| `run.test.js` | `devteam run` driver: happy-path loop, auto-fix `code-defect` retry, transient dispatch retry with backoff, `--auto-rule` escalation resolution, consequence-ceiling halt, `--until` boundary stop. |
+| `run.test.js` | `devteam run` driver: happy-path loop, workstream lifecycle/prompt-byte telemetry, auto-fix `code-defect` retry, transient dispatch retry with backoff, `--auto-rule` escalation resolution, consequence-ceiling halt, `--until` boundary stop. |
 | `scheduler.test.js` | Per-host workstream scheduler: host/default limits, stable result ordering, queue-depth and queue-time behavior. |
 | `classify.test.js` | `classifyDispatch` failure-class derivation: `code-defect`, `judgment-gate`, `state-corruption`, `external-blocked`, `transient`, `structural-input`. |
 | `escalation.test.js` | Escalation-handling end-to-end: `devteam ruling` dispatch, `fix-escalation` encoding, auto-rule grant/deny, `PRINCIPAL-CANNOT-DECIDE` halt. |

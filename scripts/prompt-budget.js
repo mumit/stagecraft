@@ -33,6 +33,8 @@ const ROOT = path.resolve(__dirname, "..");
 
 const { STAGES, ORDERED_STAGE_NAMES } =
   require(path.join(ROOT, "core", "pipeline", "stages.js"));
+const { DEFAULT_LIMIT: DEFAULT_CHANGED_MANIFEST_LIMIT } =
+  require(path.join(ROOT, "core", "context-manifest.js"));
 
 // ---------------------------------------------------------------------------
 // Framework file resolution
@@ -118,6 +120,19 @@ function pad(s, w) { return String(s) + " ".repeat(Math.max(0, w - String(s).len
 function fmtBytes(n) { return n.toLocaleString("en-US"); }
 function tokEst(bytes) { return Math.ceil(bytes / 4); }
 
+function estimateChangedManifestBytes(limit = DEFAULT_CHANGED_MANIFEST_LIMIT) {
+  const header = [
+    "## Changed-file manifest (inspect on demand)",
+    "Only paths, byte sizes, and SHA-256 digests are preloaded here. Read file contents only when they are relevant to this workstream.",
+    "",
+  ].join("\n");
+  const sampleLine = "- src/example/changed-file-name-with-scope.js (status=M, bytes=12345, sha256:".length
+    + 64
+    + ")\n".length;
+  const truncation = "- ... 999 additional changed file(s) omitted from the prompt; inspect git status if needed.\n".length;
+  return header.length + (sampleLine * limit) + truncation;
+}
+
 // ---------------------------------------------------------------------------
 // Generated block
 // ---------------------------------------------------------------------------
@@ -191,6 +206,7 @@ function generateBlock() {
   // Format: one line per stage — "<stageId>,<maxDispatchBytes>"
   const budgetDataLines = stages.map((s) => `${s.stageId},${s.maxDispatchBytes}`);
   const budgetDataBlock = `<!-- budget-data\n${budgetDataLines.join("\n")}\n-->`;
+  const manifestBytes = estimateChangedManifestBytes();
 
   const BT = "`"; // backtick — avoids template-literal escaping issues
   return [
@@ -234,6 +250,19 @@ function generateBlock() {
     `| Role brief         | 16 KB   |`,
     `| Stage rule file    | 8 KB    |`,
     `| AGENTS.md          | 10 KB   |`,
+    "",
+    "## Runtime changed-file manifest",
+    "",
+    "Each dispatch may also include a compact changed-file manifest with paths, byte sizes,",
+    "and SHA-256 digests only. It is intentionally excluded from the framework growth guard",
+    "because it is project/runtime dependent, but it is bounded and measurable.",
+    "",
+    `| Limit | Estimated bytes | Tokens~ |`,
+    `| ----- | --------------- | ------- |`,
+    `| ${DEFAULT_CHANGED_MANIFEST_LIMIT} files | ${fmtBytes(manifestBytes)} | ${tokEst(manifestBytes)} |`,
+    "",
+    "This replaces eager changed-file content loading: agents inspect file bodies on demand",
+    "when the manifest shows a relevant path or digest change.",
     "",
     budgetDataBlock,
     FENCE_CLOSE,
@@ -280,6 +309,7 @@ if (require.main === module) {
 
 module.exports = {
   computeStageStats,
+  estimateChangedManifestBytes,
   generateBlock,
   parseCommittedBudget,
   FENCE_OPEN,

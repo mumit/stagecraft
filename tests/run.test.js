@@ -250,6 +250,9 @@ describe("driver: dispatch loop (injected deps)", () => {
           workstream_id: "stage-04.backend",
           gate_path: gatePath,
           log_path: logPath,
+          prompt_bytes: 2048,
+          context_manifest_files: 3,
+          context_manifest_omitted: 1,
         });
         opts.onWorkstreamEvent({
           type: "workstream-finished",
@@ -262,6 +265,9 @@ describe("driver: dispatch loop (injected deps)", () => {
           gate_path: gatePath,
           log_path: logPath,
           duration_ms: 17,
+          prompt_bytes: 2048,
+          context_manifest_files: 3,
+          context_manifest_omitted: 1,
         });
         return [{ role: "backend", host: "codex", gatePath, logPath, exitCode: 0, durationMs: 17 }];
       },
@@ -273,6 +279,8 @@ describe("driver: dispatch loop (injected deps)", () => {
     assert.equal(started.workstream_id, "stage-04.backend");
     assert.equal(started.gate_path, "pipeline/gates/stage-04.backend.json");
     assert.equal(started.log_path, "pipeline/logs/stage-04.backend.log");
+    assert.equal(started.prompt_bytes, 2048);
+    assert.equal(started.context_manifest_files, 3);
     assert.equal(finished.exit_code, 0);
     assert.equal(finished.duration_ms, 17);
 
@@ -280,11 +288,13 @@ describe("driver: dispatch loop (injected deps)", () => {
     assert.deepEqual(state.active_workstreams, {});
     assert.equal(state.last_workstream.workstream_id, "stage-04.backend");
     assert.equal(state.last_workstream.log_path, "pipeline/logs/stage-04.backend.log");
+    assert.equal(state.last_workstream.prompt_bytes, 2048);
+    assert.equal(state.last_workstream.context_manifest_files, 3);
 
     const logEvents = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line));
-    assert.ok(logEvents.some((event) => event.outcome === "workstream-started" && event.log_path === "pipeline/logs/stage-04.backend.log"));
-    assert.ok(logEvents.some((event) => event.outcome === "workstream-finished" && event.duration_ms === 17));
+    assert.ok(logEvents.some((event) => event.outcome === "workstream-started" && event.log_path === "pipeline/logs/stage-04.backend.log" && event.prompt_bytes === 2048));
+    assert.ok(logEvents.some((event) => event.outcome === "workstream-finished" && event.duration_ms === 17 && event.context_manifest_files === 3));
   });
 
   it("records allowlisted per-workstream dispatch evidence in the durable run log", async () => {
@@ -311,6 +321,7 @@ describe("driver: dispatch loop (injected deps)", () => {
       next: () => actions[index++],
       runStageHeadless: async () => [{
         role: "backend", host: "codex", gatePath, exitCode: 0, durationMs: 130,
+        promptBytes: 4096, contextManifestFiles: 2, contextManifestOmitted: 0,
       }],
     });
 
@@ -325,6 +336,8 @@ describe("driver: dispatch loop (injected deps)", () => {
       status: observation.status,
       cost_usd: observation.cost_usd,
       duration_ms: observation.duration_ms,
+      prompt_bytes: observation.prompt_bytes,
+      context_manifest_files: observation.context_manifest_files,
       gate_written: observation.gate_written,
     }, {
       stage: "stage-04",
@@ -334,6 +347,8 @@ describe("driver: dispatch loop (injected deps)", () => {
       status: "PASS",
       cost_usd: 0.42,
       duration_ms: 125,
+      prompt_bytes: 4096,
+      context_manifest_files: 2,
       gate_written: true,
     });
     assert.doesNotMatch(JSON.stringify(observation), /free-form text/);

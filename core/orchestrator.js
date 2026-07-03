@@ -22,6 +22,7 @@ const { classifyGate, MAX_RETRIES_DEFAULT } = require("./gates/classify");
 const { pricingFor } = require("./pricing");
 const { getRecipe } = require("./pipeline/fix-recipes");
 const { deterministicSkipForStage } = require("./pipeline/right-sizing");
+const { collectChangedFileManifest } = require("./context-manifest");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
@@ -268,6 +269,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // G10: per-role tool budget declared by the adapter (e.g. ["Read","Glob","Grep"]).
     // null means the adapter declared no budget (full host surface applies).
     toolBudget: opts.toolBudget ?? null,
+    contextManifest: opts.contextManifest || null,
     // When set, all workstreams of this stage dispatch to the same
     // subagent regardless of role (used by peer-review where the
     // workstreams are areas being reviewed but the dispatched agent
@@ -285,6 +287,16 @@ function nameForStage(stage) {
 
 function uniqueStrings(items) {
   return [...new Set((items || []).filter((item) => typeof item === "string" && item.length > 0))];
+}
+
+function promptTelemetry(prompt, descriptor) {
+  const manifest = descriptor && descriptor.contextManifest;
+  const files = manifest && Array.isArray(manifest.files) ? manifest.files : [];
+  return {
+    promptBytes: Buffer.byteLength(String(prompt || ""), "utf8"),
+    contextManifestFiles: files.length,
+    contextManifestOmitted: manifest && typeof manifest.omitted_count === "number" ? manifest.omitted_count : 0,
+  };
 }
 
 function renderOmnigentDirectorPrompt(plan) {
@@ -428,6 +440,7 @@ function runStage(stageName, opts = {}) {
     "devteam.fanout": effectivePlan.some((p) => p.fanout) || undefined,
     "devteam.feature": ctx.feature || undefined,
   }, () => {
+    const contextManifest = collectChangedFileManifest(ctx.cwd);
     const dispatches = effectivePlan.map((entry) => withSpan("pipeline.workstream", {
       "devteam.stage": stageDef.stage,
       "devteam.workstream.role": entry.role,
@@ -453,7 +466,7 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const descriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent });
+      const descriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, contextManifest });
       const prompt = withSpan("adapter.renderStagePrompt", {
         "devteam.host": hostName,
         "devteam.stage": stageDef.stage,
@@ -528,6 +541,7 @@ async function runStageHeadless(stageName, opts = {}) {
         ? null
         : path.join(getLogsDir(plan.ctx.cwd, plan.ctx.changeId), `${descriptor.workstreamId}.log`);
       for (const ws of plan.workstreams) {
+        const telemetry = promptTelemetry(ws.prompt, ws.descriptor);
         emitWorkstreamEvent({
           type: "workstream-started",
           stage: plan.stage,
@@ -537,6 +551,9 @@ async function runStageHeadless(stageName, opts = {}) {
           workstream_id: ws.descriptor.workstreamId,
           gate_path: path.join(gatesDir, `${ws.descriptor.workstreamId}.json`),
           log_path: directorLogPath,
+          prompt_bytes: telemetry.promptBytes,
+          context_manifest_files: telemetry.contextManifestFiles,
+          context_manifest_omitted: telemetry.contextManifestOmitted,
           director: true,
         });
       }
@@ -569,6 +586,7 @@ async function runStageHeadless(stageName, opts = {}) {
         }
       }
       const results = plan.workstreams.map((ws) => {
+        const telemetry = promptTelemetry(ws.prompt, ws.descriptor);
         const expectedGate = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
         const exists = fs.existsSync(expectedGate);
         const childExit = r.exitCode === 0 && exists && (!r.writeViolations || r.writeViolations.length === 0) ? 0 : 1;
@@ -587,6 +605,7 @@ async function runStageHeadless(stageName, opts = {}) {
           director: true,
           directorWorkstreamId: descriptor.workstreamId,
           writeViolations: r.writeViolations || [],
+          ...telemetry,
         };
         emitWorkstreamEvent({
           type: "workstream-finished",
@@ -600,6 +619,9 @@ async function runStageHeadless(stageName, opts = {}) {
           gate_path: exists ? expectedGate : null,
           log_path: r.logPath || directorLogPath,
           duration_ms: r.durationMs ?? null,
+          prompt_bytes: telemetry.promptBytes,
+          context_manifest_files: telemetry.contextManifestFiles,
+          context_manifest_omitted: telemetry.contextManifestOmitted,
           write_violations_count: Array.isArray(r.writeViolations) ? r.writeViolations.length : 0,
           director: true,
         });
@@ -686,6 +708,10 @@ async function runStageHeadless(stageName, opts = {}) {
       }
       const queueSuffix = queue.queueMs > 0 ? ` after ${queue.queueMs}ms queue` : "";
       process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)${queueSuffix}\n`);
+      const invocationPrompt = ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
+        ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
+        : ws.prompt;
+      const telemetry = promptTelemetry(invocationPrompt, ws.descriptor);
       // G10: snapshot mtime before invoke so we can tell whether the headless
       // command actually wrote the gate (vs. a pre-existing gate that the
       // command left untouched — e.g. `devteam replay` with a no-op command).
@@ -702,6 +728,9 @@ async function runStageHeadless(stageName, opts = {}) {
         log_path: expectedLogPath,
         queue_ms: queue.queueMs,
         queue_limit: queue.queueLimit,
+        prompt_bytes: telemetry.promptBytes,
+        context_manifest_files: telemetry.contextManifestFiles,
+        context_manifest_omitted: telemetry.contextManifestOmitted,
       });
 
       let r;
@@ -713,10 +742,7 @@ async function runStageHeadless(stageName, opts = {}) {
         }, async (span) => {
           // E7: prepend /goal directive for hosts that support a goal loop
           // and stages that declare a convergence condition.
-          const prompt = ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
-            ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
-            : ws.prompt;
-          const out = await ws.adapter.invoke(ws.descriptor, plan.ctx, prompt);
+          const out = await ws.adapter.invoke(ws.descriptor, plan.ctx, invocationPrompt);
           if (span) span.setAttributes({
             "devteam.invoke.exit_code": out.exitCode,
             "devteam.invoke.duration_ms": out.durationMs,
@@ -738,6 +764,9 @@ async function runStageHeadless(stageName, opts = {}) {
           duration_ms: null,
           queue_ms: queue.queueMs,
           queue_limit: queue.queueLimit,
+          prompt_bytes: telemetry.promptBytes,
+          context_manifest_files: telemetry.contextManifestFiles,
+          context_manifest_omitted: telemetry.contextManifestOmitted,
           error: err && err.message,
         });
         throw err;
@@ -781,7 +810,7 @@ async function runStageHeadless(stageName, opts = {}) {
           patchGateForToolBudget(budgetGatePath, ws.descriptor.toolBudget);
         }
       }
-      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, ...r };
+      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, ...r, ...telemetry };
       emitWorkstreamEvent({
         type: "workstream-finished",
         stage: plan.stage,
@@ -796,6 +825,9 @@ async function runStageHeadless(stageName, opts = {}) {
         duration_ms: r.durationMs ?? null,
         queue_ms: queue.queueMs,
         queue_limit: queue.queueLimit,
+        prompt_bytes: telemetry.promptBytes,
+        context_manifest_files: telemetry.contextManifestFiles,
+        context_manifest_omitted: telemetry.contextManifestOmitted,
         write_violations_count: Array.isArray(r.writeViolations) ? r.writeViolations.length : 0,
         stub_gate: Boolean(r.stubGate),
       });

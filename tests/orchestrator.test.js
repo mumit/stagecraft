@@ -30,6 +30,20 @@ describe("orchestrator: runStage decomposition", () => {
     assert.deepEqual(roles, ["backend", "frontend", "platform", "qa"]);
   });
 
+  it("stage prompts include bounded changed-file manifest facts", () => {
+    const cwd = track(makeTargetProject());
+    const git = require("node:child_process").spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+    assert.equal(git.status, 0, git.stderr);
+    fs.mkdirSync(path.join(cwd, "src", "backend"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "src", "backend", "hello.js"), "module.exports = 'hello';\n");
+    const r = runStage("build", { cwd });
+    const backend = r.workstreams.find((w) => w.role === "backend");
+    assert.match(backend.prompt, /Changed-file manifest/);
+    assert.match(backend.prompt, /src\/backend\/hello\.js/);
+    assert.match(backend.prompt, /sha256:[0-9a-f]{64}/);
+    assert.ok(backend.descriptor.contextManifest.files.some((file) => file.path === "src/backend/hello.js"));
+  });
+
   it("each workstream carries its own descriptor with role-specific id", () => {
     const cwd = track(makeTargetProject());
     const r = runStage("build", { cwd });
@@ -508,6 +522,8 @@ fs.writeFileSync(record, JSON.stringify({ args }, null, 2) + "\\n");
       assert.equal(events.filter((event) => event.type === "workstream-started").length, 4);
       assert.equal(events.filter((event) => event.type === "workstream-finished").length, 4);
       assert.ok(events.every((event) => event.director === true));
+      assert.ok(events.every((event) => event.prompt_bytes > 0));
+      assert.ok(events.every((event) => typeof event.context_manifest_files === "number"));
       assert.ok(events.some((event) => event.workstream_id === "stage-04.backend" && event.gate_path.endsWith("stage-04.backend.json")));
       assert.ok(events.some((event) => event.workstream_id === "stage-04.qa" && event.log_path.endsWith("stage-04.omnigent-director.log")));
     } finally {

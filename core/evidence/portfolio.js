@@ -157,6 +157,7 @@ function analyzePortfolio(files) {
   const routing = aggregateRows(bundles, "routing", ["role", "host", "model"], [
     "gate_observations", "pass", "warn", "fail", "escalate", "cost_observations",
     "total_cost_usd", "duration_observations", "total_duration_ms",
+    "prompt_observations", "total_prompt_bytes",
   ]);
   const recovery = aggregateRows(bundles, "recovery", ["stage", "failure_class"], ["observations", "runs"]);
   const resolutions = aggregateRows(

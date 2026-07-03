@@ -72,6 +72,7 @@ function extractRouting(gateRecords) {
           role, host, model, gate_observations: 0, pass: 0, warn: 0, fail: 0,
           escalate: 0, cost_observations: 0, total_cost_usd: 0,
           duration_observations: 0, total_duration_ms: 0,
+          prompt_observations: 0, total_prompt_bytes: 0,
         });
       }
       const row = groups.get(key);
@@ -87,6 +88,11 @@ function extractRouting(gateRecords) {
       if (duration !== null) {
         row.duration_observations += 1;
         row.total_duration_ms += duration;
+      }
+      const promptBytes = number(item.prompt_bytes ?? gate.prompt_bytes);
+      if (promptBytes !== null) {
+        row.prompt_observations += 1;
+        row.total_prompt_bytes += promptBytes;
       }
     }
   }
@@ -107,6 +113,7 @@ function extractDurableRouting(events) {
         role, host, model, gate_observations: 0, pass: 0, warn: 0, fail: 0,
         escalate: 0, cost_observations: 0, total_cost_usd: 0,
         duration_observations: 0, total_duration_ms: 0,
+        prompt_observations: 0, total_prompt_bytes: 0,
       });
     }
     const row = groups.get(key);
@@ -122,6 +129,11 @@ function extractDurableRouting(events) {
     if (duration !== null) {
       row.duration_observations += 1;
       row.total_duration_ms += duration;
+    }
+    const promptBytes = number(event.prompt_bytes);
+    if (promptBytes !== null) {
+      row.prompt_observations += 1;
+      row.total_prompt_bytes += promptBytes;
     }
   }
   return [...groups.values()].sort((a, b) =>

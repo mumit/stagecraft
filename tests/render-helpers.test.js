@@ -7,7 +7,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
-const { allowedWritesCaption, appendGateFooter } =
+const { allowedWritesCaption, appendGateFooter, renderContextManifest } =
   require(path.join(REPO_ROOT, "core", "adapters", "render-helpers"));
 
 describe("render-helpers: allowedWritesCaption", () => {
@@ -35,6 +35,37 @@ describe("render-helpers: allowedWritesCaption", () => {
     const c = allowedWritesCaption("nonsense", "weird-host");
     assert.match(c, /advisory/);
     assert.match(c, /weird-host/);
+  });
+});
+
+describe("render-helpers: renderContextManifest", () => {
+  it("omits the section when no changed files are present", () => {
+    const lines = ["before"];
+    renderContextManifest(lines, { contextManifest: { files: [] } });
+    assert.deepEqual(lines, ["before"]);
+  });
+
+  it("renders changed-file facts without file contents", () => {
+    const lines = [];
+    renderContextManifest(lines, {
+      contextManifest: {
+        files: [{
+          path: "src/app.js",
+          status: "M",
+          bytes: 17,
+          sha256: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        }],
+        truncated: true,
+        omitted_count: 2,
+      },
+    });
+    const out = lines.join("\n");
+    assert.match(out, /Changed-file manifest/);
+    assert.match(out, /src\/app\.js/);
+    assert.match(out, /bytes=17/);
+    assert.match(out, /sha256:0123456789abcdef/);
+    assert.match(out, /2 additional changed file/);
+    assert.doesNotMatch(out, /console\.log|function|class/);
   });
 });
 
