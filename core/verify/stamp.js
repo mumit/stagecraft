@@ -22,8 +22,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig } = require("../config");
 const {
-  runCommand, resolveCommands, resolveTestCommands, resolveTestConcurrency, runTestCommands,
+  runCommandWithReceipt, resolveCommands, resolveTestCommands, resolveTestConcurrency, runTestCommands,
 } = require("./runner");
+const { receiptRootFromGate } = require("./receipts");
 const { loadGateSafe } = require("../gates/load-gate");
 const { verify: specVerify, generateScaffold, extractAcsFromBrief: extractAcsFromBriefSpec } = require("../spec/verify");
 const { runLicenseCheck } = require("./license-runner");
@@ -41,6 +42,7 @@ function testRunRecord(execution) {
     resource_group: run.resource_group || undefined,
     stdout_truncated: run.stdoutTruncated || undefined,
     stderr_truncated: run.stderrTruncated || undefined,
+    receipt: run.receipt || undefined,
   }));
   if (suites.length === 1) {
     const [run] = suites;
@@ -50,6 +52,7 @@ function testRunRecord(execution) {
       duration_ms: run.duration_ms,
       timed_out: run.timed_out,
       spawn_error: run.spawn_error,
+      receipt: run.receipt,
     };
   }
   return {
@@ -60,10 +63,20 @@ function testRunRecord(execution) {
   };
 }
 
-async function executeTests(cwd, config) {
+async function executeTests(cwd, config, gatePath, purpose) {
   const commands = resolveTestCommands(cwd, config);
   if (commands.length === 0) return null;
-  return runTestCommands(commands, { cwd, concurrency: resolveTestConcurrency(config) });
+  return runTestCommands(commands, {
+    cwd,
+    concurrency: resolveTestConcurrency(config),
+    receipts: gatePath ? {
+      root: receiptRootFromGate(gatePath),
+      cwd,
+      config,
+      purpose,
+      enabled: config.pipeline.verify.receipts !== false,
+    } : undefined,
+  });
 }
 
 function appendTestFailures(blockers, execution) {
@@ -95,7 +108,17 @@ async function stampStage04a(cwd, gatePath) {
 
   // lint_passed
   if (commands.lint) {
-    const result = await runCommand(commands.lint, { cwd });
+    const result = await runCommandWithReceipt(commands.lint, {
+      cwd,
+      receipts: {
+        root: receiptRootFromGate(gatePath),
+        cwd,
+        config,
+        purpose: "stage-04a:lint",
+        suiteId: "lint",
+        enabled: config.pipeline.verify.receipts !== false,
+      },
+    });
     const passed = result.exitCode === 0 && !result.timedOut && !result.spawnError;
     if (gate.lint_passed !== passed) {
       stamp.fields.push({ field: "lint_passed", model_said: gate.lint_passed, orchestrator: passed });
@@ -109,6 +132,7 @@ async function stampStage04a(cwd, gatePath) {
       duration_ms: result.durationMs,
       timed_out: result.timedOut || undefined,
       spawn_error: result.spawnError || undefined,
+      receipt: result.receipt || undefined,
     };
     if (!passed) {
       blockers.push(`lint failed (exit ${result.exitCode}${result.timedOut ? ", timed out" : ""}): ${result.command}`);
@@ -118,7 +142,7 @@ async function stampStage04a(cwd, gatePath) {
   }
 
   // tests_passed (lightweight check at 4a; 06 is the authoritative test stage)
-  const testExecution = await executeTests(cwd, config);
+  const testExecution = await executeTests(cwd, config, gatePath, "stage-04a:test");
   if (testExecution) {
     const passed = testExecution.passed;
     if (gate.tests_passed !== passed) {
@@ -237,7 +261,7 @@ async function stampStage06(cwd, gatePath) {
   const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
 
   // Test command exit code
-  const testExecution = await executeTests(cwd, config);
+  const testExecution = await executeTests(cwd, config, gatePath, "stage-06:test");
   if (testExecution) {
     const passed = testExecution.passed;
     stamp.runs.test = testRunRecord(testExecution);
@@ -483,7 +507,7 @@ async function stampStage03b(cwd, gatePath) {
       // build stage does that), so this captures any currently-failing tests.
       // stampStage04a combines this with the post-build result to finalize reproduced.
       const config = loadConfig(cwd);
-      const testExecution = await executeTests(cwd, config);
+      const testExecution = await executeTests(cwd, config, gatePath, "stage-03b:reproduction-pre-build");
       if (testExecution) {
         const preBuildPassed = testExecution.passed;
         stamp.runs.reproduction_pre_build = {

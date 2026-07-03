@@ -89,6 +89,7 @@ describe("config: renderDefaultConfig + writeConfigIfAbsent", () => {
     assert.match(text, /default_track: full/);
     assert.match(text, /require_signed_gates: false/);
     assert.match(text, /force_stages: \[\]/);
+    assert.match(text, /receipts: true/);
   });
 
   it("renders multi-host hints", () => {
