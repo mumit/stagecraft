@@ -24,6 +24,12 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { terminateChild } = require("../process-kill");
+const {
+  receiptKey,
+  reusableReceipt,
+  writeReceipt,
+  receiptSummary,
+} = require("./receipts");
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 min; lint and tests should fit easily
 const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -129,6 +135,67 @@ function runCommand(command, opts = {}) {
       });
     });
   });
+}
+
+async function runCommandWithReceipt(command, opts = {}) {
+  const receipts = opts.receipts;
+  if (!receipts || receipts.enabled === false || !receipts.root || !receipts.cwd || !receipts.purpose) {
+    return runCommand(command, opts);
+  }
+
+  const { digest, key } = receiptKey({
+    cwd: receipts.cwd,
+    command,
+    suiteId: receipts.suiteId || "command",
+    purpose: receipts.purpose,
+    config: receipts.config || {},
+  });
+  const cached = reusableReceipt(receipts.root, digest);
+  if (cached) {
+    return {
+      ...cached,
+      command,
+      durationMs: 0,
+      receipt: receiptSummary({
+        digest,
+        reused: true,
+        reason: "full key matched",
+        receipt: cached.receipt,
+      }),
+    };
+  }
+
+  const result = await runCommand(command, opts);
+  const passed = result.exitCode === 0 && !result.timedOut && !result.spawnError;
+  const summary = {
+    digest,
+    reused: false,
+    reason: passed ? "miss; executed and stored" : "miss; failed result not reusable",
+  };
+  if (passed) {
+    const receipt = {
+      schema_version: "1",
+      digest,
+      key,
+      executed_at: new Date().toISOString(),
+      result: {
+        command: result.command,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        durationMs: result.durationMs,
+        timedOut: result.timedOut,
+        signal: result.signal || null,
+        stdoutTruncated: result.stdoutTruncated || undefined,
+        stderrTruncated: result.stderrTruncated || undefined,
+      },
+    };
+    summary.path = writeReceipt(receipts.root, receipt);
+  }
+  return {
+    ...result,
+    receipt: receiptSummary(summary),
+  };
 }
 
 function discoverScripts(cwd) {
@@ -312,7 +379,16 @@ async function runTestCommands(commands, opts = {}) {
         started.add(index);
         active += 1;
         if (resourceGroup) activeGroups.add(resourceGroup);
-        runCommand(suite.command, opts).then((result) => {
+        const commandOpts = {
+          ...opts,
+          receipts: opts.receipts
+            ? {
+                ...opts.receipts,
+                suiteId: suite.id,
+              }
+            : undefined,
+        };
+        runCommandWithReceipt(suite.command, commandOpts).then((result) => {
           runs[index] = {
             id: suite.id,
             resource_group: resourceGroup || undefined,
@@ -340,6 +416,7 @@ async function runTestCommands(commands, opts = {}) {
 
 module.exports = {
   runCommand,
+  runCommandWithReceipt,
   discoverScripts,
   discoverTestCommands,
   resolveCommands,
