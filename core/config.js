@@ -13,6 +13,7 @@ const DEFAULTS = {
     roles: {},
     stages: {},
     review_fanout: [],
+    host_concurrency: {},
   },
   pipeline: {
     default_track: "full",
@@ -75,6 +76,12 @@ function loadConfig(cwd = process.cwd()) {
         roles: parsed.routing?.roles ?? DEFAULTS.routing.roles,
         stages: parsed.routing?.stages ?? DEFAULTS.routing.stages,
         review_fanout: Array.isArray(parsed.routing?.review_fanout) ? parsed.routing.review_fanout : [],
+        host_concurrency: (
+          parsed.routing
+          && typeof parsed.routing.host_concurrency === "object"
+          && parsed.routing.host_concurrency !== null
+          && !Array.isArray(parsed.routing.host_concurrency)
+        ) ? parsed.routing.host_concurrency : {},
       },
       pipeline: {
         default_track: parsed.pipeline?.default_track ?? DEFAULTS.pipeline.default_track,
@@ -232,6 +239,9 @@ function renderDefaultConfig(hosts, opts = {}) {
       lines.push(`  #   <role>: ${h}`);
     }
   }
+  lines.push("  # host_concurrency:  # optional per-host workstream limits inside a stage");
+  lines.push("  #   default: 2");
+  lines.push(`  #   ${list[0]}: 1`);
   lines.push("");
   lines.push("pipeline:");
   lines.push("  default_track: full");

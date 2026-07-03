@@ -88,6 +88,7 @@ results are never reused, and uncertain lookup falls back to execution. Set
 | `release.test.js` | `scripts/release.js notes` extraction: `[Unreleased]` default, middle section, last section (no trailing header to anchor to), missing-version error, blank-line preservation, trailing `---` stripping. |
 | `headless.test.js` | `core/adapters/headless.js`: command resolution, env override, missing-command rejection, exit-code propagation, spawn-ENOENT message, gatePath detection, EPIPE swallowing, whitespace-split. |
 | `run.test.js` | `devteam run` driver: happy-path loop, auto-fix `code-defect` retry, transient dispatch retry with backoff, `--auto-rule` escalation resolution, consequence-ceiling halt, `--until` boundary stop. |
+| `scheduler.test.js` | Per-host workstream scheduler: host/default limits, stable result ordering, queue-depth and queue-time behavior. |
 | `classify.test.js` | `classifyDispatch` failure-class derivation: `code-defect`, `judgment-gate`, `state-corruption`, `external-blocked`, `transient`, `structural-input`. |
 | `escalation.test.js` | Escalation-handling end-to-end: `devteam ruling` dispatch, `fix-escalation` encoding, auto-rule grant/deny, `PRINCIPAL-CANNOT-DECIDE` halt. |
 | `chain.test.js` | Multi-stage fix-and-retry chains: blocker propagation across stage boundaries, retry ceiling, convergence-exhausted promotion to escalation. |

@@ -107,6 +107,8 @@ function analyzeEvents(events, opts = {}) {
         role: event.role || null,
         host: event.host || null,
         duration_ms: durationMs,
+        queue_ms: typeof event.queue_ms === "number" ? event.queue_ms : 0,
+        queue_limit: typeof event.queue_limit === "number" ? event.queue_limit : null,
         exit_code: event.exit_code ?? null,
         timed_out: Boolean(event.timed_out),
         skipped: Boolean(event.skipped),
@@ -122,6 +124,7 @@ function analyzeEvents(events, opts = {}) {
       const rec = ensureDispatch(dispatches, event);
       rec.finished_at = ms;
       rec.duration_ms = typeof event.duration_ms === "number" ? event.duration_ms : rec.duration_ms;
+      rec.queue_ms = typeof event.queue_ms === "number" ? event.queue_ms : rec.queue_ms;
       rec.workstreams_expected = typeof event.workstreams === "number" ? event.workstreams : rec.workstreams_expected;
       continue;
     }
@@ -185,8 +188,9 @@ function analyzeEvents(events, opts = {}) {
       addMissing("dispatch missing start or finish timestamp");
     }
     if (rec.queue_ms === null) {
-      rec.queue_ms = 0;
-      rec.missing_duration_reasons.push("queue_ms inferred as 0 before scheduler exists");
+      const queueSum = rec.workstreams.reduce((total, ws) => total + (typeof ws.queue_ms === "number" ? ws.queue_ms : 0), 0);
+      rec.queue_ms = queueSum;
+      if (queueSum === 0) rec.missing_duration_reasons.push("queue_ms inferred as 0 before scheduler exists");
     }
     const sum = rec.workstreams.reduce((total, ws) => total + (typeof ws.duration_ms === "number" ? ws.duration_ms : 0), 0);
     const withDuration = rec.workstreams.filter((ws) => typeof ws.duration_ms === "number").length;
@@ -209,6 +213,7 @@ function analyzeEvents(events, opts = {}) {
   const mergeWallMs = merges.reduce((total, row) => total + (row.duration_ms || 0), 0);
   const workstreamComputeMs = rows.reduce((total, row) => total + (row.workstream_compute_ms || 0), 0);
   const parallelSavingsMs = rows.reduce((total, row) => total + (row.parallel_savings_ms || 0), 0);
+  const queueWaitMs = rows.reduce((total, row) => total + (row.queue_ms || 0), 0);
 
   const report = {
     schema_version: SCHEMA_VERSION,
@@ -222,6 +227,7 @@ function analyzeEvents(events, opts = {}) {
     workstream_compute_ms: workstreams.length > 0 ? workstreamComputeMs : null,
     parallel_savings_ms: rows.length > 0 ? parallelSavingsMs : null,
     retry_delay_ms: retryDelayMs,
+    queue_wait_ms: queueWaitMs,
     telemetry_coverage: {
       dispatch_duration: dispatchDurationCoverage,
       workstream_duration: workstreamDurationCoverage,
@@ -323,16 +329,17 @@ function renderMarkdown(report) {
   out.push(`- Merge wall time: ${durationLabel(report.merge_wall_ms)}`);
   out.push(`- Parallel workstream compute: ${durationLabel(report.workstream_compute_ms)}`);
   out.push(`- Estimated parallel savings: ${durationLabel(report.parallel_savings_ms)}`);
+  out.push(`- Queue wait time: ${durationLabel(report.queue_wait_ms)}`);
   out.push(`- Retry delay time: ${durationLabel(report.retry_delay_ms)}`);
   out.push("");
 
   out.push("## Dispatches");
   out.push("");
-  out.push("| Iteration | Stage | Action | Wall | Workstreams | Workstream compute | Parallel savings | Coverage |");
-  out.push("|---:|---|---|---:|---:|---:|---:|---:|");
+  out.push("| Iteration | Stage | Action | Wall | Queue | Workstreams | Workstream compute | Parallel savings | Coverage |");
+  out.push("|---:|---|---|---:|---:|---:|---:|---:|---:|");
   for (const row of report.dispatches) {
     const coverage = row.workstream_duration_coverage === null ? "—" : `${Math.round(row.workstream_duration_coverage * 100)}%`;
-    out.push(`| ${row.iteration ?? "—"} | ${row.name || row.stage || "—"} | ${row.action || "—"} | ${durationLabel(row.duration_ms)} | ${row.workstreams.length} | ${durationLabel(row.workstream_compute_ms)} | ${durationLabel(row.parallel_savings_ms)} | ${coverage} |`);
+    out.push(`| ${row.iteration ?? "—"} | ${row.name || row.stage || "—"} | ${row.action || "—"} | ${durationLabel(row.duration_ms)} | ${durationLabel(row.queue_ms)} | ${row.workstreams.length} | ${durationLabel(row.workstream_compute_ms)} | ${durationLabel(row.parallel_savings_ms)} | ${coverage} |`);
   }
   out.push("");
 

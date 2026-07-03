@@ -24,6 +24,7 @@ const { getRecipe } = require("./pipeline/fix-recipes");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
+const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
 
 // C1: patch a gate file to record write-audit violations and flip status to FAIL.
 // Called after headless invoke when the adapter reported unauthorized writes.
@@ -483,6 +484,7 @@ function runStage(stageName, opts = {}) {
 // capability check; rejects if any routed host has headless: false.
 async function runStageHeadless(stageName, opts = {}) {
   const plan = runStage(stageName, opts);
+  const config = opts.config || loadConfig(opts.cwd || process.cwd());
   const onWorkstreamEvent = typeof opts.onWorkstreamEvent === "function" ? opts.onWorkstreamEvent : null;
   const emitWorkstreamEvent = (event) => {
     if (!onWorkstreamEvent) return;
@@ -626,9 +628,31 @@ async function runStageHeadless(stageName, opts = {}) {
     // is a no-op there (gate absent → archiveGateIfFail returns null). Best-effort.
     try { archiveGateIfFail(gatesDir, plan.stage); } catch { /* never block dispatch */ }
 
+    const limitForHost = (host) => hostConcurrencyLimit(config, host);
     // --workstream filtering is applied in runStage (before rendering), so
     // plan.workstreams already contains only the requested workstreams here.
-    const results = await Promise.all(plan.workstreams.map(async (ws) => {
+    const results = await mapByHostConcurrency(plan.workstreams, {
+      key: (ws) => ws.host,
+      limit: limitForHost,
+      onQueued: (ws, _index, queue) => {
+        const wsGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
+        const expectedLogPath = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
+          ? null
+          : path.join(getLogsDir(plan.ctx.cwd, plan.ctx.changeId), `${ws.descriptor.workstreamId}.log`);
+        emitWorkstreamEvent({
+          type: "workstream-queued",
+          stage: plan.stage,
+          name: stageName,
+          role: ws.role,
+          host: ws.host,
+          workstream_id: ws.descriptor.workstreamId,
+          gate_path: wsGatePathExpected,
+          log_path: expectedLogPath,
+          queue_depth: queue.queueDepth,
+          queue_limit: queue.queueLimit,
+        });
+      },
+    }, async (ws, _index, queue) => {
       const wsGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
       const expectedLogPath = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
         ? null
@@ -639,6 +663,7 @@ async function runStageHeadless(stageName, opts = {}) {
           const skipped = {
             role: ws.role, host: ws.host, descriptor: ws.descriptor, skipped: true,
             exitCode: 0, gatePath: wsGatePathExpected, logPath: expectedLogPath, durationMs: 0,
+            queueMs: queue.queueMs,
           };
           emitWorkstreamEvent({
             type: "workstream-finished",
@@ -652,11 +677,14 @@ async function runStageHeadless(stageName, opts = {}) {
             gate_path: wsGatePathExpected,
             log_path: expectedLogPath,
             duration_ms: 0,
+            queue_ms: queue.queueMs,
+            queue_limit: queue.queueLimit,
           });
           return skipped;
         }
       }
-      process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)\n`);
+      const queueSuffix = queue.queueMs > 0 ? ` after ${queue.queueMs}ms queue` : "";
+      process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)${queueSuffix}\n`);
       // G10: snapshot mtime before invoke so we can tell whether the headless
       // command actually wrote the gate (vs. a pre-existing gate that the
       // command left untouched — e.g. `devteam replay` with a no-op command).
@@ -671,6 +699,8 @@ async function runStageHeadless(stageName, opts = {}) {
         workstream_id: ws.descriptor.workstreamId,
         gate_path: wsGatePathExpected,
         log_path: expectedLogPath,
+        queue_ms: queue.queueMs,
+        queue_limit: queue.queueLimit,
       });
 
       let r;
@@ -705,6 +735,8 @@ async function runStageHeadless(stageName, opts = {}) {
           gate_path: null,
           log_path: expectedLogPath,
           duration_ms: null,
+          queue_ms: queue.queueMs,
+          queue_limit: queue.queueLimit,
           error: err && err.message,
         });
         throw err;
@@ -748,7 +780,7 @@ async function runStageHeadless(stageName, opts = {}) {
           patchGateForToolBudget(budgetGatePath, ws.descriptor.toolBudget);
         }
       }
-      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, ...r };
+      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, ...r };
       emitWorkstreamEvent({
         type: "workstream-finished",
         stage: plan.stage,
@@ -761,11 +793,13 @@ async function runStageHeadless(stageName, opts = {}) {
         gate_path: r.gatePath || null,
         log_path: r.logPath || expectedLogPath,
         duration_ms: r.durationMs ?? null,
+        queue_ms: queue.queueMs,
+        queue_limit: queue.queueLimit,
         write_violations_count: Array.isArray(r.writeViolations) ? r.writeViolations.length : 0,
         stub_gate: Boolean(r.stubGate),
       });
       return result;
-    }));
+    });
 
     // Orchestrator-stamped verification. For stages where the gate
     // claims something the orchestrator can verify (stage-04a:

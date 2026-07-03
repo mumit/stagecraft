@@ -12,6 +12,7 @@ const {
 const {
   dispatchGuardTransition,
   normalizeDispatchResults,
+  transientDelayPlan,
   dispatchOutcomeTransition,
   targetedFixNoChangeTransition,
   scopeGateTransition,
@@ -130,6 +131,7 @@ describe("driver dispatch handlers", () => {
       wroteGate: true,
       stubGate: false,
       exitCode: 0,
+      queueWaitMs: 0,
     });
     assert.equal(wrapped.timedOut, true);
     assert.equal(wrapped.wroteGate, false);
@@ -161,8 +163,20 @@ describe("driver dispatch handlers", () => {
     assert.equal(transient.details.retry, true);
     assert.equal(transient.statePatch.transient.requirements, 1);
     assert.equal(transient.logEvents[0].outcome, "transient-retry");
+    assert.equal(transient.logEvents[0].delay_ms, 25);
     assert.equal(structural.control, TRANSITION_CONTROLS.HALT);
     assert.equal(structural.summaryPatch.halt_action, "structural-input");
+  });
+
+  it("shortens retry delay for immediate non-timeout no-gate failures", () => {
+    assert.deepEqual(
+      transientDelayPlan({ retryDelayMs: 30000, timedOut: false, stubGate: false, exitCode: 1 }),
+      { delayMs: 5000, retryReason: "nonzero-exit-no-gate", backoffClass: "short" },
+    );
+    assert.deepEqual(
+      transientDelayPlan({ retryDelayMs: 30000, timedOut: true, stubGate: false, exitCode: 1 }),
+      { delayMs: 30000, retryReason: "timeout", backoffClass: "full" },
+    );
   });
 
   it("builds targeted-fix and scope-gate halt results", () => {

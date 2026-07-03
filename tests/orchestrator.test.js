@@ -276,6 +276,37 @@ describe("orchestrator: runStageHeadless --skip-completed", () => {
     const roles = plan.workstreams.map((w) => w.role).sort();
     assert.deepEqual(roles, ["backend", "frontend", "platform", "qa"]);
   });
+
+  it("emits queued and queue timing events under host concurrency limits", async () => {
+    const cwd = track(makeTargetProject({
+      config: [
+        "routing:",
+        "  default_host: claude-code",
+        "  host_concurrency:",
+        "    claude-code: 1",
+        "pipeline:",
+        "  default_track: full",
+        "",
+      ].join("\n"),
+    }));
+    for (const role of ["backend", "frontend", "platform", "qa"]) {
+      seedGate(cwd, `stage-04.${role}`, {
+        stage: "stage-04", workstream: role, status: "PASS",
+      });
+    }
+    const events = [];
+    const result = await runStageHeadless("build", {
+      cwd,
+      skipCompleted: true,
+      onWorkstreamEvent: (event) => events.push(event),
+    });
+
+    assert.equal(result.results.length, 4);
+    assert.equal(events.filter((event) => event.type === "workstream-queued").length, 4);
+    assert.equal(events.filter((event) => event.type === "workstream-finished").length, 4);
+    assert.ok(events.some((event) => event.queue_limit === 1));
+    assert.ok(result.results.every((item) => typeof item.queueMs === "number"));
+  });
 });
 
 // ─── Fix 1.7.1: summary() must not crash on a status-less gate ────────────

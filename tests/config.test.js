@@ -29,6 +29,16 @@ describe("config: loadConfig", () => {
     assert.equal(c.pipeline.default_track, "hotfix");
     assert.equal(c.pipeline.require_signed_gates, false);
     assert.deepEqual(c.pipeline.force_stages, []);
+    assert.deepEqual(c.routing.host_concurrency, {});
+  });
+
+  it("parses per-host concurrency limits", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\n  host_concurrency:\n    default: 2\n    codex: 1\n",
+    }));
+    const c = loadConfig(cwd);
+    assert.equal(c.routing.host_concurrency.default, 2);
+    assert.equal(c.routing.host_concurrency.codex, 1);
   });
 
   it("parses force_stages as an operator override list", () => {
