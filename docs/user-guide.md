@@ -1516,11 +1516,18 @@ pipeline:
     lint_command: "npm run lint"
     test_command: "make test"  # replaces automatic Node/pytest/Go discovery
     test_concurrency: 2        # use 1 for fragile suites; maximum is 8
+    receipts: true             # set false to force fresh execution every stamp
 ```
 
 Set either value to `null` to disable that check explicitly. See
 [`docs/TESTING.md`](TESTING.md#target-project-test-discovery) for discovery signals and
 the stamped aggregate result.
+
+Successful orchestrator-run verification commands mint content-addressed receipts under
+the active pipeline root. A later stamp reuses a receipt only when the command, suite,
+verification purpose, workspace bytes, verify config, material env/toolchain data, and
+Stagecraft verifier version all match. Failed results are never reused; uncertain
+receipt lookup falls back to rerunning.
 
 For multiple custom suites without a single monorepo command, omit `test_command` and
 use `test_suites`. Suites sharing a `resource_group` never overlap, while unrelated

@@ -247,6 +247,76 @@ describe("verify/stamp: stampStage06 — AC mapping", () => {
     assert.equal(suites[1].resource_group, undefined);
   });
 
+  it("records and reuses successful verification receipts in gate provenance", async () => {
+    const cwd = track(makeTargetProject({
+      config: configWith({
+        test_suites: [
+          { id: "unit", command: "node test.js" },
+        ],
+      }),
+    }));
+    fs.writeFileSync(path.join(cwd, "test.js"), `
+      const fs = require('node:fs');
+      fs.mkdirSync('pipeline', { recursive: true });
+      const file = 'pipeline/count.txt';
+      const n = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      fs.writeFileSync(file, String(n + 1));
+    `);
+    seedBrief(cwd, "## Criteria\n- AC-1: foo\n");
+    seedReport(cwd, "| AC | Test |\n|---|---|\n| AC-1 | unit |\n");
+    const gatePath = seedGateRaw(cwd, "stage-06", {
+      stage: "stage-06", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "full", timestamp: "2026-06-19T12:00:00Z",
+      blockers: [], warnings: [], all_acceptance_criteria_met: true,
+      tests_total: 1, tests_passed: 1, tests_failed: 0, failing_tests: [],
+      criterion_to_test_mapping_is_one_to_one: true,
+    });
+
+    const first = await stampStage06(cwd, gatePath);
+    const second = await stampStage06(cwd, gatePath);
+    const firstReceipt = first.gate._orchestrator_stamped.runs.test.receipt;
+    const secondReceipt = second.gate._orchestrator_stamped.runs.test.receipt;
+
+    assert.equal(firstReceipt.reused, false);
+    assert.equal(secondReceipt.reused, true);
+    assert.match(secondReceipt.digest, /^sha256:/);
+    assert.equal(fs.readFileSync(path.join(cwd, "pipeline", "count.txt"), "utf8"), "1");
+  });
+
+  it("honors pipeline.verify.receipts=false by rerunning instead of reusing", async () => {
+    const cwd = track(makeTargetProject({
+      config: configWith({
+        receipts: false,
+        test_suites: [
+          { id: "unit", command: "node test.js" },
+        ],
+      }),
+    }));
+    fs.writeFileSync(path.join(cwd, "test.js"), `
+      const fs = require('node:fs');
+      fs.mkdirSync('pipeline', { recursive: true });
+      const file = 'pipeline/count.txt';
+      const n = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      fs.writeFileSync(file, String(n + 1));
+    `);
+    seedBrief(cwd, "## Criteria\n- AC-1: foo\n");
+    seedReport(cwd, "| AC | Test |\n|---|---|\n| AC-1 | unit |\n");
+    const gatePath = seedGateRaw(cwd, "stage-06", {
+      stage: "stage-06", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "full", timestamp: "2026-06-19T12:00:00Z",
+      blockers: [], warnings: [], all_acceptance_criteria_met: true,
+      tests_total: 1, tests_passed: 1, tests_failed: 0, failing_tests: [],
+      criterion_to_test_mapping_is_one_to_one: true,
+    });
+
+    const first = await stampStage06(cwd, gatePath);
+    const second = await stampStage06(cwd, gatePath);
+
+    assert.equal(first.gate._orchestrator_stamped.runs.test.receipt, undefined);
+    assert.equal(second.gate._orchestrator_stamped.runs.test.receipt, undefined);
+    assert.equal(fs.readFileSync(path.join(cwd, "pipeline", "count.txt"), "utf8"), "2");
+  });
+
   it("flips status to FAIL when an AC is unmapped (model claimed met)", async () => {
     const cwd = track(makeTargetProject({
       config: configWith({ test_command: "true" }),

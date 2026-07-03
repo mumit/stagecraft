@@ -49,6 +49,14 @@ pipeline:
         resource_group: browser
 ```
 
+Successful orchestrator-run verification commands also mint content-addressed receipts
+under the active pipeline root (`pipeline/verification-receipts/` in in-place mode, or
+the bounded change's equivalent). Receipt reuse requires an exact key match across the
+normalized command, suite id, verification purpose, workspace file digests, verify
+config, material environment/toolchain inputs, and Stagecraft verifier version. Failed
+results are never reused, and uncertain lookup falls back to execution. Set
+`pipeline.verify.receipts: false` for projects whose tests depend on external state.
+
 ## Test file inventory
 
 | File | What it covers |

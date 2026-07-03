@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   runCommand,
+  runCommandWithReceipt,
   discoverScripts,
   discoverTestCommands,
   resolveCommands,
@@ -89,6 +90,95 @@ describe("verify/runner: runCommand", () => {
     assert.equal(r.exitCode, 0);
     assert.match(r.stdout, /1/);
     assert.match(r.stdout, /2/);
+  });
+});
+
+describe("verify/runner: content-addressed receipts", () => {
+  it("reuses a successful command when the full receipt key matches", async () => {
+    const d = tmpdir();
+    const receipts = path.join(d, "pipeline", "verification-receipts");
+    fs.mkdirSync(path.join(d, "pipeline"), { recursive: true });
+    const script = writeScript(d, "count.js", `
+      const fs = require('node:fs');
+      const file = 'pipeline/count.txt';
+      const n = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      fs.writeFileSync(file, String(n + 1));
+      console.log('run ' + (n + 1));
+    `);
+    const opts = {
+      cwd: d,
+      receipts: {
+        root: receipts,
+        cwd: d,
+        purpose: "stage-06:test",
+        suiteId: "unit",
+        config: { pipeline: { verify: { test_command: `node ${script}` } } },
+      },
+    };
+
+    const first = await runCommandWithReceipt(`node ${script}`, opts);
+    const second = await runCommandWithReceipt(`node ${script}`, opts);
+
+    assert.equal(first.exitCode, 0);
+    assert.equal(first.receipt.reused, false);
+    assert.equal(second.exitCode, 0);
+    assert.equal(second.receipt.reused, true);
+    assert.equal(fs.readFileSync(path.join(d, "pipeline", "count.txt"), "utf8"), "1");
+  });
+
+  it("invalidates a receipt when material workspace files change", async () => {
+    const d = tmpdir();
+    const receipts = path.join(d, "pipeline", "verification-receipts");
+    fs.mkdirSync(path.join(d, "pipeline"), { recursive: true });
+    const source = path.join(d, "src.js");
+    fs.writeFileSync(source, "module.exports = 1;\n");
+    const script = writeScript(d, "count.js", `
+      const fs = require('node:fs');
+      const file = 'pipeline/count.txt';
+      const n = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      fs.writeFileSync(file, String(n + 1));
+    `);
+    const opts = {
+      cwd: d,
+      receipts: {
+        root: receipts,
+        cwd: d,
+        purpose: "stage-06:test",
+        suiteId: "unit",
+        config: {},
+      },
+    };
+
+    await runCommandWithReceipt(`node ${script}`, opts);
+    fs.writeFileSync(source, "module.exports = 2;\n");
+    const second = await runCommandWithReceipt(`node ${script}`, opts);
+
+    assert.equal(second.receipt.reused, false);
+    assert.equal(fs.readFileSync(path.join(d, "pipeline", "count.txt"), "utf8"), "2");
+  });
+
+  it("does not reuse failed command results", async () => {
+    const d = tmpdir();
+    const receipts = path.join(d, "pipeline", "verification-receipts");
+    const script = writeScript(d, "fail.js", "process.exit(4)");
+    const opts = {
+      cwd: d,
+      receipts: {
+        root: receipts,
+        cwd: d,
+        purpose: "stage-06:test",
+        suiteId: "unit",
+        config: {},
+      },
+    };
+
+    const first = await runCommandWithReceipt(`node ${script}`, opts);
+    const second = await runCommandWithReceipt(`node ${script}`, opts);
+
+    assert.equal(first.exitCode, 4);
+    assert.equal(first.receipt.reused, false);
+    assert.equal(second.exitCode, 4);
+    assert.equal(second.receipt.reused, false);
   });
 });
 
