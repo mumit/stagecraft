@@ -23,6 +23,12 @@ const { next, runStageHeadless, mergeWorkstreamGates } = require("./orchestrator
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom } = require("./config");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
+const {
+  candidateActiveRoles,
+  deterministicSkipsForOrder,
+  expectedWorkstreamCount,
+  highConfidenceTrack,
+} = require("./pipeline/right-sizing");
 const { runAdvise } = require("./advise");
 const { MAX_RETRIES_DEFAULT, MAX_TRANSIENT_RETRIES_DEFAULT } = require("./gates/classify");
 const { loadPrincipalOutputs, runRuling, runFixEscalation } = require("./escalation");
@@ -413,12 +419,31 @@ function resolveTrack(opts, config, cwd) {
   if (Array.isArray(config.pipeline.custom_stages)) {
     return { track: config.pipeline.custom_stages, source: "config", confidence: null };
   }
+  const assessmentText = opts.feature || opts.description || "";
+  if (config.pipeline.right_sizing !== false && assessmentText.trim()) {
+    const inferred = highConfidenceTrack(cwd, assessmentText);
+    if (inferred && inferred.track && inferred.track !== (config.pipeline.default_track || "full")) {
+      return {
+        track: inferred.track,
+        source: "inferred",
+        confidence: inferred.confidence,
+        right_sizing: {
+          kind: "track",
+          reasons: inferred.reasons,
+          trigger_inputs: inferred.trigger_inputs,
+        },
+      };
+    }
+  }
   return { track: config.pipeline.default_track || "full", source: "config", confidence: null };
 }
 
-function summarizeRunPlan(order, config = {}) {
+function summarizeRunPlan(order, config = {}, opts = {}) {
   const skipStages = new Set((config.pipeline && config.pipeline.skip_stages) || []);
-  const included = order.filter((name) => !skipStages.has(name));
+  const rightSizedSkips = opts.rightSizedSkips || {};
+  const rightSizedStageNames = Object.keys(rightSizedSkips);
+  const deterministicSkipStages = new Set(rightSizedStageNames);
+  const included = order.filter((name) => !skipStages.has(name) && !deterministicSkipStages.has(name));
   const skipped = order.filter((name) => skipStages.has(name));
   const baseWorkstreams = included.reduce((sum, name) => {
     const stage = STAGES[name];
@@ -428,14 +453,20 @@ function summarizeRunPlan(order, config = {}) {
     stages_total: order.length,
     stages_included: included.length,
     stages_skipped_by_config: skipped.length,
+    stages_skipped_by_right_sizing: rightSizedStageNames.length,
     base_workstreams: baseWorkstreams,
+    expected_workstreams: opts.expectedWorkstreams ?? baseWorkstreams,
     conditional_stages: included.filter((name) => STAGES[name] && STAGES[name].conditionalOn).length,
     skipped_stage_names: skipped,
+    right_sized_stage_names: rightSizedStageNames,
+    candidate_active_roles: opts.candidateActiveRoles || [],
   };
 }
 
 const RUN_BLOCKERS_BEGIN = "<!-- devteam:run-blockers:begin -->";
 const RUN_BLOCKERS_END = "<!-- devteam:run-blockers:end -->";
+const RIGHT_SIZING_BEGIN = "<!-- devteam:right-sizing:begin -->";
+const RIGHT_SIZING_END = "<!-- devteam:right-sizing:end -->";
 
 function clearGates(targets) {
   const cleared = [];
@@ -444,6 +475,31 @@ function clearGates(targets) {
     catch { /* not present, or a placeholder like stage-04.<affected-ws>.json */ }
   }
   return cleared;
+}
+
+function seedRightSizingContext(cwd, changeId, candidates) {
+  if (!candidates || !Array.isArray(candidates.roles) || candidates.roles.length === 0) return;
+  const root = pipelineRoot(cwd, changeId);
+  const p = path.join(root, "context.md");
+  const matched = candidates.trigger_inputs?.matched_files_by_role || {};
+  const lines = [
+    RIGHT_SIZING_BEGIN,
+    "## Right-sizing candidates",
+    "",
+    "Stagecraft derived candidate active workstreams from changed paths. Stage 01 should confirm or correct `active_roles` in `pipeline/gates/stage-01.json`; do not treat this as a replacement for PM judgment.",
+    "",
+    `Candidate active roles: ${candidates.roles.join(", ")}`,
+    "",
+    "Trigger files by role:",
+  ];
+  for (const role of candidates.roles) {
+    const files = matched[role] || [];
+    lines.push(`- ${role}: ${files.length > 0 ? files.join(", ") : "(no direct file match)"}`);
+  }
+  lines.push(RIGHT_SIZING_END);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const existing = fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+  fs.writeFileSync(p, upsertSection(existing, RIGHT_SIZING_BEGIN, RIGHT_SIZING_END, lines.join("\n"), { insert: "prepend" }));
 }
 
 // Cross-stage context propagation (ADR-003 §4.3): record WHY a stage is being
@@ -740,7 +796,12 @@ async function run(opts = {}) {
   // ADR-006: resolveTrack returns {track, source, confidence} so the startup
   // confidence guard below can apply the require_confirmed_track check without
   // a second file read.
-  const { track, source: trackSource, confidence: trackConfidence } = resolveTrack(opts, config, cwd);
+  const {
+    track,
+    source: trackSource,
+    confidence: trackConfidence,
+    right_sizing: trackRightSizing,
+  } = resolveTrack(opts, config, cwd);
   // ADR-009 §Decision.7: tag runs by intent from day one so feature vs repair
   // history is distinguishable in run-state.json and run-log.jsonl.
   const intent = opts.repair ? "repair" : "feature";
@@ -884,13 +945,33 @@ async function run(opts = {}) {
     iterations: 0,
     cost_usd: 0,
   };
-  const runPlan = summarizeRunPlan(order, config);
+  const activeRoleCandidates = config.pipeline.right_sizing === false
+    ? { roles: [], trigger_inputs: {} }
+    : candidateActiveRoles(cwd);
+  const rightSizedSkips = config.pipeline.right_sizing === false
+    ? {}
+    : deterministicSkipsForOrder(order, cwd, { changeId });
+  const skippedForExpected = [
+    ...((config.pipeline && config.pipeline.skip_stages) || []),
+    ...Object.keys(rightSizedSkips),
+  ];
+  const runPlan = summarizeRunPlan(order, config, {
+    rightSizedSkips,
+    candidateActiveRoles: activeRoleCandidates.roles,
+    expectedWorkstreams: expectedWorkstreamCount(order, effectiveTrack, {
+      skipped: skippedForExpected,
+      activeRoles: activeRoleCandidates.roles,
+    }),
+  });
   const applyTransition = (result) => applyTransitionResult(result, {
     summary,
     state,
     logEvent: (entry) => logEvent(cwd, changeId, entry),
     onEvent,
   });
+  if (!opts.resume && config.pipeline.right_sizing !== false) {
+    seedRightSizingContext(cwd, changeId, activeRoleCandidates);
+  }
 
   // runStart stoplist check (Phase 1 § 1.1 check-point 1 of 2): refuse before
   // any dispatch when the resolved track is in STOPLIST_TRACKS and the brief or
@@ -921,6 +1002,7 @@ async function run(opts = {}) {
       track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
       track_source: trackSource,
       track_confidence: trackConfidence,
+      right_sizing: trackRightSizing || null,
       intent,
       ...runPlan,
     });
@@ -929,6 +1011,7 @@ async function run(opts = {}) {
       track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
       track_source: trackSource,
       track_confidence: trackConfidence,
+      right_sizing: trackRightSizing || null,
       intent,
       ...runPlan,
     });

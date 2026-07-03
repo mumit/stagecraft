@@ -169,7 +169,7 @@ describe("next: configured skips", () => {
     });
 
     const quiet = next({ cwd });
-    assert.equal(quiet.name, "clarification");
+    assert.equal(quiet.name, "executable-spec");
   });
 
   it("force_stages overrides configured skip_stages", () => {

@@ -165,13 +165,15 @@ describe("driver: dispatch loop (injected deps)", () => {
     });
     const plan = events.find((event) => event.type === "run-plan");
     const order = orderedStageNamesForTrack("quick");
-    const expectedIncluded = order.filter((name) => name !== "qa");
+    const expectedRightSized = ["accessibility-audit", "performance-budget"];
+    const expectedIncluded = order.filter((name) => name !== "qa" && !expectedRightSized.includes(name));
     const expectedWorkstreams = expectedIncluded.reduce((sum, name) => sum + STAGES[name].roles.length, 0);
     assert.ok(plan, "run-plan event emitted");
     assert.equal(plan.track, "quick");
     assert.equal(plan.stages_total, order.length);
     assert.equal(plan.stages_included, expectedIncluded.length);
     assert.equal(plan.stages_skipped_by_config, 1);
+    assert.equal(plan.stages_skipped_by_right_sizing, expectedRightSized.length);
     assert.equal(plan.base_workstreams, expectedWorkstreams);
 
     const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
@@ -179,6 +181,30 @@ describe("driver: dispatch loop (injected deps)", () => {
       .split("\n")
       .map((line) => JSON.parse(line));
     assert.ok(log.some((entry) => entry.outcome === "run-plan" && entry.base_workstreams === expectedWorkstreams));
+  });
+
+  it("run-plan includes right-sized skip and active-role expectations", async () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "src", "backend"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "src", "backend", "hello.js"), "module.exports = () => 'hello';\n");
+    const events = [];
+    await run({
+      cwd,
+      feature: "add a hello HTTP endpoint",
+      budgetUsd: 10,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+      onEvent: (event) => events.push(event),
+    });
+
+    const plan = events.find((event) => event.type === "run-plan");
+    assert.ok(plan, "run-plan event emitted");
+    assert.ok(plan.right_sized_stage_names.includes("accessibility-audit"));
+    assert.ok(plan.candidate_active_roles.includes("backend"));
+    assert.ok(plan.expected_workstreams < plan.base_workstreams);
+
+    const context = fs.readFileSync(path.join(cwd, "pipeline", "context.md"), "utf8");
+    assert.match(context, /Right-sizing candidates/);
+    assert.match(context, /Candidate active roles: backend/);
   });
 
   it("advances run-stage → merge → complete", async () => {
