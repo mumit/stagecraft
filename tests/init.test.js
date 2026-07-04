@@ -63,7 +63,7 @@ describe("devteam init --adapter", () => {
     assert.ok(r.stderr.includes("bogus-adapter"), "stderr must name the bad adapter");
   });
 
-  it("omits deploy section when --adapter is not specified", () => {
+  it("omits deploy section but installs local adapter when --adapter is not specified", () => {
     const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
 
     const r = runCLI(["init", "--host", "generic", "--cwd", cwd]);
@@ -71,10 +71,14 @@ describe("devteam init --adapter", () => {
 
     const content = fs.readFileSync(path.join(cwd, ".devteam", "config.yml"), "utf8");
     assert.ok(!content.includes("deploy:"), "config.yml must not contain deploy: without --adapter");
+    assert.ok(
+      fs.existsSync(path.join(cwd, ".devteam", "adapters", "local.md")),
+      "local deploy adapter must be installed as the no-config default",
+    );
   });
 
-  it("KNOWN_DEPLOY_ADAPTERS lists at least gizmos, cloud-run, docker-compose, custom", () => {
-    for (const name of ["gizmos", "cloud-run", "docker-compose", "custom"]) {
+  it("KNOWN_DEPLOY_ADAPTERS lists at least local, gizmos, cloud-run, docker-compose, npm, custom", () => {
+    for (const name of ["local", "gizmos", "cloud-run", "docker-compose", "npm", "custom"]) {
       assert.ok(KNOWN_DEPLOY_ADAPTERS.includes(name), `KNOWN_DEPLOY_ADAPTERS must include ${name}`);
     }
   });

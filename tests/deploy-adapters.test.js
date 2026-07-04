@@ -13,6 +13,12 @@ const README = path.join(DEPLOY_DIR, "README.md");
 
 describe("deploy adapters", () => {
   describe("core/deploy/README.md table vs filesystem", () => {
+    it("README lists local adapter as the default", () => {
+      const content = fs.readFileSync(README, "utf8");
+      assert.ok(content.includes("`local` (default)"), "README missing default `local` entry");
+      assert.ok(content.includes("local.md"), "README missing local.md reference");
+    });
+
     it("README lists cloud-run adapter", () => {
       const content = fs.readFileSync(README, "utf8");
       assert.ok(content.includes("`cloud-run`"), "README missing `cloud-run` entry");
@@ -21,6 +27,25 @@ describe("deploy adapters", () => {
     it("README cloud-run row references cloud-run.md", () => {
       const content = fs.readFileSync(README, "utf8");
       assert.ok(content.includes("cloud-run.md"), "README missing cloud-run.md reference");
+    });
+  });
+
+  describe("core/deploy/local.md", () => {
+    const ADAPTER = path.join(DEPLOY_DIR, "local.md");
+
+    it("file exists", () => {
+      assert.ok(fs.existsSync(ADAPTER), "core/deploy/local.md does not exist");
+    });
+
+    it("contains required adapter sections and honest external-deploy marker", () => {
+      const content = fs.readFileSync(ADAPTER, "utf8");
+      for (const heading of ["## Assumptions", "## Procedure", "## Runbook hooks"]) {
+        assert.ok(content.includes(heading), `missing ${heading} section`);
+      }
+      assert.ok(content.includes('"external_deploy": false'), "local adapter must mark external_deploy false");
+      assert.ok(content.includes('"deploy_adapter": "local"'), "local adapter gate must identify deploy_adapter local");
+      assert.ok(content.includes("deploy_requested: false"), "local adapter must handle deploy_requested false");
+      assert.ok(content.includes("not an escalation"), "local adapter must not escalate deploy_requested false");
     });
   });
 

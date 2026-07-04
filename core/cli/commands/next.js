@@ -5,12 +5,92 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { getOrchestrator } = require(path.join(__dirname, "..", "get-orchestrator"));
 const _escalation = require(path.join(__dirname, "..", "..", "escalation"));
 const loadPrincipalRulings = _escalation.loadPrincipalRulingLines;
+const loadPrincipalOutputs = _escalation.loadPrincipalOutputs;
+
+function normalizedText(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function gateEscalationHints(gate) {
+  const hints = [];
+  for (const value of [
+    gate?.stage,
+    gate?.workstream,
+    gate?.escalation_reason,
+    gate?.decision_needed,
+    ...(Array.isArray(gate?.blockers) ? gate.blockers : []),
+  ]) {
+    const text = normalizedText(value);
+    if (text.length >= 12) hints.push(text);
+  }
+  return hints;
+}
+
+const WEAK_ESCALATION_TOKENS = new Set([
+  "stage", "status", "gate", "gates", "pipeline", "context", "before",
+  "after", "needs", "need", "decide", "whether", "must", "added", "add",
+  "this", "that", "with", "from", "have", "has",
+]);
+
+function meaningfulTokens(values) {
+  const tokens = new Set();
+  for (const value of values) {
+    for (const token of normalizedText(value).match(/[a-z0-9][a-z0-9-]{2,}/g) || []) {
+      if (token.length < 4) continue;
+      if (WEAK_ESCALATION_TOKENS.has(token)) continue;
+      tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
+function principalOutputText(output) {
+  if (!output) return "";
+  if (output.type === "cannot-decide") {
+    return `${output.reason_class || ""} ${output.question || ""}`;
+  }
+  if (output.type === "ruling") {
+    return `${output.topic || ""} ${output.decision || ""} ${output.class || ""}`;
+  }
+  return String(output);
+}
+
+function currentEscalationOutputs(cwd, result, outputs) {
+  if (!result || !result.gate || !Array.isArray(outputs) || outputs.length === 0) return [];
+  let gate = null;
+  try {
+    const fs = require("node:fs");
+    gate = JSON.parse(fs.readFileSync(path.resolve(cwd, result.gate), "utf8"));
+  } catch {
+    return [];
+  }
+  const stageHints = [result.name, result.stage, gate.stage]
+    .map(normalizedText)
+    .filter((text) => text.length >= 4);
+  const contentHints = gateEscalationHints(gate).filter((text) => !stageHints.includes(text));
+  const contentTokens = meaningfulTokens(contentHints);
+  return outputs.filter((output) => {
+    const text = normalizedText(principalOutputText(output));
+    if (!text) return false;
+    if (stageHints.some((hint) => text.includes(hint))) return true;
+    if (contentHints.some((hint) => text.includes(hint) || hint.includes(text))) {
+      return true;
+    }
+    let overlap = 0;
+    for (const token of meaningfulTokens([text])) {
+      if (contentTokens.has(token)) overlap += 1;
+      if (overlap >= 2) return true;
+    }
+    return false;
+  });
+}
 
 // Version of the `devteam next --json` action-object schema. Additive changes
 // (new optional fields like failure_class) keep the major version; bump on any
 // breaking change a programmatic consumer must handle.
 // 1.1: added "fold-sign-off" action (item 1.2, phase-1-trust-consolidation).
-const NEXT_SCHEMA_VERSION = "1.1";
+// 1.2: added "record-local-deploy" action for Stage 7 deploy_requested:false.
+const NEXT_SCHEMA_VERSION = "1.2";
 
 const name = "next";
 
@@ -91,12 +171,29 @@ function run(positional, _flags) {
     result = next({ cwd, changeId });
   }
 
+  if (result.action === "record-local-deploy") {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    fs.mkdirSync(path.dirname(result.deploy_log_path), { recursive: true });
+    fs.writeFileSync(result.deploy_log_path, result.deploy_log_content, "utf8");
+    fs.mkdirSync(path.dirname(result.gate_path), { recursive: true });
+    fs.writeFileSync(result.gate_path, JSON.stringify(result.gate_content, null, 2) + "\n", "utf8");
+    if (!_flags.json) {
+      process.stderr.write("[devteam] stage 8 recorded: stage 7 requested no external deploy; wrote local deploy gate\n");
+    }
+    if (_flags.json) {
+      console.log(JSON.stringify({ schema_version: NEXT_SCHEMA_VERSION, ...result }, null, 2));
+      return;
+    }
+    result = next({ cwd, changeId });
+  }
+
   if (_flags.json) {
     // schema_version lets a programmatic caller (e.g. an autonomous driver)
     // validate the action shape it parses. Bump on any breaking change to the
     // action object: new required field, renamed/removed field, or a new
     // action value a consumer must handle. failure_class was additive (1.0);
-    // fold-sign-off action added in 1.1.
+    // fold-sign-off action added in 1.1; record-local-deploy in 1.2.
     console.log(JSON.stringify({ schema_version: NEXT_SCHEMA_VERSION, ...result }, null, 2));
     return;
   }
@@ -144,20 +241,34 @@ function run(positional, _flags) {
   if (result.action === "resolve-escalation") {
     const _cwd = _flags.cwd || process.cwd();
     const _rulings = loadPrincipalRulings(_cwd);
-    const { loadCannotDecide: _loadCannotDecide } = require(path.join(__dirname, "..", "..", "escalation"));
-    const _cannotDecide = _loadCannotDecide(_cwd);
+    const _outputs = loadPrincipalOutputs(_cwd);
+    const _currentOutputs = currentEscalationOutputs(_cwd, result, _outputs);
+    const _latestCurrent = _currentOutputs[_currentOutputs.length - 1];
+    const _currentRulings = _currentOutputs.filter((output) => output.type === "ruling");
     console.log(`\n   Escalation resolution:`);
-    if (_cannotDecide.length > 0) {
+    if (_latestCurrent?.type === "cannot-decide") {
       // The Principal declined to rule — a human must answer. Surface the typed
       // question so the operator knows exactly what (and why) is needed.
-      const cd = _cannotDecide[_cannotDecide.length - 1];
+      const cd = _latestCurrent;
       console.log(`   ⚖  Principal cannot decide (${cd.reason_class}) — a human decision is required:`);
       console.log(`      ${cd.question}`);
       console.log(`   After deciding, encode it as a PRINCIPAL-RULING line in pipeline/context.md, then:`);
       console.log(`        devteam fix-escalation [--headless]`);
-    } else if (_rulings.length > 0) {
-      console.log(`   Principal ruling is written (${_rulings.length} ruling(s) in pipeline/context.md).`);
+    } else if (_latestCurrent?.type === "ruling") {
+      console.log(`   Principal ruling is written (${_currentRulings.length} current ruling(s), ${_rulings.length} total in pipeline/context.md).`);
       console.log(`   → devteam fix-escalation --headless`);
+    } else if (_rulings.length > 0 || _outputs.length > 0) {
+      if (_rulings.length > 0) {
+        console.log(`   Existing Principal ruling(s) found (${_rulings.length}), but none appears to match this ${result.name || result.stage} escalation.`);
+      } else {
+        console.log(`   Existing Principal output(s) found (${_outputs.length}), but none appears to match this ${result.name || result.stage} escalation.`);
+      }
+      console.log(`   1. Read the gate: cat ${result.gate}`);
+      console.log(`      Check escalation_reason and decision_needed.`);
+      console.log(`   2. Get a Principal ruling for this escalation:`);
+      console.log(`        devteam ruling --target-gate ${result.gate} [--headless]`);
+      console.log(`   3. Apply the ruling:`);
+      console.log(`        devteam fix-escalation [--headless]`);
     } else {
       console.log(`   1. Read the gate: cat ${result.gate}`);
       console.log(`      Check escalation_reason and decision_needed.`);

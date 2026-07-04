@@ -9,6 +9,13 @@ deploy:
   adapter: docker-compose  # or: kubernetes, terraform, custom
 ```
 
+If `deploy.adapter` is omitted, Stage 8 defaults to `local`: it performs local
+verification, records that no external deploy occurred, and writes the standard
+deploy log/gate instead of escalating for missing configuration.
+If Stage 7 records `deploy_requested: false`, Stage 8 also uses `local`; that
+field is an explicit stop-before-external-deploy signal, not a Principal
+decision point.
+
 ## Why adapters
 
 v1–v2.3 hardcoded `docker compose` as the deploy primitive. That's
@@ -22,7 +29,9 @@ let a project declare its actual deployment story without rewriting
 Every adapter must:
 
 1. Read `pipeline/gates/stage-07.json` and confirm `"pm_signoff": true`
-   before doing anything that touches infrastructure.
+   before doing anything that touches infrastructure. If Stage 7 records
+   `"deploy_requested": false`, use `local` and record no external deploy
+   instead of asking for a human deployment choice.
 2. Perform the adapter-specific build and deploy steps in order, each
    wrapped so that a non-zero exit code halts the stage with a
    specific blocker written to `pipeline/gates/stage-08.json`.
@@ -52,7 +61,8 @@ Every adapter must:
 
 | Adapter | File | Suits |
 |---|---|---|
-| `docker-compose` (default) | `docker-compose.md` | Local dev, demo, single-host deploy |
+| `local` (default)          | `local.md`          | No external deploy; local/in-place verification |
+| `docker-compose`           | `docker-compose.md` | Local dev, demo, single-host deploy |
 | `kubernetes`               | `kubernetes.md`    | K8s clusters via `kubectl` / Helm  |
 | `terraform`                | `terraform.md`     | IaC-managed infra on any cloud     |
 | `cloud-run`                | `cloud-run.md`     | GCP Cloud Run via Artifact Registry + gcloud |
@@ -100,7 +110,7 @@ writing down what you'd do by hand, not shipping Go/Node modules.
 
 ## Selecting an adapter
 
-The default is `docker-compose`. To change:
+The default is `local`. To publish to a concrete target, select an adapter:
 
 1. Edit `.devteam/config.yml`:
    ```yaml

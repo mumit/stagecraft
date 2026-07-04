@@ -1225,6 +1225,23 @@ async function run(opts = {}) {
         continue;
       }
 
+      if (r.action === "record-local-deploy") {
+        fs.mkdirSync(path.dirname(r.deploy_log_path), { recursive: true });
+        fs.writeFileSync(r.deploy_log_path, r.deploy_log_content, "utf8");
+        fs.mkdirSync(path.dirname(r.gate_path), { recursive: true });
+        fs.writeFileSync(r.gate_path, JSON.stringify(r.gate_content, null, 2) + "\n", "utf8");
+        logEvent(cwd, changeId, {
+          ...base,
+          outcome: "record-local-deploy",
+          event: "record-local-deploy",
+          derived_from: "stage-07 deploy_requested false",
+          gate_path: r.gate_path,
+          deploy_log_path: r.deploy_log_path,
+        });
+        onEvent({ type: "record-local-deploy", ...base });
+        continue;
+      }
+
       if (r.action === "skip-stage") {
         if (r.name && !state.skipped_stages.includes(r.name)) state.skipped_stages.push(r.name);
         saveRunState(cwd, changeId, state);

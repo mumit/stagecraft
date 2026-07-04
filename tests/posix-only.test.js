@@ -12,6 +12,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const { REPO_ROOT, makeTargetProject, cleanup } = require("./_helpers");
 
 const { findOnPath } =
@@ -231,6 +232,34 @@ describe("dispatchToPrincipal: quoted command support", () => {
       const invocation = JSON.parse(fs.readFileSync(output, "utf8"));
       assert.deepEqual(invocation.args, ["--prompt", "apply this ruling"]);
       assert.equal(invocation.stdin, "");
+    } finally {
+      if (oldEnv === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = oldEnv;
+    }
+  });
+
+  it("returns non-zero when adapter prompt transport reports unauthorized writes", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: omnigent\npipeline:\n  default_track: full\n",
+    }));
+    spawnSync("git", ["init"], { cwd, stdio: "ignore" });
+    const writer = path.join(cwd, "write-outside.js");
+    fs.writeFileSync(writer, [
+      "const fs = require('node:fs');",
+      "fs.writeFileSync('README.md', '# unauthorized\\n');",
+      "",
+    ].join("\n"), "utf8");
+
+    const oldEnv = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${writer}`;
+    try {
+      const result = await dispatchToPrincipal(cwd, "apply this ruling", {
+        label: "escalation-applicator",
+        allowedWrites: ["pipeline/gates/*.json"],
+      });
+      assert.equal(result.exitCode, 1);
+      assert.deepEqual(result.writeViolations, ["README.md"]);
+      assert.equal(fs.existsSync(path.join(cwd, "README.md")), false);
     } finally {
       if (oldEnv === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
       else process.env.DEVTEAM_HEADLESS_COMMAND = oldEnv;

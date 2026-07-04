@@ -125,6 +125,12 @@ function resolveHost(config, stage, role) {
 // environment and smoke_test_path are included only for the adapters that
 // actually define and use them (gizmos and cloud-run).
 const DEPLOY_ADAPTER_HINTS = {
+  local: [
+    "  local:",
+    "    # smoke_command: \"npm test\"      # optional; defaults to discovered tests",
+    "    # start_command: \"npm start\"     # optional local server command",
+    "    # smoke_url: \"http://127.0.0.1:3000/health\"",
+  ],
   "docker-compose": [
     "  docker_compose:",
     "    compose_file: docker-compose.yml  # or docker-compose.yaml",
@@ -331,7 +337,7 @@ function checkBoundedFence(config, commandName) {
 }
 
 // Known deploy adapter names. Used by `devteam init --adapter` for validation.
-const KNOWN_DEPLOY_ADAPTERS = ["docker-compose", "kubernetes", "terraform", "cloud-run", "gizmos", "custom"];
+const KNOWN_DEPLOY_ADAPTERS = ["local", "docker-compose", "kubernetes", "terraform", "cloud-run", "gizmos", "npm", "custom"];
 
 module.exports = {
   loadConfig, clearConfigCache, resolveHost, configPath, renderDefaultConfig,

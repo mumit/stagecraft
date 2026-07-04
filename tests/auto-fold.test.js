@@ -346,7 +346,7 @@ describe("auto-fold: cmdNext e2e reaches pipeline-complete on a nano run", () =>
     const r = runCLI(["next", "--json"], { cwd });
     assert.equal(r.status, 0, `next --json failed: ${r.stderr}`);
     const obj = JSON.parse(r.stdout);
-    assert.equal(obj.schema_version, "1.1");
+    assert.equal(obj.schema_version, "1.2");
     assert.equal(obj.action, "pipeline-complete");
   });
 
@@ -367,5 +367,112 @@ describe("auto-fold: cmdNext e2e reaches pipeline-complete on a nano run", () =>
     const g = JSON.parse(fs.readFileSync(stage07Path, "utf8"));
     assert.equal(g.auto_from_stage_06, true);
     assert.equal(g.pm_signoff, true);
+  });
+});
+
+describe("auto-record: deploy_requested false records local Stage 8 without dispatch", () => {
+  function seedThroughSignOffNoDeploy(cwd) {
+    seedAll(cwd);
+    seedGate(cwd, "stage-07", {
+      stage: "stage-07",
+      status: "PASS",
+      pm_signoff: true,
+      deploy_requested: false,
+      runbook_referenced: true,
+      docs_surface_affected: false,
+      docs_updated: null,
+      docs_skipped_reason: "test fixture has no user-visible surface",
+    });
+  }
+
+  it("next() returns record-local-deploy with gate and deploy-log payloads", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughSignOffNoDeploy(cwd);
+
+    const r = next({ cwd });
+    assert.equal(r.action, "record-local-deploy");
+    assert.equal(r.stage, "stage-08");
+    assert.equal(r.gate_content.status, "PASS");
+    assert.equal(r.gate_content.deploy_adapter, "local");
+    assert.equal(r.gate_content.adapter_result.external_deploy, false);
+    assert.equal(r.gate_content.adapter_result.deploy_requested, false);
+    assert.match(r.deploy_log_content, /Stage 7 explicitly requested no external deploy/);
+    assert.ok(!fs.existsSync(r.gate_path), "next() must not write the gate directly");
+  });
+
+  it("cmdNext writes stage-08 and deploy-log", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughSignOffNoDeploy(cwd);
+
+    const r = runCLI(["next", "--json"], { cwd });
+    assert.equal(r.status, 0, `cmdNext failed: ${r.stderr}`);
+    const obj = JSON.parse(r.stdout);
+    assert.equal(obj.schema_version, "1.2");
+    assert.equal(obj.action, "record-local-deploy");
+
+    const stage08Path = path.join(cwd, "pipeline", "gates", "stage-08.json");
+    assert.ok(fs.existsSync(stage08Path), "cmdNext must write stage-08.json");
+    assert.ok(fs.existsSync(path.join(cwd, "pipeline", "deploy-log.md")), "cmdNext must write deploy-log.md");
+    const gate = JSON.parse(fs.readFileSync(stage08Path, "utf8"));
+    assert.equal(gate.deploy_adapter, "local");
+    assert.equal(gate.adapter_result.external_deploy, false);
+    assert.equal(gate.auto_from_stage_07, true);
+  });
+
+  it("driver writes stage-08 and run-log event without dispatching deploy", async () => {
+    const cwd = track(makeTargetProject());
+    const stage08Path = path.join(cwd, "pipeline", "gates", "stage-08.json");
+    const deployLogPath = path.join(cwd, "pipeline", "deploy-log.md");
+    const actions = [
+      {
+        action: "record-local-deploy",
+        stage: "stage-08",
+        name: "deploy",
+        gate_path: stage08Path,
+        gate_content: {
+          stage: "stage-08",
+          status: "PASS",
+          orchestrator: "devteam@test",
+          track: "full",
+          timestamp: new Date().toISOString(),
+          blockers: [],
+          warnings: ["Stage 7 requested no external deploy; local verification only."],
+          deploy_completed: true,
+          smoke_tests_passed: true,
+          rollback_executed: false,
+          deploy_adapter: "local",
+          environment: "local",
+          runbook_referenced: true,
+          cost_delta_estimated: true,
+          cost_delta_multiplier: 1,
+          cost_gate_override: false,
+          adapter_result: { deploy_requested: false, external_deploy: false },
+        },
+        deploy_log_path: deployLogPath,
+        deploy_log_content: "# Deploy Log\n\nNo external deploy.\n",
+        reason: "stage 7 requested no external deploy",
+      },
+      { action: "pipeline-complete", reason: "all stages complete" },
+    ];
+    let i = 0;
+    let dispatches = 0;
+    const events = [];
+    const summary = await run({
+      cwd,
+      next: () => actions[i++],
+      runStageHeadless: async () => {
+        dispatches += 1;
+        return [];
+      },
+      onEvent: (ev) => events.push(ev),
+    });
+
+    assert.equal(summary.completed, true);
+    assert.equal(dispatches, 0, "deploy must not be dispatched when record-local-deploy fires");
+    assert.ok(fs.existsSync(stage08Path), "driver must write stage-08.json");
+    assert.ok(fs.existsSync(deployLogPath), "driver must write deploy-log.md");
+    const runLog = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    assert.match(runLog, /record-local-deploy/);
+    assert.ok(events.some((e) => e.type === "record-local-deploy"));
   });
 });

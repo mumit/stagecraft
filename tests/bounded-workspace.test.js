@@ -349,7 +349,7 @@ describe("B9 read-side: next() reads bounded gates", () => {
       assert.notEqual(r.action, "pipeline-complete", "should not be complete after one gate");
       assert.notEqual(r.stage, "stage-01", "should have advanced past stage-01");
       // The action should be a forward step (run-stage or similar)
-      assert.ok(["run-stage", "continue-stage", "merge", "fold-sign-off"].includes(r.action),
+      assert.ok(["run-stage", "continue-stage", "merge", "fold-sign-off", "record-local-deploy"].includes(r.action),
         `unexpected action: ${r.action}`);
     } finally {
       clearConfigCache();

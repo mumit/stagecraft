@@ -6,14 +6,22 @@ Preconditions:
 - Stage 7's documentation gate is satisfied (`docs_surface_affected: false` with a `docs_skipped_reason`, or `docs_surface_affected: true` and `docs_updated: true`)
 - `pipeline/runbook.md` exists and has `## Rollback` + `## Health signals`
   sections (see `templates/runbook-template.md` for the canonical blank form)
-- `.devteam/config.yml` names a valid adapter in `deploy.adapter`
+- `.devteam/config.yml` names a valid adapter in `deploy.adapter`, or the
+  default `local` adapter is used
 
 Stage 8 is **adapter-driven**. The dev-platform
 agent reads the selected adapter's instructions from
-`.devteam/adapters/<adapter>.md` and follows them. Built-in adapters:
-`docker-compose` (default), `kubernetes`, `terraform`, `cloud-run`, `gizmos`,
-`custom`. See
+`.devteam/adapters/<adapter>.md` and follows them. If `deploy.adapter` is
+missing, use `.devteam/adapters/local.md`. Built-in adapters:
+`local` (default no external deploy), `docker-compose`, `kubernetes`,
+`terraform`, `cloud-run`, `gizmos`, `npm`, `custom`. See
 `.devteam/adapters/README.md` for the contract.
+
+If `pipeline/gates/stage-07.json` has `deploy_requested: false`, Stage 8 must
+not escalate to ask whether to deploy. The orchestrator writes the
+local/no-external-deploy gate and deploy log directly, records local
+verification only, and sets `adapter_result.external_deploy: false` with a
+warning that Stage 7 requested no external deploy.
 
 Output:
 - `pipeline/deploy-log.md` — human-readable, includes a runbook
@@ -47,7 +55,7 @@ Gate file: `pipeline/gates/stage-08.json`.
   "deploy_completed": true,
   "smoke_tests_passed": true,
   "rollback_executed": false,
-  "deploy_adapter": "docker-compose | kubernetes | terraform | cloud-run | gizmos | custom",
+  "deploy_adapter": "local | docker-compose | kubernetes | terraform | cloud-run | gizmos | npm | custom",
   "environment": "<adapter-specific>",
   "runbook_referenced": true,
   "cost_delta_estimated": true,
@@ -60,6 +68,11 @@ Gate file: `pipeline/gates/stage-08.json`.
 `deploy_adapter` is the **deploy** adapter (Stage 8 target). The **host** adapter
 (which AI tool produced the gate) lives in the top-level `host` field.
 The gate passes only when `status: "PASS"` AND `runbook_referenced: true`.
+For `deploy_adapter: "local"`, `deploy_completed: true` means the local
+verification procedure completed; `adapter_result.external_deploy` must be
+`false` to avoid implying a public/environment deploy occurred.
+When Stage 7 has `deploy_requested: false`, the local adapter is the expected
+outcome even if another deploy adapter is absent.
 
 ## Cost Gate
 

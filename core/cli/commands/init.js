@@ -122,9 +122,10 @@ function run(positional, _flags) {
     for (const f of r.warnings) console.log(`  ⚠️  ${f}`);
   }
 
-  if (adapter) {
-    console.log(`\nInstalling deploy adapter: ${adapter}`);
-    const dr = installDeployAdapter(cwd, adapter, { force: !!_flags.force });
+  const deployAdapterToInstall = adapter || "local";
+  if (deployAdapterToInstall) {
+    console.log(`\nInstalling deploy adapter: ${deployAdapterToInstall}${adapter ? "" : " (default)"}`);
+    const dr = installDeployAdapter(cwd, deployAdapterToInstall, { force: !!_flags.force });
     for (const f of dr.written)  console.log(`  ✓ wrote   ${f}`);
     for (const f of dr.skipped)  console.log(`  - exists  ${f}`);
   }
