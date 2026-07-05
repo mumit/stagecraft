@@ -21,6 +21,7 @@ const { run } = require(path.join(REPO_ROOT, "core", "driver"));
 const {
   guardConvergenceGateResolution,
   renderEscalationApplicatorPrompt,
+  runFixEscalation,
 } = require(path.join(REPO_ROOT, "core", "escalation"));
 
 let _dirs = [];
@@ -97,6 +98,37 @@ describe("escalation applicator: convergence gate backstop", () => {
     assert.match(prompt, /missing `npm run lint` script is a platform build fix/i);
     assert.match(prompt, /devteam stage build --workstream platform --headless/);
     assert.match(prompt, /Do not resolve convergence exhaustion/i);
+  });
+
+  it("allows documentation-only rulings to write README.md through fix-escalation", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: omnigent\npipeline:\n  default_track: full\n",
+    }));
+    const p = path.join(cwd, "pipeline", "context.md");
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, [
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-RULING: sign-off docs → document GET /hello in README.md [class: doc-only]",
+      "",
+    ].join("\n"));
+    const writer = path.join(cwd, "write-doc.js");
+    fs.writeFileSync(writer, [
+      "const fs = require('node:fs');",
+      "fs.writeFileSync('README.md', '# Hello API\\n\\nGET /hello returns Hello, world!\\n');",
+      "",
+    ].join("\n"));
+
+    const oldEnv = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${writer}`;
+    try {
+      const result = await runFixEscalation(cwd);
+      assert.equal(result.exitCode, 0);
+      assert.match(fs.readFileSync(path.join(cwd, "README.md"), "utf8"), /GET \/hello/);
+    } finally {
+      if (oldEnv === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = oldEnv;
+    }
   });
 });
 

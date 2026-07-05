@@ -216,13 +216,13 @@ Inspect and triage follow-up items (DEFERRED, KNOWN-FLAKY, BRIEF-AMEND-NEEDED) b
 
 Install host adapter(s) into the current project. Writes .devteam/config.yml and creates pipeline/gates/ workspace.
 
-| Flag      | Type   | Description                                                                                   |
-| --------- | ------ | --------------------------------------------------------------------------------------------- |
-| --host    | string | Host adapter(s), comma-separated                                                              |
-| --adapter | string | Deploy adapter for stage-08: docker-compose, kubernetes, terraform, cloud-run, gizmos, custom |
-| --force   | bool   | Overwrite existing config/files                                                               |
-| --cwd     | string | Target project directory                                                                      |
-| --profile | string | Optional profile: dogfood                                                                     |
+| Flag      | Type   | Description                                                                                               |
+| --------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| --host    | string | Host adapter(s), comma-separated                                                                          |
+| --adapter | string | Deploy adapter for stage-08: local, docker-compose, kubernetes, terraform, cloud-run, gizmos, npm, custom |
+| --force   | bool   | Overwrite existing config/files                                                                           |
+| --cwd     | string | Target project directory                                                                                  |
+| --profile | string | Optional profile: dogfood                                                                                 |
 
 ### `devteam doctor [options]`
 

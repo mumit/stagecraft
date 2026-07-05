@@ -330,10 +330,14 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("You may write directly to:");
   lines.push("- `pipeline/gates/*.json` — correct a malformed gate (status, shape, fields)");
   lines.push("- `pipeline/code-review/by-*.md` — fix a peer-review document");
+  lines.push("- `pipeline/runbook.md` — satisfy or repair the release runbook artifact");
+  lines.push("- `README.md`, `CHANGELOG.md`, `docs/`, `changelog.d/` — satisfy documentation-only rulings");
   lines.push("Do NOT write to `pipeline/context.md` — that file is reserved for");
   lines.push("PRINCIPAL-RULING lines written by the ruling agent, not status reports.");
   lines.push("Use bash commands (devteam stage, devteam merge, devteam derive-approvals)");
   lines.push("to produce all other pipeline artifacts — they write their own files.");
+  lines.push("Do not mark a gate as fixed until the artifact that satisfies it still exists");
+  lines.push("within this allowed-write set.");
   lines.push("");
   lines.push("## Principal ruling(s) to implement");
   lines.push("");
@@ -488,7 +492,7 @@ function guardConvergenceGateResolution(gatePath, beforeGate) {
 // consistently. Plain headless adapters fall back to piping the prompt to stdin.
 // Callers should pass the tightest set that their agent actually needs:
 //   - Principal ruling writer: ["pipeline/context.md"]
-//   - Escalation applicator: ["pipeline/gates/*.json", "pipeline/code-review/by-*.md"]
+//   - Escalation applicator: gates, code-review notes, runbook, and docs surfaces
 function dispatchToPrincipal(cwd, prompt, { label = "principal", allowedWrites = ["pipeline/context.md"] } = {}) {
   const { loadConfig } = require("./config");
   const { loadAdapter } = require("./router");
@@ -520,6 +524,7 @@ function dispatchToPrincipal(cwd, prompt, { label = "principal", allowedWrites =
           process.stderr.write(`[devteam] ⚠ ${label}: unauthorized write "${v}" (outside allowedWrites) — removing\n`);
           try { fs.unlinkSync(path.join(cwd, v)); } catch { /* ignore */ }
         }
+        return { exitCode: result.exitCode === 0 ? 1 : result.exitCode, host, writeViolations: result.writeViolations };
       }
       return { exitCode: result.exitCode, host };
     });
@@ -566,7 +571,15 @@ function runFixEscalation(cwd, { escalatingGate = null } = {}) {
   const prompt = renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate);
   return dispatchToPrincipal(cwd, prompt, {
     label: "escalation-applicator",
-    allowedWrites: ["pipeline/gates/*.json", "pipeline/code-review/by-*.md", "pipeline/runbook.md"],
+    allowedWrites: [
+      "pipeline/gates/*.json",
+      "pipeline/code-review/by-*.md",
+      "pipeline/runbook.md",
+      "README.md",
+      "CHANGELOG.md",
+      "docs/",
+      "changelog.d/",
+    ],
   }).then((result) => {
     const violation = guardConvergenceGateResolution(escalatingGate, beforeGate);
     if (!violation) return result;

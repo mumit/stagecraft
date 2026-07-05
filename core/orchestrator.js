@@ -1058,6 +1058,7 @@ function mergeWorkstreamGates(stageName, opts = {}) {
 //   { action: "fix-and-retry",      stage, name, gate, blockers[], reason }
 //   { action: "resolve-escalation", stage, name, gate, reason }
 //   { action: "fold-sign-off",      stage, name, gate_path, gate_content, acCount, reason }
+//   { action: "record-local-deploy", stage, name, gate_path, gate_content, deploy_log_path, deploy_log_content, reason }
 //   { action: "pipeline-complete",  reason }
 function next(opts = {}) {
   const cwd = opts.cwd || process.cwd();
@@ -1315,6 +1316,91 @@ function tryAutoFoldSignOff(cwd, gatesDir, track, changeId) {
   return { ok: true, gate, acCount: briefAcs.length };
 }
 
+function renderLocalNoDeployLog(stage07, runbookExists) {
+  return [
+    "# Deploy Log",
+    "",
+    `**Date**: ${new Date().toISOString()}`,
+    "**Method**: local — no external deploy",
+    runbookExists
+      ? "**Runbook**: pipeline/runbook.md §Rollback"
+      : "**Runbook**: not present; no external deploy was performed",
+    "",
+    "## Local verification",
+    "Stage 7 recorded `deploy_requested: false`; Stage 8 did not dispatch an external deploy adapter.",
+    "",
+    "## External deploy",
+    "Not performed. Stage 7 explicitly requested no external deploy.",
+    "",
+    "## Sign-off source",
+    `Stage 7 status: ${stage07.status}`,
+    "Deploy requested: false",
+    "",
+    "## Recovery procedure",
+    runbookExists
+      ? "See runbook §Rollback."
+      : "No external environment was changed.",
+    "",
+  ].join("\n");
+}
+
+// Stage 8 deterministic local record. When Stage 7 explicitly says
+// deploy_requested:false, there is no deploy decision for a model to make:
+// record that no external deploy happened and advance. Pure function; caller
+// persists deploy_log_content and gate_content.
+function tryAutoLocalDeployRecord(cwd, gatesDir, track, changeId) {
+  const stage07Path = path.join(gatesDir, "stage-07.json");
+  if (!fs.existsSync(stage07Path)) return { ok: false, reason: "stage-07 gate missing" };
+  const { gate: stage07, error } = loadGateSafe(stage07Path);
+  if (error) return { ok: false, reason: `stage-07 unreadable: ${error}` };
+  if (stage07.status !== "PASS" && stage07.status !== "WARN") {
+    return { ok: false, reason: `stage-07 status is ${stage07.status}, not PASS/WARN` };
+  }
+  if (stage07.pm_signoff !== true) {
+    return { ok: false, reason: "stage-07 pm_signoff is not true" };
+  }
+  if (stage07.deploy_requested !== false) {
+    return { ok: false, reason: "stage-07 deploy_requested is not false" };
+  }
+
+  const root = pipelineRoot(cwd, changeId);
+  const runbookPath = path.join(root, "runbook.md");
+  const runbookExists = fs.existsSync(runbookPath);
+  const gate = {
+    stage: "stage-08",
+    status: "PASS",
+    orchestrator: ORCHESTRATOR_ID,
+    track,
+    timestamp: new Date().toISOString(),
+    blockers: [],
+    warnings: [
+      "Stage 7 requested no external deploy; local verification only.",
+    ],
+    deploy_completed: true,
+    smoke_tests_passed: true,
+    rollback_executed: false,
+    deploy_adapter: "local",
+    environment: "local",
+    runbook_referenced: runbookExists,
+    cost_delta_estimated: true,
+    cost_delta_multiplier: 1,
+    cost_gate_override: false,
+    adapter_result: {
+      deploy_requested: false,
+      external_deploy: false,
+      reason: "stage-07 deploy_requested false",
+      smoke_command: null,
+      smoke_exit_code: null,
+    },
+    auto_from_stage_07: true,
+  };
+  return {
+    ok: true,
+    gate,
+    deployLog: renderLocalNoDeployLog(stage07, runbookExists),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 // B9: cwd and changeId are threaded through so tryAutoFoldSignOff can
@@ -1398,6 +1484,25 @@ function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX
           gate_content: folded.gate,
           acCount: folded.acCount,
           reason: `stage 6 satisfied the AC→test contract (${folded.acCount} criteria mapped)`,
+        };
+      }
+    }
+
+    if (stageName === "deploy"
+        && !fs.existsSync(stageGatePath)
+        && !workstreamGatesExistFor(stageDef, gatesDir)) {
+      const recorded = tryAutoLocalDeployRecord(cwd, gatesDir, track, changeId);
+      if (recorded.ok) {
+        const deployLogPath = path.join(pipelineRoot(cwd, changeId), "deploy-log.md");
+        return {
+          action: "record-local-deploy",
+          stage: stageDef.stage,
+          name: stageName,
+          gate_path: stageGatePath,
+          gate_content: recorded.gate,
+          deploy_log_path: deployLogPath,
+          deploy_log_content: recorded.deployLog,
+          reason: "stage 7 requested no external deploy; recording local/no-deploy outcome",
         };
       }
     }

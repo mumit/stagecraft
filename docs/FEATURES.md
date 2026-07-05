@@ -121,7 +121,7 @@ See [`docs/migration-safety.md`](migration-safety.md) for the veto criteria, gat
 
 ### Pluggable deploy adapters — pick the right deploy primitive per project
 
-Stage 8 (deploy) is adapter-driven. Projects declare their deploy target in `.devteam/config.yml`; `dev-platform` reads the adapter's markdown and follows it step by step.
+Stage 8 (deploy) is adapter-driven. Projects declare their deploy target in `.devteam/config.yml`; `dev-platform` reads the adapter's markdown and follows it step by step. If no deploy adapter is declared, Stagecraft uses the safe `local` adapter: it performs local/in-place verification, records that no external deploy occurred, and does not escalate merely because a production target was not configured. If Stage 7 records `deploy_requested: false`, the orchestrator writes the local/no-external-deploy Stage 8 gate and deploy log directly; that field is an explicit stop-before-external-deploy instruction, not a Principal decision.
 
 ```yaml
 deploy:
@@ -141,7 +141,7 @@ Six adapters ship:
 | `gizmos` *(Phase 13.2)* | Gizmos platform (Cloudflare Workers, `gizmos.run`) |
 | `custom` | Project-specific script (escape hatch) |
 
-Every adapter follows the same contract: read the PM sign-off gate, build and deploy, run smoke tests, estimate the recurring cost delta, write `pipeline/gates/stage-08.json` with `deploy_completed`, `smoke_tests_passed`, `rollback_executed`, `cost_delta_estimated`, `cost_delta_multiplier`, and `cost_gate_override`, and reference `pipeline/runbook.md` for recovery. A 10x-or-greater cost increase must FAIL unless explicit human approval is recorded in `cost_gate_override_reason`. On failure: write a `FAIL` gate with a blocker, never auto-rollback.
+Every adapter follows the same contract: read the PM sign-off gate, build and deploy or run the local verification procedure, run smoke tests, estimate the recurring cost delta, write `pipeline/gates/stage-08.json` with `deploy_completed`, `smoke_tests_passed`, `rollback_executed`, `cost_delta_estimated`, `cost_delta_multiplier`, and `cost_gate_override`, and reference `pipeline/runbook.md` for recovery. A 10x-or-greater cost increase must FAIL unless explicit human approval is recorded in `cost_gate_override_reason`. On failure: write a `FAIL` gate with a blocker, never auto-rollback.
 
 The `cloud-run` adapter builds a Docker image, pushes to GCP Artifact Registry, deploys a new Cloud Run revision, smoke-tests the live URL via `curl`, and records the active revision name for rollback. The `gizmos` adapter pushes source code to the Gizmos platform (Cloudflare Workers, `gizmos.run`) via `gizmos push` — no Docker image required. Precondition checks include `wrangler.toml` existence, `app`/`name` field match, runbook `§Rollback` presence, and `GIZMOS_API_KEY` env var. Platform constraints (TS/JS or Python only, no persistent filesystem, stateless `fetch()` handler) are documented in `core/deploy/gizmos.md §Platform constraints`.
 

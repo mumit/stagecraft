@@ -73,6 +73,105 @@ describe("next: walks through full track", () => {
     assert.match(r.reason, /ambiguous spec/);
   });
 
+  it("CLI does not treat stale Principal rulings as resolving the current escalation", () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-RULING: package ownership → backend owns package.json [class: path-ownership]",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-01", {
+      status: "ESCALATE",
+      escalation_reason: "sign-off needs docs for GET /hello",
+      decision_needed: "decide whether docs must be added before sign-off",
+      blockers: ["GET /hello has no README documentation"],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Existing Principal ruling\(s\) found \(1\), but none appears to match this requirements escalation/);
+    assert.match(r.stdout, /devteam ruling --target-gate .*pipeline\/gates\/stage-01\.json/);
+  });
+
+  it("CLI treats a matching Principal ruling as ready for fix-escalation", () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-RULING: sign-off docs for GET /hello → add docs before sign-off [class: doc-only]",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-01", {
+      status: "ESCALATE",
+      escalation_reason: "sign-off needs docs for GET /hello",
+      decision_needed: "decide whether docs must be added before sign-off",
+      blockers: ["GET /hello has no README documentation"],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Principal ruling is written \(1 current ruling\(s\), 1 total in pipeline\/context\.md\)/);
+    assert.match(r.stdout, /devteam fix-escalation --headless/);
+  });
+
+  it("CLI does not treat stale Principal cannot-decide outputs as the current escalation", () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-CANNOT-DECIDE: authority → Should Stage 8 deploy be configured now?",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-01", {
+      status: "ESCALATE",
+      escalation_reason: "sign-off needs docs for GET /hello",
+      decision_needed: "decide whether docs must be added before sign-off",
+      blockers: ["GET /hello has no README documentation"],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /Principal cannot decide/);
+    assert.match(r.stdout, /Existing Principal output\(s\) found \(1\), but none appears to match this requirements escalation/);
+    assert.match(r.stdout, /devteam ruling --target-gate .*pipeline\/gates\/stage-01\.json/);
+  });
+
+  it("CLI lets a newer matching Principal ruling supersede an earlier cannot-decide", () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-CANNOT-DECIDE: authority → Should docs for GET /hello block sign-off?",
+      "PRINCIPAL-RULING: sign-off docs for GET /hello → add README docs before sign-off [class: doc-only]",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-01", {
+      status: "ESCALATE",
+      escalation_reason: "sign-off needs docs for GET /hello",
+      decision_needed: "decide whether docs must be added before sign-off",
+      blockers: ["GET /hello has no README documentation"],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /Principal cannot decide/);
+    assert.match(r.stdout, /Principal ruling is written \(1 current ruling\(s\), 1 total in pipeline\/context\.md\)/);
+    assert.match(r.stdout, /devteam fix-escalation --headless/);
+  });
+
   it("all stages PASS → pipeline-complete", () => {
     const cwd = track(makeTargetProject());
     // Seed a PASS gate for every stage in the full track so the test
@@ -505,7 +604,7 @@ describe("next --json (H1)", () => {
     const { status, stdout } = runCLI(["next", "--json"], { cwd });
     assert.equal(status, 0);
     const obj = JSON.parse(stdout);
-    assert.equal(obj.schema_version, "1.1"); // bumped when fold-sign-off action added (item 1.2)
+    assert.equal(obj.schema_version, "1.2"); // bumped when record-local-deploy action added
     assert.equal(obj.action, "fix-and-retry");
     assert.equal(obj.failure_class, "code-defect");
   });

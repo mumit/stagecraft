@@ -44,7 +44,7 @@
     },
     "deploy_adapter": {
       "type": "string",
-      "description": "Which deploy adapter ran (docker-compose, kubernetes, terraform, custom). Distinct from the top-level 'host' field which is the AI-tool adapter."
+      "description": "Which deploy adapter ran (local, docker-compose, kubernetes, terraform, cloud-run, gizmos, npm, custom). Distinct from the top-level 'host' field which is the AI-tool adapter."
     },
     "environment": {
       "type": "string",

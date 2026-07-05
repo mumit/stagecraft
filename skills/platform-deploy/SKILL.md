@@ -8,20 +8,26 @@ description: "Platform Developer: Stage 8 deploy task. Adapter-driven deployment
 Use this skill when you are the Platform Developer executing the Stage 8
 deploy stage. Stage 8 is adapter-driven. Read `.devteam/config.yml`, discover
 which adapter the project has selected, and follow that adapter's instructions
-in `.devteam/adapters/<adapter>.md`.
+in `.devteam/adapters/<adapter>.md`. If no adapter is configured, default to
+`local` and follow `.devteam/adapters/local.md`.
 
 ## Step 0 — Common preconditions (every adapter)
 
 1. **PM sign-off.** Read `pipeline/gates/stage-07.json`. If `"pm_signoff": true`
    is absent or false: write `"status": "ESCALATE"` with reason
    "PM sign-off missing — cannot deploy" and halt.
+   If `"deploy_requested": false`, do **not** ask the Principal whether to
+   deploy. Treat it as an explicit instruction that no external deployment was
+   requested; use the `local` adapter, run/record local verification, and mark
+   `adapter_result.external_deploy: false`.
 2. **Runbook.** Confirm `pipeline/runbook.md` exists and contains at minimum
    a `## Rollback` and `## Health signals` section. If missing: write
    `"status": "ESCALATE"` with reason "Runbook required for Stage 8".
-3. **Config.** Read `.devteam/config.yml`. Find `deploy.adapter`. Accept one of:
-   `docker-compose`, `kubernetes`, `terraform`, `cloud-run`, `gizmos`, `npm`,
-   `custom`. Unknown adapter: write `"status": "ESCALATE"` with reason
-   "Unknown deploy adapter."
+3. **Config.** Read `.devteam/config.yml`. Find `deploy.adapter`. If missing,
+   use `local`. Accept one of: `local`, `docker-compose`, `kubernetes`,
+   `terraform`, `cloud-run`, `gizmos`, `npm`, `custom`. Unknown adapter:
+   write `"status": "FAIL"` with reason "Unknown deploy adapter." Do not
+   escalate for a missing adapter; `local` is the safe default.
 
 ## Step 1 — Load adapter instructions
 
