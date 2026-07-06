@@ -128,17 +128,33 @@ function isAllowed(filePath, allowedWrites) {
 }
 
 /**
+ * Runtime tools can create cache files while an agent is reading or verifying
+ * code. These files are not authored project changes and should not flip gates
+ * to FAIL, but keep the list narrow so source writes remain visible.
+ */
+function isIgnoredRuntimeArtifact(filePath) {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  if (!normalized) return false;
+  if (/(^|\/)__pycache__\/[^/]+\.py[cod]$/.test(normalized)) return true;
+  if (/(^|\/)\.pytest_cache\//.test(normalized)) return true;
+  if (/(^|\/)\.mypy_cache\//.test(normalized)) return true;
+  if (/(^|\/)\.ruff_cache\//.test(normalized)) return true;
+  return false;
+}
+
+/**
  * Diff two snapshots and return paths newly written during an invocation.
- * Returns { violations: string[], newPaths: string[], audited: boolean }.
+ * Returns { violations: string[], newPaths: string[], ignoredPaths: string[], audited: boolean }.
  * audited=false when either snapshot reported ok=false (git unavailable).
  */
 function auditWrites(before, after, allowedWrites) {
   if (!before.ok || !after.ok) {
-    return { violations: [], newPaths: [], audited: false };
+    return { violations: [], newPaths: [], ignoredPaths: [], audited: false };
   }
   const newPaths = [...after.paths].filter((p) => !before.paths.has(p));
-  const violations = newPaths.filter((p) => !isAllowed(p, allowedWrites));
-  return { violations, newPaths, audited: true };
+  const ignoredPaths = newPaths.filter(isIgnoredRuntimeArtifact);
+  const violations = newPaths.filter((p) => !isIgnoredRuntimeArtifact(p) && !isAllowed(p, allowedWrites));
+  return { violations, newPaths, ignoredPaths, audited: true };
 }
 
-module.exports = { snapshotWritables, auditWrites, isAllowed };
+module.exports = { snapshotWritables, auditWrites, isAllowed, isIgnoredRuntimeArtifact };

@@ -171,7 +171,7 @@ Two categories of guarantee: things Stagecraft prevents from happening, and thin
 Each build workstream's prompt declares `allowedWrites`, which is the set of paths that workstream is permitted to touch. Enforcement method depends on the host:
 
 - **claude-code**: blocks unauthorized writes at tool-call time via its `PreToolUse Write|Edit` hook. The write never reaches disk.
-- **codex and gemini-cli**: run a post-hoc git-status diff after the workstream exits. Any file outside `allowedWrites` is captured in `writeViolations[]` and the orchestrator patches the gate to `FAIL` with violations listed in `blockers[]`.
+- **codex and gemini-cli**: run a post-hoc git-status diff after the workstream exits. Any file outside `allowedWrites` is captured in `writeViolations[]` and the orchestrator patches the gate to `FAIL` with violations listed in `blockers[]`. Narrow runtime caches such as Python `__pycache__/*.pyc`, `.pytest_cache/`, `.mypy_cache/`, and `.ruff_cache/` are ignored because they are interpreter byproducts, not authored project changes.
 
 The `generic` adapter declares `prompt-only` enforcement: violations are discouraged but not technically blocked.
 

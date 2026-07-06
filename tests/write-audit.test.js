@@ -20,7 +20,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { execFileSync } = require("node:child_process");
 
-const { isAllowed, auditWrites, snapshotWritables } = require("../core/guards/write-audit");
+const { isAllowed, auditWrites, snapshotWritables, isIgnoredRuntimeArtifact } = require("../core/guards/write-audit");
 
 // ─── 1. isAllowed ─────────────────────────────────────────────────────────────
 
@@ -188,6 +188,48 @@ describe("auditWrites — diff and violation detection", () => {
     assert.ok(newPaths.includes("pipeline/context.md"));
     assert.ok(newPaths.includes("src/hack.js"));
     assert.ok(!newPaths.includes("pipeline/brief.md"));
+  });
+
+  test("python bytecode cache files are ignored as runtime artifacts", () => {
+    const before = makeSnap([]);
+    const after = makeSnap([
+      "src/backend/__pycache__/__init__.cpython-314.pyc",
+      "src/backend/__pycache__/estimator.cpython-314.pyc",
+    ]);
+    const { violations, ignoredPaths, newPaths } = auditWrites(before, after, ["pipeline/code-review/by-qa.md"]);
+    assert.deepEqual(violations, []);
+    assert.deepEqual(ignoredPaths.sort(), [
+      "src/backend/__pycache__/__init__.cpython-314.pyc",
+      "src/backend/__pycache__/estimator.cpython-314.pyc",
+    ].sort());
+    assert.equal(newPaths.length, 2);
+  });
+
+  test("ignored runtime artifacts do not hide real unauthorized source writes", () => {
+    const before = makeSnap([]);
+    const after = makeSnap([
+      "src/backend/__pycache__/estimator.cpython-314.pyc",
+      "src/backend/estimator.py",
+    ]);
+    const { violations, ignoredPaths } = auditWrites(before, after, ["pipeline/code-review/by-qa.md"]);
+    assert.deepEqual(ignoredPaths, ["src/backend/__pycache__/estimator.cpython-314.pyc"]);
+    assert.deepEqual(violations, ["src/backend/estimator.py"]);
+  });
+});
+
+describe("isIgnoredRuntimeArtifact", () => {
+  test("matches common Python/test cache paths", () => {
+    assert.ok(isIgnoredRuntimeArtifact("src/backend/__pycache__/estimator.cpython-314.pyc"));
+    assert.ok(isIgnoredRuntimeArtifact("src/backend/__pycache__/estimator.pyo"));
+    assert.ok(isIgnoredRuntimeArtifact(".pytest_cache/v/cache/nodeids"));
+    assert.ok(isIgnoredRuntimeArtifact("service/.mypy_cache/3.14/module.meta.json"));
+    assert.ok(isIgnoredRuntimeArtifact("service/.ruff_cache/0.8.0/12345"));
+  });
+
+  test("does not match source or non-cache paths", () => {
+    assert.ok(!isIgnoredRuntimeArtifact("src/backend/estimator.py"));
+    assert.ok(!isIgnoredRuntimeArtifact("src/backend/cache/result.pyc"));
+    assert.ok(!isIgnoredRuntimeArtifact("pipeline/code-review/by-qa.md"));
   });
 });
 

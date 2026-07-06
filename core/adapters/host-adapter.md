@@ -60,7 +60,7 @@ Capability semantics:
 | `slashCommands`  | Install `/devteam:*` slash commands                                   | User invokes `devteam` from terminal |
 | `worktrees`      | Honor `isolation: isolated` mode                                      | All work in-place               |
 | `headless`       | Adapter can drive the host non-interactively (`cli-driven` mode)      | `user-driven` only              |
-| `enforces.<rule>`| Where the host enforces a core rule. Values: `tool-call-time` (blocked at write — hooks), `post-hoc-audit` (orchestrator write-audit diffs git state before/after invoke; unauthorized writes flip the gate to FAIL), `prompt-only` (advisory only; no automated enforcement). | See `core/guards/write-audit.js`. |
+| `enforces.<rule>`| Where the host enforces a core rule. Values: `tool-call-time` (blocked at write — hooks), `post-hoc-audit` (orchestrator write-audit diffs git state before/after invoke; unauthorized writes flip the gate to FAIL, while narrow runtime caches such as Python `__pycache__/*.pyc` are ignored), `prompt-only` (advisory only; no automated enforcement). | See `core/guards/write-audit.js`. |
 | `enforces.shell` | `true` if the agent can execute command-line tools (for example through a bash tool or direct-command executor). Required by pre-review, qa, verification-beyond-tests, deploy. | Orchestrator refuses dispatch with a named error. |
 | `enforces.network` | `true` if the agent can make outbound network requests. | Orchestrator refuses dispatch with a named error. |
 | `goalLoop`       | Host supports a session-level convergence directive (`/goal "condition"`). When `true`, the orchestrator prepends `/goal "…"` to the prompt for stages that declare `goalCondition`. | Prompt is sent as-is; no goal loop. |

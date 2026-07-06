@@ -172,6 +172,63 @@ describe("next: walks through full track", () => {
     assert.match(r.stdout, /devteam fix-escalation --headless/);
   });
 
+  it("CLI does not treat a stale sign-off convergence ruling as current for peer-review", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a",
+                     "stage-04b", "stage-04c", "stage-04d", "stage-04e"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-RULING: no-progress convergence for \"sign-off\": 3 blockers identical across attempts 1,2: 'Documentation gate is not satisfied: GET /hello has no README documentation.', 'Required runbook artifact pipeline/runbook.md was requested, but allowedWrites excludes that path.'; escalating for a ruling → Document endpoint and accept existing runbook artifact [class: doc-artifact-scope]",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-05", {
+      status: "ESCALATE",
+      escalation_reason: "driver retry budget exhausted for \"peer-review\" (2/2); escalating",
+      decision_needed: "Decide how to resolve the peer-review convergence failure.",
+      blockers: ["qa review did not converge after retry budget was exhausted"],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Existing Principal ruling\(s\) found \(1\), but none appears to match this peer-review escalation/);
+    assert.match(r.stdout, /devteam ruling --target-gate .*pipeline\/gates\/stage-05\.json/);
+    assert.doesNotMatch(r.stdout, /Principal ruling is written/);
+  });
+
+  it("CLI still accepts a same-stage peer-review convergence ruling", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a",
+                     "stage-04b", "stage-04c", "stage-04d", "stage-04e"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-RULING: peer-review retry budget exhausted → accept derived approvals and merge review [class: review-convergence]",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-05", {
+      status: "ESCALATE",
+      escalation_reason: "driver retry budget exhausted for \"peer-review\" (2/2); escalating",
+      decision_needed: "Decide how to resolve the peer-review convergence failure.",
+      blockers: ["qa review did not converge after retry budget was exhausted"],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Principal ruling is written \(1 current ruling\(s\), 1 total in pipeline\/context\.md\)/);
+    assert.match(r.stdout, /devteam fix-escalation --headless/);
+  });
+
   it("all stages PASS → pipeline-complete", () => {
     const cwd = track(makeTargetProject());
     // Seed a PASS gate for every stage in the full track so the test
@@ -1062,6 +1119,74 @@ describe("next: stage-06b (accessibility-audit) fix steps", () => {
     assert.ok(allCmds.some(c => c === "devteam advise"), "falls back to plain devteam advise");
     assert.ok(!allCmds.some(c => c.includes("--apply")), "no --apply without noted_for_followup ids");
     assert.ok(!r.clear_gates || r.clear_gates.length === 0, "no clear_gates for non-A11Y failures");
+  });
+});
+
+describe("next: stage-06c (observability-gate) fix steps", () => {
+  function seedThroughQa(cwd) {
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a",
+                     "stage-04b", "stage-04c", "stage-04d", "stage-05", "stage-06",
+                     "stage-06b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+  }
+
+  it("backend-owned structured log blocker routes to backend build and re-runs observability", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughQa(cwd);
+    seedGate(cwd, "stage-06c", {
+      status: "FAIL",
+      blockers: [{
+        signal: "estimate_unhandled_exception",
+        assigned_to: "backend",
+        ref: "pipeline/design-spec.md Observability / Required structured logs",
+        note: "No matching structured ERROR log event or exception handler was found in src/backend/main.py.",
+      }],
+    });
+
+    const r = next({ cwd });
+    assert.equal(r.action, "fix-and-retry");
+    assert.equal(r.name, "observability-gate");
+    assert.ok(Array.isArray(r.clear_gates) && r.clear_gates.length > 0, "clear_gates is non-empty");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-04.backend")), "clears backend build gate");
+    assert.ok(!r.clear_gates.some(g => g.includes("stage-04.frontend")), "does not clear unrelated frontend gate");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-06c")), "clears the observability gate");
+
+    const allCmds = r.fix_steps.flatMap(s => s.commands);
+    assert.ok(
+      allCmds.some(c => c.includes("devteam stage build --workstream backend")
+        && c.includes("--patch")
+        && c.includes("--from observability-gate")),
+      "routes repair through backend build with observability context"
+    );
+    assert.ok(allCmds.some(c => c.includes("devteam merge build")), "merges build");
+    assert.ok(allCmds.some(c => c.includes("devteam stage observability-gate")), "re-runs observability gate");
+  });
+
+  it("unattributed observability blocker clears all build workstreams as a safe fallback", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughQa(cwd);
+    seedGate(cwd, "stage-06c", {
+      status: "FAIL",
+      blockers: ["Required structured ERROR log event is missing from the exception path."],
+    });
+
+    const r = next({ cwd });
+    assert.equal(r.action, "fix-and-retry");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-04.backend")), "clears backend gate");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-04.frontend")), "clears frontend gate");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-04.platform")), "clears platform gate");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-04.qa")), "clears qa gate");
+    assert.ok(r.clear_gates.some(g => g.includes("stage-06c")), "clears the observability gate");
+
+    const allCmds = r.fix_steps.flatMap(s => s.commands);
+    assert.ok(
+      allCmds.some(c => c.includes("devteam stage build")
+        && c.includes("--patch")
+        && c.includes("--from observability-gate")
+        && !c.includes("--workstream")),
+      "dispatches build globally when ownership is unknown"
+    );
   });
 });
 
