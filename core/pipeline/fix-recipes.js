@@ -658,6 +658,60 @@ register("stage-06b", (gate, ctx) => {
   };
 });
 
+// ── stage-06c: observability-gate ────────────────────────────────────────────
+//
+// Observability blockers are usually implementation defects, not audit defects:
+// e.g. a missing structured ERROR log in src/backend/main.py. Route those back
+// through the owning build workstream, then invalidate downstream attestations
+// so the changed code is reviewed and tested before re-entering the gate.
+
+register("stage-06c", (gate, ctx) => {
+  const blockers = gate.blockers || [];
+  const wsSet = new Set(_wsFromProvenance(blockers));
+
+  for (const b of blockers) {
+    if (typeof b === "string") {
+      _wsFromText(b).forEach(w => wsSet.add(w));
+      continue;
+    }
+    if (typeof b !== "object" || b === null) continue;
+    for (const field of ["file", "path", "ref", "note", "summary", "description", "signal"]) {
+      if (b[field]) _wsFromText(String(b[field])).forEach(w => wsSet.add(w));
+    }
+  }
+
+  const ws = wsSet.size ? [...wsSet] : _buildRoles();
+  const buildPaths = buildGatePaths(ws);
+  const auditGate = "pipeline/gates/stage-06c.json";
+  const derived = derivedClearGates({
+    rootStageId: "stage-04", failingStageId: "stage-06c",
+    stageList: ctx.stageList, gatesDir: ctx.gatesDir, changeId: ctx.changeId,
+  });
+  const clear_gates = [...buildPaths];
+  derived.forEach(p => { if (!clear_gates.includes(p)) clear_gates.push(p); });
+  if (!clear_gates.includes(auditGate)) clear_gates.push(auditGate);
+
+  const buildCommands = ws.length === 1
+    ? [`devteam stage build --workstream ${ws[0]} --patch --from observability-gate --skip-completed --headless`]
+    : ["devteam stage build --patch --from observability-gate --skip-completed --headless"];
+
+  return {
+    clear_gates,
+    steps: [
+      {
+        description: `Clear stale build gate${ws.length !== 1 ? "s" : ""} (${ws.join(", ")}) and observability gate`,
+        commands: formatGateClear(buildPaths),
+      },
+      {
+        description: "Re-run build with observability findings as context",
+        commands: buildCommands,
+      },
+      { description: "Merge workstream gates", commands: ["devteam merge build"] },
+      { description: "Re-run observability gate", commands: ["devteam stage observability-gate --headless"] },
+    ],
+  };
+});
+
 // ── stage-06d: verification-beyond-tests ─────────────────────────────────────
 //
 // Blockers often carry a "Fix: <file>:<line> — <remedy>" clause; parse that to

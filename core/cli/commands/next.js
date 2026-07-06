@@ -30,6 +30,9 @@ const WEAK_ESCALATION_TOKENS = new Set([
   "stage", "status", "gate", "gates", "pipeline", "context", "before",
   "after", "needs", "need", "decide", "whether", "must", "added", "add",
   "this", "that", "with", "from", "have", "has",
+  "attempt", "attempts", "blocker", "blockers", "budget", "convergence",
+  "driver", "escalate", "escalated", "escalating", "exhausted", "retry",
+  "ruling", "rulings",
 ]);
 
 function meaningfulTokens(values) {
@@ -72,7 +75,7 @@ function currentEscalationOutputs(cwd, result, outputs) {
   return outputs.filter((output) => {
     const text = normalizedText(principalOutputText(output));
     if (!text) return false;
-    if (stageHints.some((hint) => text.includes(hint))) return true;
+    const stageMatched = stageHints.some((hint) => text.includes(hint));
     if (contentHints.some((hint) => text.includes(hint) || hint.includes(text))) {
       return true;
     }
@@ -81,6 +84,8 @@ function currentEscalationOutputs(cwd, result, outputs) {
       if (contentTokens.has(token)) overlap += 1;
       if (overlap >= 2) return true;
     }
+    if (stageMatched && overlap >= 1) return true;
+    if (contentTokens.size === 0 && stageMatched) return true;
     return false;
   });
 }
