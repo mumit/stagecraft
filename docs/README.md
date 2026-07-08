@@ -23,6 +23,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [ci.md](ci.md) — GitHub Actions workflow template and environment variables
 - [reference/environment-variables.md](reference/environment-variables.md) — all environment variables Stagecraft reads, grouped by subsystem
 - [memory.md](memory.md) — persistent project memory: embedder options and shared store
+- [pattern-learning.md](pattern-learning.md) — proposed `devteam patterns` loop for turning reviewed blockers, warnings, and positive examples into bounded coding-agent guidance
 - [observability.md](observability.md) — OpenTelemetry span schema and collector setup
 - [capacity-strategy.md](capacity-strategy.md) — latency-aware routing, remote capacity, prompt caching, and persistent-session policy
 - [evidence.md](evidence.md) — offline readiness, explicit resolution acceptance, and privacy-safe export
@@ -56,6 +57,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration
 - [../plans/phase-25-omnigent-director-hardening.md](../plans/phase-25-omnigent-director-hardening.md) — proposed and parked plan for hardening the Omnigent director prototype
 - [../plans/phase-26-performance-observability-usability.md](../plans/phase-26-performance-observability-usability.md) — proposed plan for critical-path telemetry, live run UX, verification speed, scheduling, and context/routing improvements
+- [../plans/phase-27-pattern-learning.md](../plans/phase-27-pattern-learning.md) — proposed plan for project-local pattern learning from blockers, warnings, auto-retry outcomes, and positive examples
 - [spec-authoring.md](spec-authoring.md) — writing AC-N criteria and scaffolding the spec file
 - [migration-safety.md](migration-safety.md) — veto criteria, gate fields, and the migration heuristic
 - [red-team.md](red-team.md) — 10 attack surfaces, gate fields, routing, and how it differs from security review
