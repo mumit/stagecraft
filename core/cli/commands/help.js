@@ -217,6 +217,17 @@ Commands:
                                    org-shared store. Default kinds:
                                    adr + lessons-learned. Architectural
                                    continuity reads from there.
+  patterns <subcommand>            Project-local pattern learning.
+    collect                        Harvest sanitized blockers, warnings,
+                                   follow-ups, and retry outcomes into
+                                   .devteam/patterns/observations.jsonl.
+    list | review                  Show grouped candidates and promoted
+                                   patterns. Candidates are not injected.
+    promote <candidate>            Promote reviewed guidance into future
+       [--text "..."]              coding-agent prompts.
+    retire <pattern>               Stop injecting a promoted pattern.
+    stats                          Show observation, promotion, injection,
+                                   recurrence, and noise counters.
   architecture lookup "<topic>"    Query the org-shared store for
        [--limit N] [--kind adr|    prior ADRs (or lessons) on a topic.
         lessons-learned]            Principal consults this before designing

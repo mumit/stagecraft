@@ -319,6 +319,27 @@ Lifts ADRs and lessons from any project into a shared store at `~/.stagecraft/me
 - Idempotent — re-promoting the same record doesn't duplicate it
 - Foundation for architecture continuity (see Advanced AI capabilities)
 
+### Pattern learning — agents learn the local traps
+
+Project-local coaching under `.devteam/patterns/`. Pattern learning turns repeated
+review feedback into short, reviewed guidance that appears in future prompts before
+the next agent repeats the same mistake.
+
+- `devteam patterns collect` harvests sanitized blockers, warnings, follow-ups,
+  archived auto-retry failures, and retry outcomes from local pipeline state
+- `devteam patterns review` groups candidate lessons by tier, domain, stage,
+  workstream, language, and framework
+- `devteam patterns promote <candidate-id>` makes reviewed prevention text eligible
+  for prompt injection; `retire` stops injecting stale or noisy guidance
+- Promoted patterns are advisory and budgeted: stage rules, allowed writes, gates,
+  and stoplists remain authoritative
+- Taxonomy: `blocker` for failed gates/retries, `warning` for senior-engineering
+  concerns, `nudge` for local preference, and `positive` for practices worth
+  reinforcing
+
+See [`docs/pattern-learning.md`](pattern-learning.md) for the value model, storage
+shape, taxonomy, safety boundaries, and promotion workflow.
+
 ---
 
 ## Developer tools

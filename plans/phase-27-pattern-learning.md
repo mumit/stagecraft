@@ -1,6 +1,6 @@
 # Phase 27 — Pattern Learning
 
-**Status:** Proposed.
+**Status:** First implementation slice in progress.
 **Roadmap item:** Observability & learning / engineering-growth memory
 ([#332](https://github.com/telus-labs/stagecraft/issues/332)).
 **Purpose:** help coding agents avoid repeated mistakes by converting reviewed
@@ -54,55 +54,56 @@ The phase therefore uses a conservative posture:
 
 ### 27.1 — Storage, schemas, and managed ignore
 
-- Create `.devteam/patterns/` in target projects when the first pattern command writes.
-- Store:
+- ✅ Create `.devteam/patterns/` in target projects when the first pattern command writes.
+- ✅ Store:
   - `observations.jsonl` for sanitized append-only sightings;
   - `pending-review.json` for grouped candidates;
   - `promoted.json` for operator-reviewed prompt guidance;
   - `retired.json` for lessons that aged out or were replaced by deterministic gates.
-- Add schemas for observation and promoted-pattern records.
-- Ensure the managed `.gitignore` block covers `.devteam/patterns/` by default.
-- Reject secret-shaped promoted prompt text.
+- ✅ Add schemas for observation and promoted-pattern records.
+- ✅ Ensure the managed `.gitignore` block covers `.devteam/patterns/` by default.
+- ✅ Reject secret-shaped promoted prompt text.
 
 ### 27.2 — Collection from blockers, warnings, and auto-retry
 
-- Add `devteam patterns collect`.
-- Read the selected pipeline root's gates, archives, and `run-log.jsonl`.
-- Collect blocker observations from failed gates using typed metadata first.
-- Collect warning observations from gate `warnings[]`, reviewer warnings, and
+- ✅ Add `devteam patterns collect`.
+- ✅ Read the selected pipeline root's gates, archives, and `run-log.jsonl`.
+- ✅ Collect blocker observations from failed gates using typed metadata first.
+- ✅ Collect warning observations from gate `warnings[]`, reviewer warnings, and
   `noted_for_followup[]`.
-- Record auto-retry observations before gates are cleared, then update whether the
-  later retry passed.
-- Collect positive observations when a promoted pattern was injected and the matching
-  stage passes first try.
-- Make collection idempotent by fingerprint.
+- ✅ Collect archived failure gates produced by auto-retry and mark stages seen in
+  `fix-retry` events.
+- Later slice: record live auto-retry observations before gate clearing and update
+  first-pass positive reinforcement.
+- ✅ Make collection idempotent by fingerprint.
 
 ### 27.3 — Review, promotion, retirement, and stats
 
-- Add:
+- ✅ Add:
   - `devteam patterns list`;
   - `devteam patterns review`;
   - `devteam patterns promote <candidate-id>`;
   - `devteam patterns retire <pattern-id>`;
   - `devteam patterns stats`.
-- Keep promotion explicit. Auto-promotion remains out of scope unless a later ADR
+- ✅ Keep promotion explicit. Auto-promotion remains out of scope unless a later ADR
   approves it.
-- Show recurrence count, tier, domain, stage/workstream/language matches, retry
+- ✅ Show recurrence count, tier, domain, stage/workstream/language matches, retry
   outcome, false-positive/noise counters, and proposed prompt text during review.
 
 ### 27.4 — Prompt injection
 
-- Add a descriptor field for selected promoted patterns.
-- Select by stage, workstream, language/framework, feature hints, and recent failure
+- ✅ Add a descriptor field for selected promoted patterns.
+- ✅ Select by stage, workstream, language/framework, feature hints, and recent failure
   fingerprints.
-- Inject a `Known Project Patterns` prompt section only when at least one pattern is
+- ✅ Inject a `Known Project Patterns` prompt section only when at least one pattern is
   relevant.
-- Default budget:
+- ✅ Default budget:
   - 3 blocker-prevention patterns;
   - 2 warning-derived patterns;
   - 1 positive pattern;
   - one conservative byte cap for the whole section.
-- Increment injected counters after dispatch.
+- Later slice: increment injected counters after dispatch without making prompt
+  rendering mutate local pattern storage.
 
 ### 27.5 — Graduation and decay
 

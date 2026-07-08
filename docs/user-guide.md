@@ -20,6 +20,7 @@ If you've never used Stagecraft before, read EXAMPLE first. This page is a refer
 - [Docker runner](#docker-runner)
 - [The web UI](#the-web-ui)
 - [Persistent memory](#persistent-memory)
+- [Pattern learning](#pattern-learning)
 - [Observability (OpenTelemetry)](#observability-opentelemetry)
 - [Multi-model peer review](#multi-model-peer-review)
 - [Auditing a codebase](#auditing-a-codebase)
@@ -1201,6 +1202,50 @@ The local-default embedder (`Xenova/bge-small-en-v1.5` via `@huggingface/transfo
 Opt out per artifact by including the marker `stagecraft-no-memory` anywhere in the file (a comment line works). Stagecraft skips that artifact at ingest.
 
 For the full reference: [`docs/memory.md`](memory.md).
+
+## Pattern learning
+
+Use `devteam patterns` when the same review finding keeps coming back across
+features. It is different from `devteam memory`: memory retrieves project facts;
+patterns inject compact prevention guidance into future coding-agent prompts.
+
+The normal loop is:
+
+```bash
+devteam patterns collect
+devteam patterns review
+devteam patterns promote <candidate-id> --text "When adding a user-visible HTTP endpoint, update README.md or docs/reference/* in the same implementation pass."
+devteam patterns stats
+```
+
+Collection reads local pipeline state and stores sanitized observations under
+`.devteam/patterns/`: blockers, warnings, `noted_for_followup[]`, archived
+auto-retry failures, and retry outcomes. It does not store raw prompts,
+transcripts, full source snippets, repository remotes, or raw blocker text.
+Promoted guidance is the only text shown to agents.
+
+The taxonomy is intentionally small:
+
+| Tier | Use it for | Prompt behavior |
+|---|---|---|
+| `blocker` | A defect that failed a gate or forced retry. | Strong prevention candidate after review. |
+| `warning` | A likely issue or senior-engineering concern. | Coaching only; promote when recurrent or clearly valuable. |
+| `nudge` | Local style, architecture, or team preference. | Inject narrowly and only when relevant. |
+| `positive` | A practice that helped a clean first pass. | Reinforce sparingly so the prompt is not all warnings. |
+
+After promotion, Stagecraft selects only relevant patterns by stage, workstream,
+language, framework, and feature hints, then renders them in a bounded `Known
+Project Patterns` section. The section is advisory: stage instructions, allowed
+writes, gate schemas, and stoplists still win.
+
+Retire stale or noisy guidance:
+
+```bash
+devteam patterns retire <pattern-id> --reason "covered by preflight check"
+```
+
+For the full reference, including storage shape, edge cases, auto-retry semantics,
+and graduation to deterministic gates, see [`docs/pattern-learning.md`](pattern-learning.md).
 
 ## Observability (OpenTelemetry)
 

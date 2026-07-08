@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stagecraft.dev/schemas/promoted-pattern.schema.json",
+  "title": "Promoted pattern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "status",
+    "tier",
+    "domain",
+    "applies_to",
+    "prompt_text",
+    "evidence",
+    "stats",
+    "promoted_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "status": { "enum": ["promoted", "retired"] },
+    "tier": { "enum": ["blocker", "warning", "nudge", "positive"] },
+    "domain": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "applies_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stages", "workstreams", "languages", "frameworks", "feature_hints"],
+      "properties": {
+        "stages": { "type": "array", "items": { "type": "string" } },
+        "workstreams": { "type": "array", "items": { "type": "string" } },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "frameworks": { "type": "array", "items": { "type": "string" } },
+        "feature_hints": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "prompt_text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observations", "last_seen", "last_reinforced"],
+      "properties": {
+        "observations": { "type": "integer", "minimum": 0 },
+        "last_seen": { "type": ["string", "null"] },
+        "last_reinforced": { "type": "string" }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["injected", "recurrence_after_injection", "noise_reports"],
+      "properties": {
+        "injected": { "type": "integer", "minimum": 0 },
+        "recurrence_after_injection": { "type": "integer", "minimum": 0 },
+        "noise_reports": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "promoted_at": { "type": "string", "format": "date-time" },
+    "retired_at": { "type": "string", "format": "date-time" },
+    "retirement_reason": { "type": "string", "maxLength": 500 }
+  }
+}

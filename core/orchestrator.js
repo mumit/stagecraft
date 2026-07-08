@@ -270,6 +270,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // null means the adapter declared no budget (full host surface applies).
     toolBudget: opts.toolBudget ?? null,
     contextManifest: opts.contextManifest || null,
+    knownPatterns: Array.isArray(opts.knownPatterns) ? opts.knownPatterns : [],
     // When set, all workstreams of this stage dispatch to the same
     // subagent regardless of role (used by peer-review where the
     // workstreams are areas being reviewed but the dispatched agent
@@ -466,7 +467,9 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const descriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, contextManifest });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, contextManifest });
+      const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
+      const descriptor = { ...baseDescriptor, knownPatterns };
       const prompt = withSpan("adapter.renderStagePrompt", {
         "devteam.host": hostName,
         "devteam.stage": stageDef.stage,

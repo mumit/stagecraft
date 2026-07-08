@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stagecraft.dev/schemas/pattern-observation.schema.json",
+  "title": "Pattern observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "pattern_key",
+    "tier",
+    "domain",
+    "stage",
+    "workstream",
+    "failure_class",
+    "language",
+    "framework",
+    "source",
+    "status",
+    "resolved_by_retry",
+    "detector",
+    "fingerprint",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "kind": { "const": "pattern-observation" },
+    "pattern_key": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "tier": { "enum": ["blocker", "warning", "nudge", "positive"] },
+    "domain": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "stage": { "type": "string", "minLength": 1, "maxLength": 40 },
+    "workstream": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "failure_class": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "language": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "framework": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "source": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "status": { "type": ["string", "null"], "maxLength": 40 },
+    "resolved_by_retry": { "type": "boolean" },
+    "detector": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}
