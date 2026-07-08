@@ -923,6 +923,18 @@ They age out automatically. Each lesson in `pipeline/lessons-learned.md` carries
 
 This prevents lessons-learned from becoming a wall of accumulated wisdom that nobody reads. The 10-run threshold is in `rules/retrospective.md`; tune for your team if needed.
 
+### How is proposed pattern learning different from memory?
+
+`devteam memory` is a retrieval system: it indexes selected artifacts so later stages can
+draw on project context. Proposed `devteam patterns` would be a reviewed coaching loop:
+Stagecraft would collect sanitized blockers, warnings, auto-retry outcomes, and positive
+examples, then inject only promoted, relevant, budgeted guidance into future coding-agent
+prompts. Pattern learning is designed to mirror engineering growth — fewer repeated
+mistakes and better judgment — without turning every warning into a permanent rule.
+
+See [`docs/pattern-learning.md`](pattern-learning.md) and
+[`plans/phase-27-pattern-learning.md`](../plans/phase-27-pattern-learning.md).
+
 ## Operational gotchas
 
 ### Why doesn't my headless run work even though `claude --version` is fine?
