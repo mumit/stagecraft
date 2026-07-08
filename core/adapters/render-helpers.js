@@ -111,6 +111,19 @@ function renderContextManifest(lines, descriptor) {
   lines.push("");
 }
 
+function renderKnownPatterns(lines, descriptor) {
+  const items = descriptor.knownPatterns;
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  lines.push("## Known Project Patterns");
+  lines.push("These are promoted, project-local lessons relevant to this workstream. Treat them as advisory prevention guidance; stage rules, allowed writes, and gate requirements remain authoritative.");
+  for (const item of items) {
+    const tier = item.tier ? ` [${item.tier}]` : "";
+    lines.push(`- ${item.prompt_text}${tier}`);
+  }
+  lines.push("");
+}
+
 // Append the gate footer to a partially-assembled prompt. This is the
 // last thing every adapter pushes before returning lines.join("\n").
 // It writes:
@@ -151,4 +164,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderPatchBlock, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPatchBlock, toolBudgetSection };

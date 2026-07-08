@@ -3,7 +3,7 @@
 
 # CLI Reference
 
-Full `devteam` command reference. 37 commands.
+Full `devteam` command reference. 38 commands.
 Derived from the per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
@@ -311,6 +311,18 @@ Persistent project memory. Subcommands: ingest, query, stats, clear, reindex, pr
 | --kind  | string | Filter by artifact kind  |
 | --org   | bool   | Target org-shared store  |
 | --json  | bool   | JSON output              |
+
+### `devteam patterns <collect|list|review|promote|retire|stats> [options]`
+
+Project-local pattern learning. Collect sanitized observations, review candidates, promote advisory guidance, retire stale patterns, and inspect stats.
+
+| Flag      | Type   | Description                        |
+| --------- | ------ | ---------------------------------- |
+| --cwd     | string | Target project directory           |
+| --feature | string | Feature name for bounded isolation |
+| --json    | bool   | Emit JSON output                   |
+| --text    | string | Prompt text for promote            |
+| --reason  | string | Retirement reason                  |
 
 ### `devteam architecture <subcommand> [options]`
 

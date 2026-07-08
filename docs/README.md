@@ -23,7 +23,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [ci.md](ci.md) — GitHub Actions workflow template and environment variables
 - [reference/environment-variables.md](reference/environment-variables.md) — all environment variables Stagecraft reads, grouped by subsystem
 - [memory.md](memory.md) — persistent project memory: embedder options and shared store
-- [pattern-learning.md](pattern-learning.md) — proposed `devteam patterns` loop for turning reviewed blockers, warnings, and positive examples into bounded coding-agent guidance
+- [pattern-learning.md](pattern-learning.md) — project-local `devteam patterns` loop for turning reviewed blockers, warnings, follow-ups, auto-retry failures, and positive examples into bounded coding-agent guidance
 - [observability.md](observability.md) — OpenTelemetry span schema and collector setup
 - [capacity-strategy.md](capacity-strategy.md) — latency-aware routing, remote capacity, prompt caching, and persistent-session policy
 - [evidence.md](evidence.md) — offline readiness, explicit resolution acceptance, and privacy-safe export

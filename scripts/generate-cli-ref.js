@@ -150,6 +150,11 @@ const COMMANDS = [
     description: "Persistent project memory. Subcommands: ingest, query, stats, clear, reindex, promote.",
   },
   {
+    name:        "patterns",
+    synopsis:    "devteam patterns <collect|list|review|promote|retire|stats> [options]",
+    description: "Project-local pattern learning. Collect sanitized observations, review candidates, promote advisory guidance, retire stale patterns, and inspect stats.",
+  },
+  {
     name:        "architecture",
     synopsis:    "devteam architecture <subcommand> [options]",
     description: "Query the org-shared store for prior ADRs and lessons learned. Principal consults this before designing.",

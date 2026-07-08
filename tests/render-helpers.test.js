@@ -7,7 +7,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
-const { allowedWritesCaption, appendGateFooter, renderContextManifest } =
+const { allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns } =
   require(path.join(REPO_ROOT, "core", "adapters", "render-helpers"));
 
 describe("render-helpers: allowedWritesCaption", () => {
@@ -66,6 +66,30 @@ describe("render-helpers: renderContextManifest", () => {
     assert.match(out, /sha256:0123456789abcdef/);
     assert.match(out, /2 additional changed file/);
     assert.doesNotMatch(out, /console\.log|function|class/);
+  });
+});
+
+describe("render-helpers: renderKnownPatterns", () => {
+  it("omits the section when no promoted patterns are selected", () => {
+    const lines = ["before"];
+    renderKnownPatterns(lines, { knownPatterns: [] });
+    assert.deepEqual(lines, ["before"]);
+  });
+
+  it("renders selected patterns as advisory guidance", () => {
+    const lines = [];
+    renderKnownPatterns(lines, {
+      knownPatterns: [{
+        id: "docs-http-endpoint",
+        tier: "warning",
+        prompt_text: "Document user-visible HTTP endpoints during implementation.",
+      }],
+    });
+    const out = lines.join("\n");
+    assert.match(out, /Known Project Patterns/);
+    assert.match(out, /advisory prevention guidance/);
+    assert.match(out, /Document user-visible HTTP endpoints/);
+    assert.match(out, /\[warning\]/);
   });
 });
 

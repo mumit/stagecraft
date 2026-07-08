@@ -31,6 +31,7 @@ pipeline/changes/*/lint-output.txt
 pipeline/changes/*/pre-review-output.txt
 pipeline/changes/*/changed-files.txt
 .devteam/memory/
+.devteam/patterns/
 .devteam/evidence-project-id
 ${BLOCK_END}`;
 

@@ -1,8 +1,8 @@
 # Pattern Learning
 
-Pattern learning is a proposed Stagecraft capability for helping agents improve the
-way a human engineer improves: repeated review feedback becomes compact, reviewed
-memory that is visible before the next implementation starts.
+Pattern learning helps agents improve the way a human engineer improves: repeated
+review feedback becomes compact, reviewed memory that is visible before the next
+implementation starts.
 
 The feature is intentionally distinct from existing memory and evidence features:
 
@@ -11,8 +11,13 @@ The feature is intentionally distinct from existing memory and evidence features
 - `devteam evidence` measures readiness without copying free-form content.
 - H3 recipe learning, when enabled, would learn deterministic fix recipes after
   explicit accepted resolutions.
-- `devteam patterns` would learn preventive engineering habits from blockers,
-  warnings, successful retries, and positive examples.
+- `devteam patterns` learns preventive engineering habits from blockers, warnings,
+  archived auto-retry failures, follow-ups, and promoted examples.
+
+The first implementation slice ships project-local collection, explicit promotion,
+retirement, stats, and prompt injection. Deeper positive reinforcement automation,
+noise reporting, and deterministic-gate graduation recommendations remain follow-up
+work in [Phase 27](../plans/phase-27-pattern-learning.md).
 
 ## Critical Review
 
@@ -149,38 +154,39 @@ file.
 
 ## Collection
 
-`devteam patterns collect` should read local pipeline state and append sanitized
+`devteam patterns collect` reads local pipeline state and appends sanitized
 observations. Inputs include:
 
 - failed gate `stage`, `status`, `failure_class`, `workstream`, and typed blocker
   metadata such as `assigned_to`, `signal`, or detector category;
 - warning arrays from gates and review artifacts, normalized into warning candidates;
-- auto-retry events from `run-log.jsonl`, including cleared gates, target workstream,
-  recipe name, and whether the next attempt passed;
+- archived failure gates created during auto-retry, with `run-log.jsonl` used to mark
+  whether a matching stage entered `fix-retry`;
 - `noted_for_followup[]` items from gates, classified by `track_for`;
-- retrospective lessons and positive reinforcement signals;
+- retrospective lessons and positive reinforcement signals in later slices;
 - successful first-pass runs where a promoted pattern was injected and the matching
-  stage passed.
+  stage passed in later slices.
 
 Collection should be idempotent by fingerprint. Running it twice after the same run
 must not duplicate observations.
 
 ## Auto-Retry Semantics
 
-Auto-retry should not erase learning. When Stagecraft enters `fix-and-retry`, it should
-record an observation before clearing gates:
+Auto-retry should not erase learning. The first implementation collects archived
+failure gates and marks stages that entered `fix-retry` in `run-log.jsonl`:
 
 ```text
 failure observed
-  → sanitized pattern observation written
+  → failed gate archived by Stagecraft
+  → sanitized pattern observation collected from the archive
   → blockers copied to context for the repair agent
   → retry runs
   → retry outcome updates observation stats
 ```
 
-If the retry passes, the observation gains `resolved_by_retry: true`. That is not the
-same as promotion. It means the issue is a good candidate because Stagecraft saw both
-the mistake and a recovery path.
+If the stage entered retry, the observation gains `resolved_by_retry: true`. That is
+not the same as promotion. It means the issue is a good candidate because Stagecraft
+saw both the mistake and a recovery path.
 
 ## Review and Promotion
 
@@ -290,16 +296,17 @@ They share evidence sources but have different safety thresholds. Pattern learni
 ship earlier because it is advisory, project-local, and human-promoted. H3 remains gated
 because it would create or select executable repair behavior.
 
-## Minimum Viable Slice
+## First Slice
 
-1. Add project-local storage and schemas for observations and promoted patterns.
-2. Add `devteam patterns collect`, `list`, `review`, `promote`, `retire`, and `stats`.
-3. Collect blockers, warnings, auto-retry outcomes, and positive first-pass matches.
-4. Inject a budgeted `Known Project Patterns` section into build and QA descriptors.
-5. Track injected count and recurrence-after-injection.
-6. Document privacy boundaries, `.gitignore` behavior, and export/import posture.
-7. Add tests for idempotent collection, promotion gating, injection relevance, prompt
-   budget limits, stale pattern retirement, and secret-shaped text rejection.
+1. Project-local storage and schemas for observations and promoted patterns.
+2. `devteam patterns collect`, `list`, `review`, `promote`, `retire`, and `stats`.
+3. Collection from blockers, warnings, follow-ups, archived retry failures, and
+   retry-stage markers.
+4. Budgeted `Known Project Patterns` injection into rendered stage prompts.
+5. Privacy checks for sanitized observations and secret-shaped promoted text.
+6. Tests for idempotent collection, promotion gating, injection relevance, prompt
+   rendering, retired-pattern suppression, archived retry collection, and secret-shaped
+   text rejection.
 
 ## Open Decisions
 

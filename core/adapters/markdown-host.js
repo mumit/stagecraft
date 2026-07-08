@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const { listRoles, ROLES_DIR } = require("../roles");
 const baseInstall = require("./base-install");
-const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, toolBudgetSection } = require("./render-helpers");
+const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, toolBudgetSection } = require("./render-helpers");
 
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -137,6 +137,7 @@ function makeMarkdownHostAdapter(capabilities) {
     for (const f of descriptor.readFirst) lines.push(`- ${f}`);
     lines.push("");
     renderContextManifest(lines, descriptor);
+    renderKnownPatterns(lines, descriptor);
     lines.push(allowedWritesCaption(capabilities.enforces.allowed_writes, capabilities.displayName || hostName));
     for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
     if (descriptor.allowedWrites.some((f) => f.includes("<"))) {
