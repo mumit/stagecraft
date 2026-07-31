@@ -61,9 +61,11 @@ Cost is opt-in. The gate JSON gains five optional fields:
 
 Three ways the fields land:
 
-1. **Agent self-reports.** The renderStagePrompt for each host now includes an "Optional cost telemetry" note asking the agent to include `model` / `tokens_in` / `tokens_out` / `duration_ms` if it knows them. Claude exposes these in its CLI output; the agent can read them and write them into the gate.
-2. **Adapter post-processes** (future work). The headless invoke path could parse `--output-format json` from the host CLI and write the fields into the gate as a post-step. Not implemented today; the agent-self-report path covers the same data.
-3. **Stage-merge rollup** (orchestrator). When `devteam merge <stage>` aggregates per-workstream gates, it sums any cost fields present and emits stage-level `tokens_in` / `tokens_out` / `cost_usd` / `duration_ms` totals on the merged gate. Per-workstream detail is preserved inside the `workstreams[]` array.
+1. **Agent self-reports.** The renderStagePrompt for each host now includes an "Optional cost telemetry" note asking the agent to include `model` / `tokens_in` / `tokens_out` / `duration_ms` if it knows them. Claude exposes these in its CLI output; the agent can read them and write them into the gate. This is a model claim, not an orchestrator observation — see the trust-boundary note below.
+2. **Adapter post-processes (claude-code, phase-28 item 28.1).** The claude-code headless command now requests `--output-format stream-json --verbose`; `core/adapters/headless.js` parses the stream for the final result message's `usage.input_tokens` / `usage.output_tokens` / `total_cost_usd` / model id, and the orchestrator writes them onto the workstream gate under `_orchestrator_observed` — a distinct block from the fields in the table above, never overwriting the model's self-report. `_orchestrator_observed` fields are: `tokens_in`, `tokens_out`, `cost_usd`, `model_observed`, `source`, `at`. If the CLI's output isn't parseable JSON (older CLI, or any command that ignores the flag), the dispatch degrades to today's plain-text behavior with no `_orchestrator_observed` block — a telemetry parse failure never fails a dispatch. codex and gemini-cli/antigravity don't do this yet (items 28.2/28.3); their `model`/`tokens_in`/etc. above stay agent-self-reported only.
+3. **Stage-merge rollup** (orchestrator). When `devteam merge <stage>` aggregates per-workstream gates, it sums any cost fields present and emits stage-level `tokens_in` / `tokens_out` / `cost_usd` / `duration_ms` totals on the merged gate. Per-workstream detail is preserved inside the `workstreams[]` array. The rollup sums the model-asserted fields in the table above; it does not yet fold in `_orchestrator_observed` (that's item 28.4 — budget enforcement preferring observed cost).
+
+**Trust boundary.** `_orchestrator_observed` records what the orchestrator itself parsed from the host CLI's own JSON output — an observation, not a claim. The top-level `model`/`tokens_in`/`tokens_out`/`cost_usd` fields above remain whatever the agent wrote into the gate, self-reported and unverified. Nothing today prefers one over the other automatically (that's item 28.4); until then, treat `_orchestrator_observed` as the more trustworthy source when both are present on a claude-code gate.
 
 ## Pricing table
 
@@ -102,9 +104,9 @@ npm run routing:suggest -- --apply --yes
 
 ## Limitations
 
-- **Token reporting is uneven** across host CLIs. Claude Code exposes precise counts via `--print --output-format json`; Codex and Gemini are less consistent. The simpler model in agent-self-reports gives us the data without per-host parsing complexity.
-- **Pricing drift.** The pricing table needs periodic updates. If prices change between updates, `cost_usd` figures are off by the drift.
-- **Cached input tokens** (Claude's prompt caching, GPT's similar feature) aren't tracked separately. The reported `tokens_in` includes everything; cost calculations don't apply cache discounts. Treat as upper bound.
+- **Token reporting is uneven** across host CLIs. Claude Code exposes precise counts via `--print --output-format stream-json --verbose`, now orchestrator-parsed into `_orchestrator_observed` (item 28.1); Codex and Gemini/Antigravity are less consistent and still rely on agent self-reports (items 28.2/28.3) or a bytes-based estimate.
+- **Pricing drift.** The pricing table needs periodic updates. If prices change between updates, `cost_usd` figures are off by the drift. `_orchestrator_observed.cost_usd` sidesteps this for claude-code — it's the CLI's own billed `total_cost_usd`, not a token × pricing-table computation.
+- **Cached input tokens** (Claude's prompt caching, GPT's similar feature) aren't tracked separately. The reported `tokens_in` includes everything; cost calculations don't apply cache discounts. Treat as upper bound. This still applies to `_orchestrator_observed.tokens_in` — it's `usage.input_tokens` from the CLI's result message, not broken out from `cache_creation_input_tokens`/`cache_read_input_tokens`. `_orchestrator_observed.cost_usd`, however, is the CLI's actual billed cost and already reflects any cache discount.
 - **No latency-cost decomposition.** A slow stage and an expensive stage are different things. `duration_ms` and `cost_usd` are both reported, but with no derived "$/min" metric. The dashboard table includes both columns so you can interpret as needed.
 
 ## See also

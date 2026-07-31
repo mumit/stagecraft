@@ -578,3 +578,105 @@ test("DEVTEAM_LOG_HISTORY=0 disables rotation; current log is overwritten", asyn
     fs.rmSync(ctx.cwd, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// capabilities.usageFormat: "claude-stream-json" (phase-28 item 28.1)
+// ---------------------------------------------------------------------------
+//
+// Only the claude-code adapter declares usageFormat. These tests stub the
+// host CLI via DEVTEAM_HEADLESS_COMMAND with a script that either emits a
+// realistic stream-json transcript, or plain text (simulating an older CLI
+// / any command that ignores --output-format), to prove both the observed
+// path and the degradation contract.
+
+function makeStreamJsonAdapter() {
+  return {
+    capabilities: { name: "claude-code", headlessCommand: "true", usageFormat: "claude-stream-json" },
+    renderStagePrompt: (descriptor) =>
+      `# stage ${descriptor.stage} (${descriptor.workstreamId})\nprompt body\n`,
+  };
+}
+
+function writeFixtureScript(cwd, filename, source) {
+  const scriptPath = path.join(cwd, filename);
+  fs.writeFileSync(scriptPath, source);
+  return scriptPath;
+}
+
+test("usageFormat: stream-json fixture yields observed usage/telemetry on the result", async () => {
+  const ctx = makeCtx();
+  const scriptPath = writeFixtureScript(ctx.cwd, "claude-stub.js", [
+    'process.stdout.write(JSON.stringify({type:"system",subtype:"init"})+"\\n");',
+    'process.stdout.write(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"Working on it"}]}})+"\\n");',
+    'process.stdout.write(JSON.stringify({type:"result",subtype:"success",total_cost_usd:0.0456,result:"Done",usage:{input_tokens:1234,output_tokens:56},modelUsage:{"claude-sonnet-5":{}}})+"\\n");',
+  ].join("\n"));
+  try {
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", `"${process.execPath}" "${scriptPath}"`, () =>
+      runHeadless(makeStreamJsonAdapter(), makeDescriptor("stage-01"), ctx),
+    );
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.telemetry, "observed");
+    assert.deepEqual(r.usage, { tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5" });
+
+    const logContent = fs.readFileSync(r.logPath, "utf8");
+    assert.match(logContent, /Working on it/, "assistant text should be readable in the transcript");
+    assert.match(logContent, /Done/, "final result text should be readable in the transcript");
+    assert.doesNotMatch(logContent, /"type":"assistant"/, "raw JSONL must not leak into the transcript");
+    assert.doesNotMatch(logContent, /"type":"result"/, "raw JSONL must not leak into the transcript");
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("usageFormat: plain-text stub degrades gracefully — telemetry unavailable, dispatch still succeeds", async () => {
+  const ctx = makeCtx();
+  const scriptPath = writeFixtureScript(ctx.cwd, "old-claude-stub.js", [
+    'process.stdout.write("I cannot honor --output-format; here is plain text.\\n");',
+  ].join("\n"));
+  try {
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", `"${process.execPath}" "${scriptPath}"`, () =>
+      runHeadless(makeStreamJsonAdapter(), makeDescriptor("stage-01"), ctx),
+    );
+    // A telemetry parse failure must never fail the dispatch (fire-and-forget contract).
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.telemetry, "unavailable");
+    assert.equal(r.usage, null);
+
+    const logContent = fs.readFileSync(r.logPath, "utf8");
+    assert.match(logContent, /I cannot honor --output-format; here is plain text\./);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("usageFormat: a non-zero exit still degrades telemetry cleanly instead of throwing", async () => {
+  const ctx = makeCtx();
+  const scriptPath = writeFixtureScript(ctx.cwd, "crashing-stub.js", [
+    'process.stdout.write("partial output before crash\\n");',
+    "process.exit(1);",
+  ].join("\n"));
+  try {
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", `"${process.execPath}" "${scriptPath}"`, () =>
+      runHeadless(makeStreamJsonAdapter(), makeDescriptor("stage-01"), ctx),
+    );
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.telemetry, "unavailable");
+    assert.equal(r.usage, null);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("usageFormat: adapters without the capability are unaffected — no usage/telemetry fields, raw tee unchanged", async () => {
+  const ctx = makeCtx();
+  try {
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", "cat", () =>
+      runHeadless(makeAdapter(), makeDescriptor("stage-01"), ctx),
+    );
+    assert.equal(r.exitCode, 0);
+    assert.equal("usage" in r, false, "non-usageFormat adapters must not gain a usage field");
+    assert.equal("telemetry" in r, false, "non-usageFormat adapters must not gain a telemetry field");
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
