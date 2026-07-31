@@ -8,14 +8,16 @@ Run `npm run docs:generate` to regenerate after editing capabilities files.
 
 ### Capabilities
 
-| Host          | Display name                           | headless | hooks | subagents | slashCommands | worktrees | goalLoop |
-| ------------- | -------------------------------------- | -------- | ----- | --------- | ------------- | --------- | -------- |
-| claude-code   | Claude Code                            | yes      | yes   | yes       | yes           | yes       | yes      |
-| codex         | Codex CLI                              | yes      | no    | no        | no            | yes       | yes      |
-| gemini-cli    | Gemini CLI                             | yes      | no    | no        | no            | yes       | no       |
-| generic       | Generic CLI (no host integration)      | no       | no    | no        | no            | no        | no       |
-| omnigent      | Omnigent                               | yes      | no    | no        | no            | no        | no       |
-| openai-compat | OpenAI-compatible Chat Completions API | yes      | no    | no        | no            | no        | no       |
+| Host          | Display name                           | headless | hooks | subagents | slashCommands | worktrees | goalLoop | telemetry |
+| ------------- | -------------------------------------- | -------- | ----- | --------- | ------------- | --------- | -------- | --------- |
+| claude-code   | Claude Code                            | yes      | yes   | yes       | yes           | yes       | yes      | native    |
+| codex         | Codex CLI                              | yes      | no    | no        | no            | yes       | yes      | native    |
+| gemini-cli    | Gemini CLI                             | yes      | no    | no        | no            | yes       | no       | estimated |
+| generic       | Generic CLI (no host integration)      | no       | no    | no        | no            | no        | no       | estimated |
+| omnigent      | Omnigent                               | yes      | no    | no        | no            | no        | no       | estimated |
+| openai-compat | OpenAI-compatible Chat Completions API | yes      | no    | no        | no            | no        | no       | native    |
+
+`telemetry`: `native` — token usage is parsed from the host CLI/API's own output (see docs/cost.md). `estimated` — no native capture; the orchestrator records a promptBytes/4 estimate flagged with `tokens_estimated: true`.
 
 ### Enforcement levels
 
@@ -37,7 +39,7 @@ Command the orchestrator spawns in `--headless` mode:
 | Host          | headlessCommand                                                                     |
 | ------------- | ----------------------------------------------------------------------------------- |
 | claude-code   | claude --dangerously-skip-permissions --print --output-format stream-json --verbose |
-| codex         | codex exec --sandbox workspace-write                                                |
+| codex         | codex exec --sandbox workspace-write --json                                         |
 | gemini-cli    | gemini                                                                              |
 | omnigent      | omnigent run .omnigent/stagecraft/agent --no-session                                |
 | openai-compat | —                                                                                   |

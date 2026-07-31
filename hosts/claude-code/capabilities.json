@@ -9,6 +9,7 @@
   "headless": true,
   "headlessCommand": "claude --dangerously-skip-permissions --print --output-format stream-json --verbose",
   "usageFormat": "claude-stream-json",
+  "telemetry": "native",
   "goalLoop": true,
   "skillFormat": "markdown-with-frontmatter",
   "skillsDir": ".claude/skills",

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
-const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage } =
+const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage, patchGateForEstimatedUsage } =
   require(path.join(REPO_ROOT, "core", "orchestrator"));
 const { listArchives } = require(path.join(REPO_ROOT, "core", "gates", "archive"));
 const { STAGES, getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
@@ -846,6 +846,172 @@ process.stdout.write("plain text output, no --output-format support\\n");
       const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
       assert.equal("_orchestrator_observed" in gate, false);
       assert.equal(gate.status, "PASS");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+});
+
+// ─── Phase-28 item 28.3: codex native capture + estimate fallback ─────────
+describe("orchestrator: patchGateForEstimatedUsage (phase 28.3)", () => {
+  it("writes a tokens_estimated block using the promptBytes/4 heuristic", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForEstimatedUsage(gateFile, 4000);
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+    assert.equal(gate._orchestrator_observed.tokens_estimated, true);
+    assert.equal(gate._orchestrator_observed.tokens_in_estimate, 1000);
+    assert.equal(gate._orchestrator_observed.source, "orchestrator:prompt-bytes-estimate");
+    assert.ok(typeof gate._orchestrator_observed.at === "string" && gate._orchestrator_observed.at.length > 0);
+    // Never writes a bare tokens_in — the estimate flag and the estimate
+    // value are inseparable, so a consumer can't accidentally read this as
+    // ground truth by only checking for tokens_in.
+    assert.equal("tokens_in" in gate._orchestrator_observed, false);
+  });
+
+  it("fire-and-forget: never throws when the gate file does not exist", () => {
+    const cwd = track(makeTargetProject());
+    const missing = path.join(cwd, "pipeline", "gates", "stage-99.json");
+    assert.doesNotThrow(() => patchGateForEstimatedUsage(missing, 4000));
+  });
+
+  it("fire-and-forget: never throws when the gate file is unreadable JSON", () => {
+    const cwd = track(makeTargetProject());
+    const dir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(dir, { recursive: true });
+    const gateFile = path.join(dir, "stage-01.json");
+    fs.writeFileSync(gateFile, "{ not valid json");
+    assert.doesNotThrow(() => patchGateForEstimatedUsage(gateFile, 4000));
+    assert.equal(fs.readFileSync(gateFile, "utf8"), "{ not valid json");
+  });
+});
+
+describe("orchestrator: runStageHeadless writes _orchestrator_observed for codex (phase 28.3)", () => {
+  function codexConfig() {
+    return "routing:\n  default_host: codex\npipeline:\n  default_track: full\n";
+  }
+
+  function makeCodexJsonStub() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-codex-stub-"));
+    _dirs.push(dir);
+    const script = path.join(dir, "codex-stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
+fs.writeFileSync(gateFile, JSON.stringify({
+  stage: "stage-01", host: "codex", status: "PASS", track: "full",
+  blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-02T00:00:00.000Z"
+}, null, 2) + "\\n");
+process.stdout.write(JSON.stringify({type:"thread.started",thread_id:"t1"})+"\\n");
+process.stdout.write(JSON.stringify({type:"turn.started"})+"\\n");
+process.stdout.write(JSON.stringify({type:"item.completed",item:{id:"1",type:"agent_message",text:"Wrote the brief."}})+"\\n");
+process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:1234,output_tokens:56}})+"\\n");
+`, "utf8");
+    return script;
+  }
+
+  it("persists _orchestrator_observed onto the workstream gate after a headless dispatch", async () => {
+    const cwd = track(makeTargetProject({ config: codexConfig() }));
+    const script = makeCodexJsonStub();
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      assert.equal(r.exitCode, 0);
+      assert.equal(r.telemetry, "observed");
+
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate._orchestrator_observed.tokens_in, 1234);
+      assert.equal(gate._orchestrator_observed.tokens_out, 56);
+      assert.equal(gate._orchestrator_observed.source, "codex:exec-json");
+      assert.equal("tokens_estimated" in gate._orchestrator_observed, false,
+        "a native observation must never carry the estimate flag");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+});
+
+describe("orchestrator: runStageHeadless falls back to a prompt-bytes estimate for non-native hosts (phase 28.3)", () => {
+  function geminiConfig() {
+    return "routing:\n  default_host: gemini-cli\npipeline:\n  default_track: full\n";
+  }
+
+  // gemini-cli declares telemetry: "estimated" in capabilities.json — no
+  // usageFormat, so the dispatch's own telemetry is "unavailable" and the
+  // orchestrator falls back to a promptBytes/4 estimate.
+  function makeGeminiPlainStub() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-gemini-stub-"));
+    _dirs.push(dir);
+    const script = path.join(dir, "gemini-stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
+fs.writeFileSync(gateFile, JSON.stringify({
+  stage: "stage-01", host: "gemini-cli", status: "PASS", track: "full",
+  blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-02T00:00:00.000Z"
+}, null, 2) + "\\n");
+process.stdout.write("plain text output\\n");
+`, "utf8");
+    return script;
+  }
+
+  it("writes a tokens_in_estimate block, distinctly flagged, never mixed with an observed value", async () => {
+    const cwd = track(makeTargetProject({ config: geminiConfig() }));
+    const script = makeGeminiPlainStub();
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      assert.equal(r.exitCode, 0);
+      // gemini-cli declares no usageFormat, so runHeadless never attaches a
+      // usage/telemetry field at all (same as any pre-28.1 adapter) — the
+      // estimate fallback below is keyed off capabilities.telemetry, not
+      // this per-dispatch field.
+      assert.equal("telemetry" in r, false);
+
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate._orchestrator_observed.tokens_estimated, true);
+      assert.ok(Number.isInteger(gate._orchestrator_observed.tokens_in_estimate));
+      assert.ok(gate._orchestrator_observed.tokens_in_estimate > 0);
+      assert.equal(gate._orchestrator_observed.source, "orchestrator:prompt-bytes-estimate");
+      assert.equal("tokens_in" in gate._orchestrator_observed, false);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("claude-code (telemetry: native) never gets the estimate fallback even when a dispatch's own telemetry is unavailable", async () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-claude-plaintext-stub2-"));
+    _dirs.push(dir);
+    const script = path.join(dir, "old-claude-stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
+fs.writeFileSync(gateFile, JSON.stringify({
+  stage: "stage-01", host: "claude-code", status: "PASS", track: "full",
+  blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-02T00:00:00.000Z"
+}, null, 2) + "\\n");
+process.stdout.write("plain text output, no --output-format support\\n");
+`, "utf8");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      assert.equal(r.telemetry, "unavailable");
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal("_orchestrator_observed" in gate, false,
+        "a native-telemetry host must never fall back to an estimate — 28.1's fire-and-forget contract stands");
     } finally {
       if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
       else process.env.DEVTEAM_HEADLESS_COMMAND = previous;

@@ -69,6 +69,17 @@ describe("adapter contract", () => {
         assert.equal(adapter.capabilities.name, host);
       });
 
+      // Phase-28 item 28.3: every adapter must honestly declare whether it
+      // captures usage from the host CLI's own output ("native") or has no
+      // such capture and falls back to the orchestrator's promptBytes/4
+      // estimate ("estimated") — see core/orchestrator.js patchGateForObservedUsage
+      // / patchGateForEstimatedUsage.
+      it("declares a telemetry capability of native or estimated", () => {
+        const valid = new Set(["native", "estimated"]);
+        assert.ok(valid.has(adapter.capabilities.telemetry),
+          `${host}.capabilities.telemetry must be one of ${[...valid].join(", ")}; got ${adapter.capabilities.telemetry}`);
+      });
+
       it("declares an enforces map (allowed_writes + stoplist + tool_budget)", () => {
         assert.ok(adapter.capabilities.enforces, `${host}: missing enforces`);
         const valid = new Set(["tool-call-time", "post-hoc-audit", "prompt-only"]);

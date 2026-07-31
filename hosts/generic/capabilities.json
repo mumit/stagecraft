@@ -7,6 +7,7 @@
   "slashCommands": false,
   "worktrees": false,
   "headless": false,
+  "telemetry": "estimated",
   "goalLoop": false,
   "skillFormat": null,
   "skillsDir": null,

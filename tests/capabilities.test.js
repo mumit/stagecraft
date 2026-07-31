@@ -47,8 +47,12 @@ describe("capabilities.json — adapter declarations", () => {
   });
 
   it("codex headless command grants workspace writes for artifact and gate creation", () => {
+    // Phase-28 item 28.3 appended `--json` to capture orchestrator-observed
+    // usage telemetry (core/adapters/codex-exec-json.js) — this test's
+    // actual concern is the sandbox mode, so it checks for that flag rather
+    // than pinning the full command string.
     const caps = require(path.join(REPO_ROOT, "hosts", "codex", "capabilities.json"));
-    assert.equal(caps.headlessCommand, "codex exec --sandbox workspace-write");
+    assert.match(caps.headlessCommand, /--sandbox workspace-write\b/);
   });
 });
 
