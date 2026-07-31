@@ -1218,6 +1218,130 @@ describe("driver: budget cap accounts for unmerged workstream gate costs (fix 1.
   });
 });
 
+// ─── Phase-28 item 28.4: --budget-usd prefers orchestrator-observed cost ──
+// core/driver.js costUsdDetail() prefers gate._orchestrator_observed.cost_usd
+// over the model-asserted top-level cost_usd. cost_basis ("observed" /
+// "model-asserted" / "mixed") is recorded once per run on both the returned
+// summary and run-state.json, and a single run-log warning fires when any
+// asserted values are included.
+describe("driver: --budget-usd prefers orchestrator-observed cost (28.4)", () => {
+  it("reports cost_basis 'observed' and sums the observed figure when every gate has _orchestrator_observed", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      cost_usd: 999, // model's self-report — must NOT be used when observed is present
+      _orchestrator_observed: { cost_usd: 1, source: "claude-code:stream-json", at: "2026-07-31T00:00:00Z" },
+    });
+    seedGate(cwd, "stage-02", {
+      status: "PASS",
+      cost_usd: 999,
+      _orchestrator_observed: { cost_usd: 2, source: "openai-compat:usage", at: "2026-07-31T00:00:00Z" },
+    });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 3, "total must sum the observed figures, not the model-asserted ones");
+    assert.equal(s.cost_basis, "observed");
+  });
+
+  it("reports cost_basis 'model-asserted' when no gate has _orchestrator_observed (pre-28.1..28.3 hosts)", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "PASS", cost_usd: 5 });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 5);
+    assert.equal(s.cost_basis, "model-asserted");
+  });
+
+  it("reports cost_basis 'mixed' and sums correctly across an observed gate and an asserted-only gate", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      cost_usd: 999,
+      _orchestrator_observed: { cost_usd: 1, source: "codex:exec-json", at: "2026-07-31T00:00:00Z" },
+    });
+    seedGate(cwd, "stage-02", { status: "PASS", cost_usd: 4 }); // no _orchestrator_observed — asserted only
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 5, "total must be observed(1) + asserted(4)");
+    assert.equal(s.cost_basis, "mixed");
+  });
+
+  it("cost_basis is null (no cost data) when no gate carries a cost at all", async () => {
+    const cwd = track(makeTargetProject());
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 0);
+    assert.equal(s.cost_basis, null);
+  });
+
+  it("does not halt on budget using the observed cost even though the model over-reports its own cost_usd", async () => {
+    const cwd = track(makeTargetProject());
+    // Model claims $50 spent; the orchestrator actually observed $1. A $10 cap
+    // must NOT halt — pre-28.4 behavior would have halted on the model's claim.
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      cost_usd: 50,
+      _orchestrator_observed: { cost_usd: 1, source: "claude-code:stream-json", at: "2026-07-31T00:00:00Z" },
+    });
+    const actions = [
+      { action: "run-stage", stage: "stage-02", name: "design" },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    let i = 0;
+    const s = await run({
+      cwd,
+      budgetUsd: 10,
+      next: () => actions[i++],
+      runStageHeadless: async () => [{ role: "pm", gatePath: "x", exitCode: 0, durationMs: 1 }],
+    });
+    assert.notEqual(s.halt_action, "budget", "must not halt on budget when observed cost is under the cap");
+    assert.equal(s.completed, true);
+  });
+
+  it("halts on budget using the observed cost when it exceeds the cap even though no gate is model-asserted", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: { cost_usd: 20, source: "claude-code:stream-json", at: "2026-07-31T00:00:00Z" },
+    });
+    const s = await run({
+      cwd,
+      budgetUsd: 10,
+      next: () => ({ action: "run-stage", stage: "stage-02", name: "design", reason: "test" }),
+      runStageHeadless: () => { throw new Error("should not dispatch — budget must halt first"); },
+    });
+    assert.equal(s.halt_action, "budget", "observed cost above the cap must still halt");
+  });
+
+  it("persists cost_usd and cost_basis onto run-state.json once the run ends", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "PASS", cost_usd: 3 });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.completed, true);
+    const runState = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.equal(runState.cost_usd, 3);
+    assert.equal(runState.cost_basis, "model-asserted");
+  });
+
+  it("logs exactly one cost-basis-warning event across a multi-iteration run with asserted cost", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "PASS", cost_usd: 1 });
+    const actions = [
+      { action: "run-stage", stage: "stage-02", name: "design" },
+      { action: "run-stage", stage: "stage-02", name: "design" },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    let i = 0;
+    const s = await run({
+      cwd,
+      next: () => actions[i++],
+      runStageHeadless: async () => [{ role: "pm", gatePath: "x", exitCode: 0, durationMs: 1 }],
+    });
+    assert.equal(s.completed, true);
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    const events = log.trim().split("\n").map((l) => JSON.parse(l));
+    const warnings = events.filter((e) => e.outcome === "cost-basis-warning");
+    assert.equal(warnings.length, 1, "the cost-basis-warning must fire at most once per run");
+    assert.equal(warnings[0].cost_basis, "model-asserted");
+  });
+});
+
 describe("driver: progress-based convergence (4.2)", () => {
   // Write minimal run-state so the driver can be resumed with pre-seeded fixRetries.
   function seedRunState(cwd, fixRetries) {

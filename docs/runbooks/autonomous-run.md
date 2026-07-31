@@ -167,7 +167,7 @@ Read the `halt_action` (and `failure_class`) in the summary, or the last line of
 | `resolve-escalation` | A gate escalated (`judgment-gate`), the retry budget was spent on a `code-defect` (`convergence-exhausted`), or an escalation's ruling class wasn't in your `--auto-rule` grant. | Follow [escalation.md](escalation.md), then re-run `devteam run`. |
 | `resolve-escalation` (`cannot-decide`) | The Principal declared it cannot decide — the run summary carries `cannot_decide.{reason_class, question}`. | Supply the missing authority/information/ranking, encode a `PRINCIPAL-RULING:` line, then re-run. |
 | `ceiling` | The next stage is `sign-off` or `deploy` — irreversible/outward-facing. | Review, then re-run with `--allow-stage <name>` to grant it. |
-| `budget` | Cumulative `cost_usd` reached `--budget-usd`. | Raise the cap or stop. (Note: the cap prevents the *next* dispatch; it can't cancel one already running.) |
+| `budget` | Cumulative `cost_usd` reached `--budget-usd`, computed preferring each gate's orchestrator-observed cost over the model's self-report (phase-28 item 28.4). | Raise the cap or stop. (Note: the cap prevents the *next* dispatch; it can't cancel one already running.) |
 | `until` | Reached the `--until` boundary. | Expected stop — nothing to do. |
 | `structural-input` | A stage was dispatched but wrote no gate, and it isn't transient (clean exit with no output, or repeated failure after the transient budget). | Retrying won't help — inspect `pipeline/logs/<workstream>.log` (context overflow, persistent auth/config error). |
 | `merge-failed` | A workstream gate was missing or malformed at merge. | Read the reason; fix or re-run the missing workstream. |
@@ -280,7 +280,8 @@ Reads `run-state.json` and the tail of `run-log.jsonl`; reports:
 | `current_stage` | The stage the driver is working on |
 | `last_action` | Last action dispatched |
 | `iterations` | Loop iterations completed so far |
-| `cost_usd` | Cumulative cost from all gate files |
+| `cost_usd` | Cumulative cost from all gate files, preferring each gate's orchestrator-observed usage over the model's self-report where available (phase-28 item 28.4) |
+| `cost_basis` | `"observed"` (every gate had orchestrator-observed usage), `"model-asserted"` (none did — the pre-28.1 default), `"mixed"`, or `null` (no cost recorded yet) |
 | `last_heartbeat_age_ms` | Ms since the last heartbeat event |
 | `last_event_age_ms` | Ms since any event in run-log.jsonl |
 | `stall_detected` | `true` if the most recent dispatch event was stall-detected |

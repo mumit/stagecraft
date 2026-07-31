@@ -445,6 +445,8 @@ function collectReport(cwd, opts = {}) {
       startedAt: runState ? (runState.started_at || null) : null,
       iterations: runState ? (runState.iterations || 0) : 0,
       costUsd: runState ? (runState.cost_usd || null) : null,
+      // Phase-28 item 28.4: "observed" / "model-asserted" / "mixed" / null.
+      costBasis: runState ? (runState.cost_basis || null) : null,
       finalStatus: status,
       haltReason,
       haltType,
