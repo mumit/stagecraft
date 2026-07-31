@@ -1669,6 +1669,7 @@ async function run(opts = {}) {
             intent,   // ADR-009 §Decision.7: propagate so adapters render repair prompts
             timeoutMs,
             skipCompleted: r.action === "continue-stage",
+            runId: state.started_at, // 28.5: correlates run-corpus dispatch records to this run
             // ADR-009 §Decision.2: repair builds run in PATCH MODE (renderPatchBlock).
             // After 10.2 diagnosis, repairPatchItems holds structured per-file items.
             ...(targetedFix ? { workstream: [targetedFix.workstream] } : {}),
