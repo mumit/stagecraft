@@ -76,7 +76,7 @@ function renderTable(caps) {
 
   const capHeaders = [
     "Host", "Display name", "headless", "hooks", "subagents",
-    "slashCommands", "worktrees", "goalLoop",
+    "slashCommands", "worktrees", "goalLoop", "telemetry",
   ];
 
   const capRows = caps.map(c => [
@@ -88,6 +88,7 @@ function renderTable(caps) {
     yesNo(c.slashCommands),
     yesNo(c.worktrees),
     yesNo(c.goalLoop != null ? c.goalLoop : null),
+    c.telemetry || "—",
   ]);
 
   const capWidths = capHeaders.map((h, i) =>
@@ -99,6 +100,10 @@ function renderTable(caps) {
   for (const row of capRows) {
     lines.push("| " + row.map((cell, i) => pad(cell, capWidths[i])).join(" | ") + " |");
   }
+  lines.push("");
+  lines.push("`telemetry`: `native` — token usage is parsed from the host CLI/API's own output " +
+    "(see docs/cost.md). `estimated` — no native capture; the orchestrator records a " +
+    "promptBytes/4 estimate flagged with `tokens_estimated: true`.");
   lines.push("");
 
   // ── Enforcement levels ─────────────────────────────────────────────

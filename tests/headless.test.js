@@ -680,3 +680,62 @@ test("usageFormat: adapters without the capability are unaffected — no usage/t
     fs.rmSync(ctx.cwd, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// capabilities.usageFormat: "codex-exec-json" (phase-28 item 28.3)
+// ---------------------------------------------------------------------------
+
+function makeCodexJsonAdapter() {
+  return {
+    capabilities: { name: "codex", headlessCommand: "true", usageFormat: "codex-exec-json" },
+    renderStagePrompt: (descriptor) =>
+      `# stage ${descriptor.stage} (${descriptor.workstreamId})\nprompt body\n`,
+  };
+}
+
+test("usageFormat: codex-exec-json fixture yields observed usage/telemetry on the result", async () => {
+  const ctx = makeCtx();
+  const scriptPath = writeFixtureScript(ctx.cwd, "codex-stub.js", [
+    'process.stdout.write(JSON.stringify({type:"thread.started",thread_id:"t1"})+"\\n");',
+    'process.stdout.write(JSON.stringify({type:"turn.started"})+"\\n");',
+    'process.stdout.write(JSON.stringify({type:"item.completed",item:{id:"1",type:"agent_message",text:"Working on it"}})+"\\n");',
+    'process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:1234,cached_input_tokens:100,output_tokens:56}})+"\\n");',
+  ].join("\n"));
+  try {
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", `"${process.execPath}" "${scriptPath}"`, () =>
+      runHeadless(makeCodexJsonAdapter(), makeDescriptor("stage-01"), ctx),
+    );
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.telemetry, "observed");
+    assert.deepEqual(r.usage, {
+      tokensIn: 1234, tokensOut: 56, cachedTokens: 100, costUsd: null, model: null, source: "codex:exec-json",
+    });
+
+    const logContent = fs.readFileSync(r.logPath, "utf8");
+    assert.match(logContent, /Working on it/, "agent_message text should be readable in the transcript");
+    assert.doesNotMatch(logContent, /"type":"item.completed"/, "raw JSONL must not leak into the transcript");
+    assert.doesNotMatch(logContent, /"type":"turn.completed"/, "raw JSONL must not leak into the transcript");
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("usageFormat: codex plain-text stub (older CLI without --json) degrades gracefully", async () => {
+  const ctx = makeCtx();
+  const scriptPath = writeFixtureScript(ctx.cwd, "old-codex-stub.js", [
+    'process.stdout.write("I do not honor --json; here is plain text.\\n");',
+  ].join("\n"));
+  try {
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", `"${process.execPath}" "${scriptPath}"`, () =>
+      runHeadless(makeCodexJsonAdapter(), makeDescriptor("stage-01"), ctx),
+    );
+    assert.equal(r.exitCode, 0);
+    assert.equal(r.telemetry, "unavailable");
+    assert.equal(r.usage, null);
+
+    const logContent = fs.readFileSync(r.logPath, "utf8");
+    assert.match(logContent, /I do not honor --json; here is plain text\./);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});

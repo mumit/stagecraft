@@ -142,6 +142,31 @@ function patchGateForObservedUsage(gatePath, usage) {
   fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
 }
 
+// Phase-28 item 28.3: for hosts whose capabilities declare
+// `telemetry !== "native"` (gemini-cli, generic, omnigent today — no CLI
+// usage output parsed, or none exists), record a promptBytes/4 estimate
+// instead of leaving the gate with no token signal at all. `tokens_in_estimate`
+// is a distinctly-named field (never `tokens_in`) and `tokens_estimated: true`
+// is mandatory on it, so a downstream consumer that forgets to check the flag
+// gets a KeyError-shaped surprise rather than silently averaging a guess in
+// with ground truth. Only applied when no observed usage was already written
+// for this dispatch (see call site in runStageHeadless).
+function patchGateForEstimatedUsage(gatePath, promptBytes) {
+  if (!fs.existsSync(gatePath)) return;
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error || !gate) return;
+  const patched = {
+    ...gate,
+    _orchestrator_observed: {
+      tokens_estimated: true,
+      tokens_in_estimate: Math.round(promptBytes / 4),
+      source: "orchestrator:prompt-bytes-estimate",
+      at: new Date().toISOString(),
+    },
+  };
+  fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
+}
+
 // D7: patch a single-role gate to surface the same unpriced-model WARN that
 // mergeWorkstreamGates emits for multi-role stages. Idempotent.
 function patchGateForUnpricedModel(gatePath) {
@@ -844,15 +869,21 @@ async function runStageHeadless(stageName, opts = {}) {
           patchGateForToolBudget(budgetGatePath, ws.descriptor.toolBudget);
         }
       }
-      // Phase-28 items 28.1/28.2: orchestrator-observed token/cost telemetry.
-      // r.usage is present for claude-code (via capabilities.usageFormat —
-      // see core/adapters/headless.js) and openai-compat (returned directly
-      // by hosts/openai-compat/invoke.js) when the dispatch's usage was
-      // parseable/reported. A telemetry miss (r.telemetry === "unavailable",
-      // r.usage null/absent) never touches the gate — same fire-and-forget
-      // contract as before 28.1 for those dispatches.
+      // Phase-28 items 28.1/28.2/28.3: orchestrator-observed token/cost
+      // telemetry. r.usage is present for claude-code and codex (via
+      // capabilities.usageFormat — see core/adapters/headless.js) and
+      // openai-compat (returned directly by hosts/openai-compat/invoke.js)
+      // when the dispatch's usage was parseable/reported. A telemetry miss
+      // (r.telemetry === "unavailable", r.usage null/absent) never touches
+      // the gate — same fire-and-forget contract as before 28.1 for those
+      // dispatches. For hosts that declare `telemetry !== "native"` in
+      // capabilities.json (gemini-cli, generic, omnigent today), record a
+      // promptBytes/4 estimate instead — clearly flagged, never mixed with
+      // observed values (see patchGateForEstimatedUsage above).
       if (r.usage) {
         patchGateForObservedUsage(r.gatePath || wsGatePathExpected, r.usage);
+      } else if (ws.adapter.capabilities && ws.adapter.capabilities.telemetry !== "native") {
+        patchGateForEstimatedUsage(r.gatePath || wsGatePathExpected, telemetry.promptBytes);
       }
       const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, ...r, ...telemetry };
       emitWorkstreamEvent({
@@ -1863,6 +1894,7 @@ module.exports = {
   renderOmnigentDirectorPrompt,
   patchGateForUnpricedModel,
   patchGateForObservedUsage,
+  patchGateForEstimatedUsage,
   ORCHESTRATOR_ID,
   rolesPath,
   templatesPath,

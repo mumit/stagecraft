@@ -16,14 +16,16 @@
 // declared headlessCommand. Useful for stubbing in tests (set to
 // "cat" to just echo the prompt) and for users who alias the host CLI.
 //
-// capabilities.usageFormat (phase-28 item 28.1): when an adapter declares
-// usageFormat: "claude-stream-json", stdout is parsed as the claude CLI's
-// `--output-format stream-json` line-JSON stream via
-// core/adapters/claude-stream-json.js — the transcript log gets the
+// capabilities.usageFormat (phase-28 items 28.1/28.3): when an adapter
+// declares a usageFormat present in USAGE_EXTRACTORS below, stdout is
+// parsed as that host's line-JSON stream — the transcript log gets the
 // extracted readable text (not raw JSONL), and the result gains
-// `usage`/`telemetry` fields from the final result message. Adapters that
-// don't declare usageFormat are unaffected: stdout is teed verbatim exactly
-// as before this item.
+// `usage`/`telemetry` fields from the final usage-bearing message.
+// "claude-stream-json" → core/adapters/claude-stream-json.js (claude
+// --output-format stream-json). "codex-exec-json" → core/adapters/
+// codex-exec-json.js (codex exec --json). Adapters that don't declare a
+// known usageFormat are unaffected: stdout is teed verbatim exactly as
+// before item 28.1.
 //
 // The DEVTEAM_NO_LOG=1 env var (or ctx.log === false) disables transcript logs
 // and reverts to inherit-style stdio. Tests that don't want log files
@@ -47,6 +49,15 @@ const { snapshotWritables, auditWrites } = require("../guards/write-audit");
 const { splitCommand } = require("../command-line");
 const { terminateChild } = require("../process-kill");
 const { createStreamJsonExtractor } = require("./claude-stream-json");
+const { createCodexJsonExtractor } = require("./codex-exec-json");
+
+// capabilities.usageFormat → extractor factory. Adapters that don't declare
+// usageFormat (or declare a value not in this map) are unaffected: stdout
+// is teed verbatim exactly as before phase-28 item 28.1.
+const USAGE_EXTRACTORS = {
+  "claude-stream-json": createStreamJsonExtractor,
+  "codex-exec-json": createCodexJsonExtractor,
+};
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -202,8 +213,9 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
   // reverts to inherit-style stdio (see stdio choice below) — telemetry is
   // unavailable in that mode, same as any host without usageFormat set.
   const usageFormat = adapter.capabilities && adapter.capabilities.usageFormat;
-  const streamExtractor = usageFormat === "claude-stream-json" && logWriter !== null
-    ? createStreamJsonExtractor()
+  const extractorFactory = USAGE_EXTRACTORS[usageFormat];
+  const streamExtractor = extractorFactory && logWriter !== null
+    ? extractorFactory()
     : null;
 
   return new Promise((resolve, reject) => {
