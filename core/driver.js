@@ -144,6 +144,22 @@ function nonNegativeNumber(value) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+// Phase-28 item 28.4: a gate's cost contribution prefers the orchestrator-
+// observed figure (core/orchestrator.js patchGateForObservedUsage,
+// _orchestrator_observed.cost_usd) over the model-asserted top-level
+// cost_usd — the model's self-report is a claim, the adapter-parsed usage is
+// what the orchestrator actually saw. Returns null when neither is a valid
+// non-negative number (e.g. a tokens-estimated-only gate with no cost_usd
+// at all — patchGateForEstimatedUsage never writes one).
+function costEntryForGate(gate) {
+  const observed = gate && gate._orchestrator_observed;
+  const observedCost = nonNegativeNumber(observed && observed.cost_usd);
+  if (observedCost !== null) return { cost: observedCost, source: "observed" };
+  const assertedCost = nonNegativeNumber(gate && gate.cost_usd);
+  if (assertedCost !== null) return { cost: assertedCost, source: "asserted" };
+  return null;
+}
+
 function dispatchObservation(base, result) {
   if (!result || result.skipped) return null;
   let gate = null;
@@ -341,8 +357,10 @@ function targetedBuildFixFromRetry(cwd, changeId, retryAction) {
   };
 }
 
-// Sum cost_usd across all stage gates, avoiding double-counting for multi-role
-// stages. Strategy per gate file:
+// Sum cost across all stage gates, avoiding double-counting for multi-role
+// stages, and report the cost_basis for the run (phase-28 item 28.4). Per
+// gate the cost prefers `_orchestrator_observed.cost_usd` over the
+// model-asserted `cost_usd` (see costEntryForGate). Strategy per gate file:
 //
 //   stage-NN.json / stage-NNa.json  — merged gate; use it and skip any
 //     workstream gates for the same stage prefix (the merged gate already
@@ -353,15 +371,19 @@ function targetedBuildFixFromRetry(cwd, changeId, retryAction) {
 //     budget-cap blind spot where a multi-role stage's costs are invisible
 //     until merge.  (Fix 1.7.3, plans/phase-1-trust-consolidation.md item 1.7)
 //
-// Best-effort: unreadable or cost-less gates contribute 0.
-function totalCostUsd(cwd, changeId) {
+// Best-effort: unreadable or cost-less gates contribute 0 and don't affect
+// the basis. `basis` is "observed" (every contributing gate was
+// orchestrator-observed), "model-asserted" (every contributing gate fell
+// back to the model's self-report), "mixed" (both), or null (no gate
+// contributed a cost at all).
+function costUsdDetail(cwd, changeId) {
   // stage-NN[a].json   — merged gate (letters a-z suffix for overflow stages)
   const mergedGateRe = /^(stage-\d{2}[a-z]?)\.json$/;
   // stage-NN.<role>.json — workstream gate (at least one dot-separated word)
   const wsGateRe = /^(stage-\d{2}[a-z]?)\.[^.]+\.json$/;
 
   let allFiles = [];
-  try { allFiles = fs.readdirSync(gatesDir(cwd, changeId)); } catch { return 0; }
+  try { allFiles = fs.readdirSync(gatesDir(cwd, changeId)); } catch { return { total: 0, basis: null }; }
 
   // Collect merged-gate prefixes (e.g. "stage-04") so we can skip workstream
   // gates for stages that are already merged.
@@ -372,6 +394,8 @@ function totalCostUsd(cwd, changeId) {
   }
 
   let total = 0;
+  let sawObserved = false;
+  let sawAsserted = false;
   for (const f of allFiles) {
     let prefix = null;
     let isWorkstream = false;
@@ -391,10 +415,20 @@ function totalCostUsd(cwd, changeId) {
 
     try {
       const g = JSON.parse(fs.readFileSync(path.join(gatesDir(cwd, changeId), f), "utf8"));
-      if (typeof g.cost_usd === "number") total += g.cost_usd;
+      const entry = costEntryForGate(g);
+      if (entry) {
+        total += entry.cost;
+        if (entry.source === "observed") sawObserved = true;
+        else sawAsserted = true;
+      }
     } catch { /* skip */ }
   }
-  return total;
+  const basis = sawObserved && sawAsserted ? "mixed" : sawObserved ? "observed" : sawAsserted ? "model-asserted" : null;
+  return { total, basis };
+}
+
+function totalCostUsd(cwd, changeId) {
+  return costUsdDetail(cwd, changeId).total;
 }
 
 // ADR-006: resolveTrack returns {track, source, confidence} so callers can
@@ -789,6 +823,7 @@ async function run(opts = {}) {
       stages_advanced: [],
       iterations: 0,
       cost_usd: 0,
+      cost_basis: null,
     };
   }
 
@@ -841,6 +876,11 @@ async function run(opts = {}) {
       "              Use --budget-usd <amount> to prevent runaway cost.\n"
     );
   }
+  // Phase-28 item 28.4: warn at most once per run when the cost total includes
+  // any model-asserted (self-reported) cost_usd — i.e. some dispatch's host/
+  // adapter didn't produce orchestrator-observed usage. Doesn't affect halt
+  // semantics; purely an audit-trail signal (trust boundary, item 10).
+  let assertedCostWarned = false;
   const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : undefined;
   const allowStages = new Set(opts.allowStages || []);
   const onEvent = typeof opts.onEvent === "function" ? opts.onEvent : () => {};
@@ -950,6 +990,7 @@ async function run(opts = {}) {
     stages_advanced: [],
     iterations: 0,
     cost_usd: 0,
+    cost_basis: null,
   };
   const activeRoleCandidates = config.pipeline.right_sizing === false
     ? { roles: [], trigger_inputs: {} }
@@ -1131,21 +1172,29 @@ async function run(opts = {}) {
       // ADR-007 §2: emit heartbeat before next() so run-log.jsonl always has a
       // bounded last-event age regardless of dispatch duration. Cheap: no fs scans.
       const heartbeatIteration = (state.iterations || 0) + 1;
+      const heartbeatCost = costUsdDetail(cwd, changeId);
       logEvent(cwd, changeId, {
         outcome: "heartbeat",
         iteration: heartbeatIteration,
         stage: state.current_stage || null,
         action: state.last_action || null,
         run_state_path: runStatePath(cwd, changeId),
-        cost_usd_so_far: totalCostUsd(cwd, changeId),
+        cost_usd_so_far: heartbeatCost.total,
       });
       onEvent({
         type: "heartbeat",
         iteration: heartbeatIteration,
         stage: state.current_stage || null,
         action: state.last_action || null,
-        cost_usd: totalCostUsd(cwd, changeId),
+        cost_usd: heartbeatCost.total,
       });
+      if (!assertedCostWarned && (heartbeatCost.basis === "model-asserted" || heartbeatCost.basis === "mixed")) {
+        assertedCostWarned = true;
+        const msg = `cost total includes model-asserted (self-reported) cost_usd, not just orchestrator-observed usage (cost_basis: "${heartbeatCost.basis}")`;
+        logEvent(cwd, changeId, { outcome: "cost-basis-warning", cost_basis: heartbeatCost.basis, message: msg });
+        onEvent({ type: "cost-basis-warning", cost_basis: heartbeatCost.basis });
+        process.stderr.write(`[devteam run] note: ${msg}\n`);
+      }
 
       // Pass the repair-aware order (array) for repair runs — includes the diagnosis
       // stage at the front. For feature runs, pass effectiveTrack so pipeline/track.json
@@ -1784,7 +1833,22 @@ async function run(opts = {}) {
     }
   } finally {
     summary.iterations = state.iterations || 0;
-    summary.cost_usd = totalCostUsd(cwd, changeId);
+    // Phase-28 item 28.4: cost_basis is recorded once per run, here, onto both
+    // the returned summary and run-state.json — "observed" / "model-asserted" /
+    // "mixed" / null (no cost data at all). The pre-dispatch --budget-usd check
+    // (dispatchGuardTransition above) and halt semantics are unchanged; only the
+    // cost figure they compare against now prefers observed cost (costUsdDetail).
+    const finalCost = costUsdDetail(cwd, changeId);
+    summary.cost_usd = finalCost.total;
+    summary.cost_basis = finalCost.basis;
+    state.cost_usd = finalCost.total;
+    state.cost_basis = finalCost.basis;
+    if (!assertedCostWarned && (finalCost.basis === "model-asserted" || finalCost.basis === "mixed")) {
+      assertedCostWarned = true;
+      const msg = `cost total includes model-asserted (self-reported) cost_usd, not just orchestrator-observed usage (cost_basis: "${finalCost.basis}")`;
+      logEvent(cwd, changeId, { outcome: "cost-basis-warning", cost_basis: finalCost.basis, message: msg });
+      process.stderr.write(`[devteam run] note: ${msg}\n`);
+    }
     saveRunState(cwd, changeId, state);
     releaseLock(cwd, changeId);
   }
@@ -1792,4 +1856,4 @@ async function run(opts = {}) {
   return summary;
 }
 
-module.exports = { run, CONSEQUENCE_CEILING, DEFAULT_MAX_ITERATIONS, totalCostUsd, runStatePath, runLogPath, seedDeployContext, blockerFiles };
+module.exports = { run, CONSEQUENCE_CEILING, DEFAULT_MAX_ITERATIONS, totalCostUsd, costUsdDetail, runStatePath, runLogPath, seedDeployContext, blockerFiles };

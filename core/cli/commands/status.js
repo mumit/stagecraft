@@ -2,7 +2,7 @@
 
 // ADR-007 §5: read-only liveness status command. Reads run-state.json and
 // the tail of run-log.jsonl; reports status/current_stage/last_action/
-// iterations/cost_usd/last_heartbeat_age_ms/last_event_age_ms/stall_detected.
+// iterations/cost_usd/cost_basis/last_heartbeat_age_ms/last_event_age_ms/stall_detected.
 // No process interaction — purely a file reader. Live rendering is owned by
 // `devteam run --watch`, which consumes the driver's callback stream.
 
@@ -107,6 +107,10 @@ function run(positional, _flags) {
 
   const status = computeStatus(runState, lastEvent);
   const costUsd = runState ? (runState.cost_usd || null) : null;
+  // Phase-28 item 28.4: "observed" / "model-asserted" / "mixed", written once
+  // per run onto run-state.json by core/driver.js. null before any dispatch
+  // has recorded a cost, or for a run predating this field.
+  const costBasis = runState ? (runState.cost_basis || null) : null;
   const activeWorkstreams = runState && runState.active_workstreams
     ? Object.values(runState.active_workstreams)
     : [];
@@ -117,6 +121,7 @@ function run(positional, _flags) {
     last_action: runState ? (runState.last_action || null) : null,
     iterations: runState ? (runState.iterations || 0) : 0,
     cost_usd: typeof costUsd === "number" ? costUsd : null,
+    cost_basis: costBasis,
     last_heartbeat_age_ms: lastHeartbeatAgeMs,
     last_event_age_ms: lastEventAgeMs,
     stall_detected: stallDetected,
@@ -135,6 +140,7 @@ function run(positional, _flags) {
   process.stdout.write(`  last_action:      ${output.last_action || "—"}\n`);
   process.stdout.write(`  iterations:       ${output.iterations}\n`);
   process.stdout.write(`  cost_usd:         ${output.cost_usd != null ? `$${output.cost_usd.toFixed(4)}` : "—"}\n`);
+  process.stdout.write(`  cost_basis:       ${output.cost_basis || "—"}\n`);
   process.stdout.write(`  active_streams:   ${output.active_workstreams.length}\n`);
   process.stdout.write(`  heartbeat_age:    ${ageStr(output.last_heartbeat_age_ms)}\n`);
   process.stdout.write(`  last_event_age:   ${ageStr(output.last_event_age_ms)}\n`);

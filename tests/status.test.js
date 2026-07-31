@@ -189,6 +189,53 @@ describe("devteam status — running state", () => {
   });
 });
 
+// Phase-28 item 28.4: `devteam status` displays cost_basis alongside cost_usd.
+describe("devteam status — cost_basis (28.4)", () => {
+  it("reports cost_usd and cost_basis from run-state.json", () => {
+    const cwd = track(makeTargetProject());
+    writeRunState(cwd, {
+      track: "full",
+      intent: "feature",
+      iterations: 2,
+      cost_usd: 4.5,
+      cost_basis: "mixed",
+      started_at: new Date().toISOString(),
+    });
+    writeRunLog(cwd, [
+      { ts: new Date().toISOString(), outcome: "heartbeat", iteration: 2, stage: "build", action: "run-stage" },
+    ]);
+
+    const { status, stdout } = runCLI(["status", "--json", "--cwd", cwd], {
+      env: { CI: "true", DEVTEAM_NO_LOG: "1" },
+    });
+    assert.equal(status, 0);
+    const out = JSON.parse(stdout);
+    assert.equal(out.cost_usd, 4.5);
+    assert.equal(out.cost_basis, "mixed");
+
+    const human = runCLI(["status", "--cwd", cwd], { env: { CI: "true", DEVTEAM_NO_LOG: "1" } });
+    assert.match(human.stdout, /cost_basis:\s+mixed/);
+  });
+
+  it("reports cost_basis null (—) when run-state.json predates the field", () => {
+    const cwd = track(makeTargetProject());
+    writeRunState(cwd, {
+      track: "full",
+      intent: "feature",
+      iterations: 1,
+      cost_usd: 1,
+      started_at: new Date().toISOString(),
+    });
+    writeRunLog(cwd, [
+      { ts: new Date().toISOString(), outcome: "heartbeat", iteration: 1, stage: "build", action: "run-stage" },
+    ]);
+
+    const { stdout } = runCLI(["status", "--json", "--cwd", cwd], { env: { CI: "true", DEVTEAM_NO_LOG: "1" } });
+    const out = JSON.parse(stdout);
+    assert.equal(out.cost_basis, null);
+  });
+});
+
 describe("devteam status — completed/halted states", () => {
   it("reports completed when last log event is complete", () => {
     const cwd = track(makeTargetProject());
