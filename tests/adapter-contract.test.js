@@ -205,14 +205,14 @@ describe("adapter contract", () => {
 
 // Audit P2-6: pins cross-host equivalence of the shared gate footer
 // that landed via core/adapters/render-helpers.js (commit 38ce2a0,
-// renderStagePrompt de-duplication). claude-code, codex, and gemini-cli
-// share the footer code; if any one adapter starts diverging on it,
-// `devteam reproduce` and `devteam replay` would silently see hash
+// renderStagePrompt de-duplication). claude-code, codex, gemini-cli, and
+// antigravity share the footer code; if any one adapter starts diverging
+// on it, `devteam reproduce` and `devteam replay` would silently see hash
 // drift across hosts. The per-host renderStagePrompt headers differ
 // (claude-code includes a subagent block + patch-mode framing); the
 // footer is the part the test pins.
 describe("adapter contract: cross-host gate-footer equivalence", () => {
-  const SHARING_HOSTS = ["claude-code", "codex", "gemini-cli"];
+  const SHARING_HOSTS = ["claude-code", "codex", "gemini-cli", "antigravity"];
 
   // The shared footer starts at the "## Gate to write" heading and runs
   // to end-of-prompt. That's where appendGateFooter (render-helpers)
@@ -252,6 +252,8 @@ describe("adapter contract: cross-host gate-footer equivalence", () => {
       "codex footer drifted from claude-code — render-helpers de-dup broke");
     assert.equal(footers["gemini-cli"], footers["claude-code"],
       "gemini-cli footer drifted from claude-code — render-helpers de-dup broke");
+    assert.equal(footers["antigravity"], footers["claude-code"],
+      "antigravity footer drifted from claude-code — render-helpers de-dup broke");
   });
 
   it("each adapter stamps its own host name in the footer", () => {
@@ -276,7 +278,7 @@ describe("adapter contract: cross-host gate-footer equivalence", () => {
 // same scoping constraint as claude-code and generic.
 describe("adapter contract: PATCH MODE rendering", () => {
   // All hosts that expose renderStagePrompt.
-  const HOSTS_WITH_RENDER = ["claude-code", "generic", "codex", "gemini-cli", "omnigent", "openai-compat"];
+  const HOSTS_WITH_RENDER = ["claude-code", "generic", "codex", "gemini-cli", "omnigent", "openai-compat", "antigravity"];
 
   // The normalized PATCH MODE heading — we check presence/absence of
   // this sentinel rather than byte-pinning the full block, to allow for
@@ -461,7 +463,7 @@ describe("adapter contract: claude-code renderSettingsLocal portable hooks", () 
 // After 6.1 the budget comes from core/roles.toolBudgetFor (host-neutral);
 // descriptorWithBudget() uses that real value instead of a fabricated array.
 describe("adapter contract: tool budget section rendering", () => {
-  const PROMPT_ONLY_HOSTS = ["codex", "gemini-cli", "generic", "omnigent", "openai-compat"];
+  const PROMPT_ONLY_HOSTS = ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity"];
   const { toolBudgetFor: rolesBudgetFor } = require(path.join(REPO_ROOT, "core", "roles"));
 
   function descriptorWithBudget() {
@@ -529,7 +531,7 @@ describe("adapter contract: 6.1 host-neutral tool-budget resolution", () => {
 
   // ── 1. Advisory section rendered + budget in descriptor for non-claude hosts ──
 
-  for (const host of ["codex", "gemini-cli", "generic", "omnigent", "openai-compat"]) {
+  for (const host of ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity"]) {
     it(`${host}: descriptor.toolBudget populated from core/roles (pm role)`, () => {
       const plan = runStage("requirements", { cwd: cwd(host) });
       const ws = plan.workstreams[0];

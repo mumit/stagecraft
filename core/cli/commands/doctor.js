@@ -115,6 +115,14 @@ function run(positional, _flags) {
     const adapter = loadAdapter(h);
     const status = adapter.status(cwd);
     check(`host "${h}" install`, status.ok, status.ok ? null : `${status.missing.length} missing file(s)`);
+    // Phase-28 item 28.6: Gemini CLI stopped serving free/Pro/Ultra requests
+    // 2026-06-18 in favor of Antigravity CLI. gemini-cli stays installed and
+    // functional for one release (retirement is item 34.4) but every doctor
+    // run flags routing that still points at it.
+    if (h === "gemini-cli") {
+      check("  gemini-cli is deprecated upstream", "warn",
+        "Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18 — migrate with: devteam init --host antigravity");
+    }
     if (adapter.capabilities && adapter.capabilities.headless && adapter.capabilities.headlessCommand) {
       let bin;
       try {

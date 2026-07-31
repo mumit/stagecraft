@@ -101,7 +101,7 @@ npm link
 
 # 3. In your target project
 cd ~/projects/my-app
-devteam init --host claude-code        # or codex / gemini-cli / omnigent / openai-compat
+devteam init --host claude-code        # or codex / antigravity / gemini-cli / omnigent / openai-compat
 ```
 
 `devteam init` lays down:
@@ -557,7 +557,7 @@ All other stages run unconditionally on their track. If you want to verify wheth
 
 - **Stage 3b — Executable spec (PM, G2).** Runs on `full` + `quick` after clarification. PM translates each numbered `AC-N` in `pipeline/brief.md` into one Gherkin scenario in `pipeline/spec.feature`, tagged `@AC-N`. Use `devteam spec generate` to scaffold the file from the brief (one tagged Scenario per AC with TODO Given/When/Then placeholders) and `devteam spec verify` to drift-check brief.md ↔ spec.feature ↔ test-report.md. Gate carries `criteria_count`, `scenarios_count`, the full `criteria_to_scenario_mapping` array, `all_criteria_mapped`, and `drift`. PASS requires `drift: false` AND `all_criteria_mapped: true`. The .feature file becomes the canonical contract that QA's tests must map to in stage-06.
 
-- **Stage 4 — Build (4 workstreams).** Backend / Frontend / Platform / QA each write to their owned source dir and produce a PR summary. Each workstream sees a narrower `allowedWrites` (backend cannot write `src/frontend/`). Per-workstream gates land at `pipeline/gates/stage-04.<role>.json`; `devteam merge build` aggregates. **Enforcement varies by host**: claude-code blocks unauthorized writes at tool-call time via its `PreToolUse` hook; codex and gemini-cli run a post-hoc git-status diff after the workstream exits. Any file outside `allowedWrites` is captured in `writeViolations[]` and the gate is patched to `FAIL` with violations in `blockers[]`; narrow runtime caches such as Python `__pycache__/*.pyc` are ignored as interpreter byproducts.
+- **Stage 4 — Build (4 workstreams).** Backend / Frontend / Platform / QA each write to their owned source dir and produce a PR summary. Each workstream sees a narrower `allowedWrites` (backend cannot write `src/frontend/`). Per-workstream gates land at `pipeline/gates/stage-04.<role>.json`; `devteam merge build` aggregates. **Enforcement varies by host**: claude-code blocks unauthorized writes at tool-call time via its `PreToolUse` hook; codex, antigravity, and gemini-cli run a post-hoc git-status diff after the workstream exits. Any file outside `allowedWrites` is captured in `writeViolations[]` and the gate is patched to `FAIL` with violations in `blockers[]`; narrow runtime caches such as Python `__pycache__/*.pyc` are ignored as interpreter byproducts.
 
 - **Stage 4a — Pre-review (Platform).** Lint, type-check, dep review, license check, security heuristic. Gate carries `lint_passed`, `tests_passed`, `dependency_review_passed`, `license_check_passed`, `license_findings[]`, `security_review_required`. `license_findings[]` contains per-package entries `{ package, license, policy }` where policy is `allowed`, `warned`, or `denied`. Default policy: MIT/Apache-2.0/BSD-*/ISC/CC0/Unlicense → allowed; UNLICENSED/SSPL/BUSL → warned; GPL-*/AGPL-*/LGPL-* → denied. Override with `license.extra_allowed: ["LicenseId"]` in `.devteam/config.yml`. The `security_review_required` flag conditionally triggers Stage 4b.
 
@@ -589,9 +589,11 @@ All other stages run unconditionally on their track. If you want to verify wheth
 
 ### What "host" means
 
-A *host* controls how Stagecraft delivers work to a model. Four built-in hosts are CLI/runtime based: Claude Code (`claude`), Codex CLI (`codex`), Gemini CLI (`gemini`), and Omnigent (`omnigent`). Stagecraft renders a stage prompt and lets that runtime manage model invocation, tool permissions, and output capture. The `openai-compat` host is HTTP-native: it calls any OpenAI-compatible Chat Completions API directly, no CLI required. The `generic` host only renders prompts for manual use.
+A *host* controls how Stagecraft delivers work to a model. Five built-in hosts are CLI/runtime based: Claude Code (`claude`), Codex CLI (`codex`), Antigravity CLI (`agy`), Gemini CLI (`gemini`), and Omnigent (`omnigent`). Stagecraft renders a stage prompt and lets that runtime manage model invocation, tool permissions, and output capture. The `openai-compat` host is HTTP-native: it calls any OpenAI-compatible Chat Completions API directly, no CLI required. The `generic` host only renders prompts for manual use.
 
-**Host and model are two different things.** For CLI/runtime hosts, which model runs is configured inside the host (e.g., Claude Code's `.claude/agents/<role>.md` has a `model:` field; Codex, Gemini, and Omnigent use their own settings). For `openai-compat`, the model is set per-role in `.devteam/config.yml` under `hosts.openai-compat.models`.
+**Gemini CLI is deprecated.** Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18; Google's supported successor is Antigravity CLI. `devteam doctor` warns whenever routing resolves any role or stage to `gemini-cli`. The `gemini-cli` adapter itself stays installed and functional for one release (full retirement is a later, separate item) — migrate at your own pace with `devteam init --host antigravity` in existing projects, or start new projects with `--host antigravity` directly. The two hosts share the same install shape (markdown role prompts, no hooks/slash commands/native subagents, post-hoc write audit) so migration is a routing change, not a re-install.
+
+**Host and model are two different things.** For CLI/runtime hosts, which model runs is configured inside the host (e.g., Claude Code's `.claude/agents/<role>.md` has a `model:` field; Codex, Antigravity, Gemini, and Omnigent use their own settings). For `openai-compat`, the model is set per-role in `.devteam/config.yml` under `hosts.openai-compat.models`.
 
 When optimizing cost or comparing model quality, you can route different roles to different models. For CLI/runtime hosts, edit the host's native configuration. For openai-compat, edit the config — see [Using openai-compat](#using-openai-compat-openai-compatible-apis). Multiple hosts are only needed when mixing runtimes (e.g. Claude Code for some roles, Codex or Omnigent for others).
 
@@ -601,7 +603,7 @@ When optimizing cost or comparing model quality, you can route different roles t
 
 **Model diversity.** Different models have different blind spots. Routing specific roles to specific models captures independent opinions without manual effort. The formalized version, where every code-review area runs on all configured hosts in parallel, is [multi-model peer review](#multi-model-peer-review). Neither is automatic: red-team routes to `default_host` unless you add a `roles: red-team:` override, and multi-model peer review requires setting `review_fanout`.
 
-**Tool fit.** Claude Code is strong on design, complex review, and reasoning about architecture. Codex CLI is fast at backend implementation. Gemini CLI is inexpensive for pattern-matching tasks like QA. Omnigent is useful when you want Stagecraft to dispatch through a meta-harness that can wrap multiple agent runtimes. Use the right tool for the job.
+**Tool fit.** Claude Code is strong on design, complex review, and reasoning about architecture. Codex CLI is fast at backend implementation. Gemini CLI was inexpensive for pattern-matching tasks like QA but is deprecated upstream (see above) — Antigravity CLI is its supported successor and the adapter is a like-for-like swap (same install shape, same enforcement level). Omnigent is useful when you want Stagecraft to dispatch through a meta-harness that can wrap multiple agent runtimes. Use the right tool for the job.
 
 ### Setting up multiple hosts
 
@@ -917,7 +919,7 @@ devteam restart build && devteam run
 
 ### Multi-host in headless mode
 
-Headless mode (`--headless`) works normally in multi-host setups. Each workstream spawns its own host process or native adapter invocation; they run concurrently within a stage. Every host you route work to must support headless (`claude-code`, `codex`, `gemini-cli`, `omnigent`, and `openai-compat` do; `generic` does not). In an unattended pipeline loop, mixed-host stages produce gates through the same contract and advance the pipeline normally.
+Headless mode (`--headless`) works normally in multi-host setups. Each workstream spawns its own host process or native adapter invocation; they run concurrently within a stage. Every host you route work to must support headless (`claude-code`, `codex`, `antigravity`, `gemini-cli`, `omnigent`, and `openai-compat` do; `generic` does not). In an unattended pipeline loop, mixed-host stages produce gates through the same contract and advance the pipeline normally.
 
 ### When single-host is the right call
 
@@ -935,7 +937,7 @@ When you want the orchestrator to drive the host CLI directly:
 devteam stage build --headless
 ```
 
-For each workstream, the orchestrator spawns the host's headless command (`claude --print` for claude-code, `codex exec --sandbox workspace-write` for codex, `gemini` for gemini-cli, `omnigent run .omnigent/stagecraft/agent --no-session --prompt <prompt>` for omnigent), or calls an HTTP-native adapter such as `openai-compat`, and waits for exit. Summary line per workstream:
+For each workstream, the orchestrator spawns the host's headless command (`claude --print` for claude-code, `codex exec --sandbox workspace-write` for codex, `agy --print` for antigravity, `gemini` for gemini-cli, `omnigent run .omnigent/stagecraft/agent --no-session --prompt <prompt>` for omnigent), or calls an HTTP-native adapter such as `openai-compat`, and waits for exit. Summary line per workstream:
 
 ```
 [devteam] dispatching backend → codex (headless)
@@ -1139,7 +1141,7 @@ docker run --rm -v "$PWD:/workspace" stagecraft-runner:local devteam status --cw
 
 The base image does not bake in provider credentials or a specific CLI host. Use
 `openai-compat` for the simplest no-extra-CLI setup, or layer Claude Code, Codex
-CLI, Gemini CLI, or private tools in a derived image if your team has a
+CLI, Antigravity CLI, or private tools in a derived image if your team has a
 non-interactive auth flow.
 
 On startup the entrypoint reports an existing `pipeline/run.lock` and prints
@@ -1300,7 +1302,7 @@ Inside Claude Code (after `devteam init --host claude-code`):
 /audit --resume         # continue from the last completed phase (uses docs/audit/status.json)
 ```
 
-On Codex / Gemini CLI / Omnigent / generic / openai-compat hosts, invoke the `auditor` role with the `audit` skill:
+On Codex / Antigravity / Gemini CLI / Omnigent / generic / openai-compat hosts, invoke the `auditor` role with the `audit` skill:
 
 ```
 You are the auditor. Read .codex/skills/audit/SKILL.md and run a full audit.
@@ -1386,7 +1388,7 @@ devteam: stage "pre-review" requires capability "shell" but host "generic" does 
 
 Stages that need to run shell commands (pre-review, qa, verification-beyond-tests, deploy, performance-budget) declare `requiredCapabilities: { shell: true }`. If the host routed to that stage doesn't declare shell support, `assertCapabilities()` refuses at dispatch time with this error. Resolution:
 
-- Switch to a shell-capable host for that stage: add `stages: pre-review: claude-code` (or `codex` or `gemini-cli`) to `routing:` in `.devteam/config.yml`.
+- Switch to a shell-capable host for that stage: add `stages: pre-review: claude-code` (or `codex`, `antigravity`, or `gemini-cli`) to `routing:` in `.devteam/config.yml`.
 - Or skip the stage entirely with `pipeline.skip_stages: [pre-review]` if it's not relevant to your workflow.
 
 ### "Unknown stage" or "No adapter found"
@@ -1656,7 +1658,7 @@ This is automatic with no config required. It fires when:
 - The routed host declares `capabilities.goalLoop: true`
 - The workstream runs headless (`--headless`)
 
-Gemini CLI, Omnigent, openai-compat, and the generic adapter do not declare `goalLoop: true` and are unaffected. Interactive (non-headless) runs also skip the `/goal` prepend.
+Antigravity, Gemini CLI, Omnigent, openai-compat, and the generic adapter do not declare `goalLoop: true` and are unaffected. Interactive (non-headless) runs also skip the `/goal` prepend.
 
 ### Stoplist
 
