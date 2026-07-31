@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
-const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel } =
+const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage } =
   require(path.join(REPO_ROOT, "core", "orchestrator"));
 const { listArchives } = require(path.join(REPO_ROOT, "core", "gates", "archive"));
 const { STAGES, getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
@@ -703,5 +703,152 @@ describe("orchestrator: patchGateForUnpricedModel — single-role path (Fix 6.5.
     const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
     const count = gate.warnings.filter((w) => w.includes("unpriced model future-model-x")).length;
     assert.equal(count, 1);
+  });
+});
+
+// ─── Phase-28 item 28.1: _orchestrator_observed telemetry ─────────────────
+describe("orchestrator: patchGateForObservedUsage (phase 28.1)", () => {
+  it("writes an _orchestrator_observed block without touching model-asserted fields", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", {
+      model: "claude-sonnet-5-self-reported",
+      tokens_in: 500,
+      tokens_out: 40,
+      cost_usd: 0.001,
+      status: "PASS",
+    });
+    patchGateForObservedUsage(gateFile, { tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5" });
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+
+    // Model-asserted top-level fields must be untouched — observed data
+    // lives in its own block (trust boundary; core/verify/stamp.js pattern).
+    assert.equal(gate.model, "claude-sonnet-5-self-reported");
+    assert.equal(gate.tokens_in, 500);
+    assert.equal(gate.tokens_out, 40);
+    assert.equal(gate.cost_usd, 0.001);
+
+    assert.deepEqual(
+      { tokens_in: gate._orchestrator_observed.tokens_in, tokens_out: gate._orchestrator_observed.tokens_out, cost_usd: gate._orchestrator_observed.cost_usd, model_observed: gate._orchestrator_observed.model_observed },
+      { tokens_in: 1234, tokens_out: 56, cost_usd: 0.0456, model_observed: "claude-sonnet-5" },
+    );
+    assert.equal(gate._orchestrator_observed.source, "claude-code:stream-json");
+    assert.ok(typeof gate._orchestrator_observed.at === "string" && gate._orchestrator_observed.at.length > 0);
+  });
+
+  it("fire-and-forget: never throws when the gate file does not exist", () => {
+    const cwd = track(makeTargetProject());
+    const missing = path.join(cwd, "pipeline", "gates", "stage-99.json");
+    assert.doesNotThrow(() => patchGateForObservedUsage(missing, { tokensIn: 1, tokensOut: 1, costUsd: 0.01, model: "x" }));
+  });
+
+  it("fire-and-forget: never throws when the gate file is unreadable JSON", () => {
+    const cwd = track(makeTargetProject());
+    const dir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(dir, { recursive: true });
+    const gateFile = path.join(dir, "stage-01.json");
+    fs.writeFileSync(gateFile, "{ not valid json");
+    assert.doesNotThrow(() => patchGateForObservedUsage(gateFile, { tokensIn: 1, tokensOut: 1, costUsd: 0.01, model: "x" }));
+    // Corrupt gate is left untouched, not clobbered.
+    assert.equal(fs.readFileSync(gateFile, "utf8"), "{ not valid json");
+  });
+});
+
+describe("orchestrator: runStageHeadless writes _orchestrator_observed for claude-code (phase 28.1)", () => {
+  function claudeCodeConfig() {
+    return "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n";
+  }
+
+  // Simulates the real claude CLI under --output-format stream-json --verbose:
+  // writes the workstream's gate (as the agent would) with a self-reported
+  // tokens_in, then emits a stream-json transcript with the orchestrator's
+  // ground-truth usage on stdout.
+  function makeClaudeStreamJsonStub() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-claude-stub-"));
+    _dirs.push(dir);
+    const script = path.join(dir, "claude-stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
+fs.writeFileSync(gateFile, JSON.stringify({
+  stage: "stage-01",
+  host: "claude-code",
+  status: "PASS",
+  track: "full",
+  blockers: [],
+  warnings: [],
+  orchestrator: "devteam@test",
+  timestamp: "2026-07-02T00:00:00.000Z",
+  model: "claude-sonnet-5-self-reported",
+  tokens_in: 500
+}, null, 2) + "\\n");
+process.stdout.write(JSON.stringify({type:"system",subtype:"init"})+"\\n");
+process.stdout.write(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"Wrote the brief."}]}})+"\\n");
+process.stdout.write(JSON.stringify({type:"result",subtype:"success",total_cost_usd:0.0456,result:"Wrote the brief.",usage:{input_tokens:1234,output_tokens:56},modelUsage:{"claude-sonnet-5":{}}})+"\\n");
+`, "utf8");
+    return script;
+  }
+
+  it("persists _orchestrator_observed onto the workstream gate after a headless dispatch", async () => {
+    const cwd = track(makeTargetProject({ config: claudeCodeConfig() }));
+    const script = makeClaudeStreamJsonStub();
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      assert.equal(result.results.length, 1);
+      const [r] = result.results;
+      assert.equal(r.exitCode, 0);
+      assert.equal(r.telemetry, "observed");
+
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.deepEqual(
+        { tokens_in: gate._orchestrator_observed.tokens_in, tokens_out: gate._orchestrator_observed.tokens_out, cost_usd: gate._orchestrator_observed.cost_usd, model_observed: gate._orchestrator_observed.model_observed },
+        { tokens_in: 1234, tokens_out: 56, cost_usd: 0.0456, model_observed: "claude-sonnet-5" },
+      );
+      // Model's self-report is preserved untouched (observed wins for
+      // consumers by being a distinct, clearly-sourced block — it never
+      // overwrites the model's claim).
+      assert.equal(gate.model, "claude-sonnet-5-self-reported");
+      assert.equal(gate.tokens_in, 500);
+
+      const logContent = fs.readFileSync(r.logPath, "utf8");
+      assert.match(logContent, /Wrote the brief\./);
+      assert.doesNotMatch(logContent, /"type":"result"/);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("a telemetry-unavailable dispatch never fails the run and never adds _orchestrator_observed (fire-and-forget)", async () => {
+    const cwd = track(makeTargetProject({ config: claudeCodeConfig() }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-claude-plaintext-stub-"));
+    _dirs.push(dir);
+    const script = path.join(dir, "old-claude-stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
+fs.writeFileSync(gateFile, JSON.stringify({
+  stage: "stage-01", host: "claude-code", status: "PASS", track: "full",
+  blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-02T00:00:00.000Z"
+}, null, 2) + "\\n");
+process.stdout.write("plain text output, no --output-format support\\n");
+`, "utf8");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      assert.equal(r.exitCode, 0, "dispatch must succeed even though telemetry is unavailable");
+      assert.equal(r.telemetry, "unavailable");
+
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal("_orchestrator_observed" in gate, false);
+      assert.equal(gate.status, "PASS");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
   });
 });

@@ -16,6 +16,15 @@
 // declared headlessCommand. Useful for stubbing in tests (set to
 // "cat" to just echo the prompt) and for users who alias the host CLI.
 //
+// capabilities.usageFormat (phase-28 item 28.1): when an adapter declares
+// usageFormat: "claude-stream-json", stdout is parsed as the claude CLI's
+// `--output-format stream-json` line-JSON stream via
+// core/adapters/claude-stream-json.js — the transcript log gets the
+// extracted readable text (not raw JSONL), and the result gains
+// `usage`/`telemetry` fields from the final result message. Adapters that
+// don't declare usageFormat are unaffected: stdout is teed verbatim exactly
+// as before this item.
+//
 // The DEVTEAM_NO_LOG=1 env var (or ctx.log === false) disables transcript logs
 // and reverts to inherit-style stdio. Tests that don't want log files
 // scattered in tempdirs should set this.
@@ -37,6 +46,7 @@ const { pipelineRoot, gatesDir, logsDir } = require("../paths");
 const { snapshotWritables, auditWrites } = require("../guards/write-audit");
 const { splitCommand } = require("../command-line");
 const { terminateChild } = require("../process-kill");
+const { createStreamJsonExtractor } = require("./claude-stream-json");
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -187,6 +197,15 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     logWriter?.end(`\n# ---\n# Ended: ${new Date().toISOString()}\n# Exit: ${reason}\n`);
   }
 
+  // Usage extraction needs stdout piped through us, so it only runs when
+  // transcript logging is on (the default). DEVTEAM_NO_LOG=1 / ctx.log:false
+  // reverts to inherit-style stdio (see stdio choice below) — telemetry is
+  // unavailable in that mode, same as any host without usageFormat set.
+  const usageFormat = adapter.capabilities && adapter.capabilities.usageFormat;
+  const streamExtractor = usageFormat === "claude-stream-json" && logWriter !== null
+    ? createStreamJsonExtractor()
+    : null;
+
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
       cwd: ctx.processCwd || ctx.cwd,
@@ -198,13 +217,17 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
 
     // Transcript paths: always write chunks to the log. Live terminal
     // mirroring is opt-in; errors on stdout/stderr (closed terminal)
-    // are swallowed — a closed pipe shouldn't fail the stage.
+    // are swallowed — a closed pipe shouldn't fail the stage. When
+    // streamExtractor is set, stdout is parsed as claude's stream-json
+    // and only the extracted readable text reaches the log/terminal —
+    // raw JSONL would make the transcript unreadable.
     if (logWriter !== null) {
       child.stdout.on("data", (chunk) => {
+        const text = streamExtractor ? streamExtractor.push(chunk) : chunk;
         if (liveTee) {
-          try { process.stdout.write(chunk); } catch { /* */ }
+          try { process.stdout.write(text); } catch { /* */ }
         }
-        appendLog(chunk);
+        appendLog(text);
       });
       child.stderr.on("data", (chunk) => {
         if (liveTee) {
@@ -236,6 +259,22 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     child.stdin.end();
     child.on("close", (exitCode) => {
       if (timer) clearTimeout(timer);
+
+      // Flush the stream-json extractor's trailing partial line (if any)
+      // before the log trailer, and read off the usage it accumulated.
+      let usage = null;
+      let telemetry;
+      if (streamExtractor) {
+        const trailing = streamExtractor.end();
+        if (trailing) {
+          if (liveTee) {
+            try { process.stdout.write(trailing); } catch { /* */ }
+          }
+          appendLog(trailing);
+        }
+        ({ usage, telemetry } = streamExtractor.result());
+      }
+
       endLog(timedOut ? "TIMED OUT" : String(exitCode));
 
       // C1: diff the dirty-file snapshot; log violations immediately.
@@ -300,6 +339,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
         durationMs: Date.now() - start,
         timedOut,
         writeViolations,
+        ...(streamExtractor ? { usage, telemetry } : {}),
       });
     });
   });

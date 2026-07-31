@@ -7,9 +7,11 @@
 //          delegates to the subagent file installed above.
 // status:  verifies installed files exist and are non-empty.
 // uninstall: removes the files install() laid down.
-//
-// Hooks and headless `claude --print` invoke are declared in capabilities
-// but not yet wired — deferred to a follow-up.
+// invoke:  drives core/adapters/headless.js's runHeadless() against
+//          `claude --print --output-format stream-json --verbose`
+//          (capabilities.headlessCommand); usageFormat: "claude-stream-json"
+//          tells runHeadless to parse the stream for orchestrator-observed
+//          token/cost telemetry (phase-28 item 28.1).
 
 const fs = require("node:fs");
 const path = require("node:path");

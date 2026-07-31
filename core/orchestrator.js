@@ -111,6 +111,32 @@ function patchGateForToolBudget(gatePath, toolBudget) {
   fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
 }
 
+// Phase-28 item 28.1: patch a gate file with orchestrator-observed usage
+// telemetry from a headless invoke() result (r.usage — see
+// core/adapters/headless.js / core/adapters/claude-stream-json.js). Mirrors
+// core/verify/stamp.js's `_orchestrator_stamped` pattern: this never touches
+// the model-asserted tokens_in/tokens_out/cost_usd/model top-level fields
+// (self-reported, still gate-schema-legal) — it adds a distinct
+// `_orchestrator_observed` block so downstream consumers can prefer the
+// observed side without losing the model's claim.
+function patchGateForObservedUsage(gatePath, usage) {
+  if (!fs.existsSync(gatePath)) return;
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error || !gate) return;
+  const patched = {
+    ...gate,
+    _orchestrator_observed: {
+      tokens_in: usage.tokensIn,
+      tokens_out: usage.tokensOut,
+      cost_usd: usage.costUsd,
+      model_observed: usage.model,
+      source: "claude-code:stream-json",
+      at: new Date().toISOString(),
+    },
+  };
+  fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
+}
+
 // D7: patch a single-role gate to surface the same unpriced-model WARN that
 // mergeWorkstreamGates emits for multi-role stages. Idempotent.
 function patchGateForUnpricedModel(gatePath) {
@@ -812,6 +838,15 @@ async function runStageHeadless(stageName, opts = {}) {
         if (gateWasWrittenThisRun) {
           patchGateForToolBudget(budgetGatePath, ws.descriptor.toolBudget);
         }
+      }
+      // Phase-28 item 28.1: orchestrator-observed token/cost telemetry.
+      // r.usage is only present for adapters that declare
+      // capabilities.usageFormat (currently claude-code) and the host's
+      // output was parseable — see core/adapters/headless.js. A telemetry
+      // parse failure (r.telemetry === "unavailable") never touches the
+      // gate, matching the pre-28.1 behavior for those dispatches.
+      if (r.usage) {
+        patchGateForObservedUsage(r.gatePath || wsGatePathExpected, r.usage);
       }
       const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, ...r, ...telemetry };
       emitWorkstreamEvent({
@@ -1821,6 +1856,7 @@ module.exports = {
   computeDispatchPlan,
   renderOmnigentDirectorPrompt,
   patchGateForUnpricedModel,
+  patchGateForObservedUsage,
   ORCHESTRATOR_ID,
   rolesPath,
   templatesPath,

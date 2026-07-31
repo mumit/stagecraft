@@ -34,13 +34,13 @@ How each host enforces the framework's core rules:
 
 Command the orchestrator spawns in `--headless` mode:
 
-| Host          | headlessCommand                                      |
-| ------------- | ---------------------------------------------------- |
-| claude-code   | claude --dangerously-skip-permissions --print        |
-| codex         | codex exec --sandbox workspace-write                 |
-| gemini-cli    | gemini                                               |
-| omnigent      | omnigent run .omnigent/stagecraft/agent --no-session |
-| openai-compat | —                                                    |
+| Host          | headlessCommand                                                                     |
+| ------------- | ----------------------------------------------------------------------------------- |
+| claude-code   | claude --dangerously-skip-permissions --print --output-format stream-json --verbose |
+| codex         | codex exec --sandbox workspace-write                                                |
+| gemini-cli    | gemini                                                                              |
+| omnigent      | omnigent run .omnigent/stagecraft/agent --no-session                                |
+| openai-compat | —                                                                                   |
 
 ### Enforcement level glossary
 
