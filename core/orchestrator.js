@@ -11,6 +11,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel } = require("./pipeline/stages");
 const { loadConfig, changeIdFromFeature } = require("./config");
@@ -27,6 +28,7 @@ const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require(
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
 const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
+const corpus = require("./corpus");
 
 // C1: patch a gate file to record write-audit violations and flip status to FAIL.
 // Called after headless invoke when the adapter reported unauthorized writes.
@@ -771,6 +773,9 @@ async function runStageHeadless(stageName, opts = {}) {
         ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
         : ws.prompt;
       const telemetry = promptTelemetry(invocationPrompt, ws.descriptor);
+      // 28.5: hashed (never raw) so the corpus record identifies repeated
+      // prompts without persisting prompt content.
+      const promptHash = crypto.createHash("sha256").update(invocationPrompt).digest("hex");
       // G10: snapshot mtime before invoke so we can tell whether the headless
       // command actually wrote the gate (vs. a pre-existing gate that the
       // command left untouched — e.g. `devteam replay` with a no-op command).
@@ -885,7 +890,7 @@ async function runStageHeadless(stageName, opts = {}) {
       } else if (ws.adapter.capabilities && ws.adapter.capabilities.telemetry !== "native") {
         patchGateForEstimatedUsage(r.gatePath || wsGatePathExpected, telemetry.promptBytes);
       }
-      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, ...r, ...telemetry };
+      const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, promptHash, ...r, ...telemetry };
       emitWorkstreamEvent({
         type: "workstream-finished",
         stage: plan.stage,
@@ -960,6 +965,27 @@ async function runStageHeadless(stageName, opts = {}) {
           if (g && g.status === "PASS") pruneArchives(gatesDir, plan.stage);
         } catch { /* archiving must never block a run */ }
       }
+    }
+
+    // Phase-28 item 28.5: one sanitized run-corpus record per headless
+    // dispatch, after stamping so single-role gates (stage-03b/04a/06)
+    // carry the orchestrator-verified status rather than the model's
+    // pre-stamp claim. Skips --skip-completed no-op entries (no dispatch
+    // actually happened). Fire-and-forget — see core/corpus.js.
+    for (const result of results) {
+      if (result.skipped) continue;
+      corpus.recordDispatch(plan.ctx.cwd, {
+        runId: opts.runId || null,
+        stage: plan.stage,
+        role: result.role,
+        host: result.host,
+        track: plan.ctx.track,
+        promptHash: result.promptHash,
+        promptBytes: result.promptBytes,
+        durationMs: result.durationMs,
+        queueMs: result.queueMs,
+        gatePath: result.gatePath,
+      });
     }
 
     return { stage: plan.stage, name: stageName, roles: plan.roles, results, ctx: plan.ctx };

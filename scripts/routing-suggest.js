@@ -20,6 +20,7 @@ const yaml = require("js-yaml");
 const { loadGatesFrom, filterSince } = require("./dashboard");
 const { aggregatePerformance, summarize, formatDuration } = require("./performance");
 const { formatUsd } = require("../core/pricing");
+const { readCorpus, corpusRecordsToWorkstreams } = require("../core/corpus");
 
 // Minimum dispatches per (role, host) pair before we'll consider it for a
 // recommendation. With fewer samples, observed pass rates aren't reliable.
@@ -320,6 +321,19 @@ function filterByIntent(gates, intent) {
   return gates.filter((g) => g.intent === intent);
 }
 
+// Phase-28 item 28.5: .devteam/corpus/dispatches.jsonl is a durable,
+// per-project dispatch history — every headless dispatch, not just the
+// ones whose gate files are still on disk (gates get archived/pruned;
+// the corpus doesn't). corpusRecordsToWorkstreams() shapes each record
+// to match the per-workstream objects expandToWorkstreams() already
+// understands, so it drops straight into the same aggregation as gate
+// archives. Corpus records don't carry an `intent` field (out of scope
+// for 28.5), so they're naturally excluded by filterByIntent when
+// --intent is set — they only contribute to intent-unfiltered runs.
+function loadCorpusFrom(root) {
+  return corpusRecordsToWorkstreams(readCorpus(root));
+}
+
 function usage() {
   console.log(`routing-suggest — D5 adaptive routing recommendations
 
@@ -335,7 +349,9 @@ Usage:
   node scripts/routing-suggest.js --min-delta N         Min pass-rate delta in pp (default ${MIN_PASS_RATE_DELTA}).
 
 How it works:
-  - Reads pipeline/gates/ from each --from project (default: cwd).
+  - Reads pipeline/gates/ AND .devteam/corpus/dispatches.jsonl (phase-28
+    item 28.5) from each --from project (default: cwd) — the corpus
+    covers dispatches whose gate files have since been archived/pruned.
   - Aggregates per-(role, host) pass-rate-first-try, cost-per-pass,
     p50/p95 duration, and retry-adjusted completion time.
   - For each role: if a different host has ≥ --min-dispatches AND beats
@@ -347,8 +363,9 @@ How it works:
 Intent filtering (ADR-009 §Decision.7 — advisory only):
   --intent repair limits analysis to gates from repair-mode runs.
   --intent feature limits to feature runs. Gates without an intent field
-  are excluded when a filter is active. Compare the two outputs to spot
-  whether routing preferences differ by intent.
+  are excluded when a filter is active (this includes all corpus-sourced
+  records — the corpus schema doesn't carry intent). Compare the two
+  outputs to spot whether routing preferences differ by intent.
 
 This is the D5 BACKLOG item. Pairs with D6 (cost telemetry) + D4
 (performance scores). Manual review is the default; --apply is the
@@ -366,6 +383,7 @@ function main() {
     const loaded = loadGatesFrom(src);
     all.push(...loaded.gates);
     if (loaded.warning) warnings.push(loaded.warning);
+    all.push(...loadCorpusFrom(src));
   }
   all = filterSince(all, args.since);
   all = filterByIntent(all, args.intent);
@@ -407,6 +425,7 @@ module.exports = {
   compareScores,
   loadCurrentConfig,
   filterByIntent,
+  loadCorpusFrom,
   MIN_DISPATCHES,
   MIN_PASS_RATE_DELTA,
 };

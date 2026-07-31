@@ -155,6 +155,11 @@ const COMMANDS = [
     description: "Project-local pattern learning. Collect sanitized observations, review candidates, promote advisory guidance, retire stale patterns, and inspect stats.",
   },
   {
+    name:        "corpus",
+    synopsis:    "devteam corpus stats [options]",
+    description: "Summarize the run corpus (.devteam/corpus/dispatches.jsonl): total dispatches, per-stage pass rates, per-(role, host) dispatch counts — the D5/H3 evidence-gate questions in docs/BACKLOG.md.",
+  },
+  {
     name:        "architecture",
     synopsis:    "devteam architecture <subcommand> [options]",
     description: "Query the org-shared store for prior ADRs and lessons learned. Principal consults this before designing.",

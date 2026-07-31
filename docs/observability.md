@@ -8,6 +8,7 @@ Stagecraft emits [OpenTelemetry](https://opentelemetry.io) spans for every pipel
 - [What gets traced](#what-gets-traced)
 - [What's NOT traced (yet)](#whats-not-traced-yet)
 - [Pipeline log JSON](#pipeline-log-json)
+- [Run corpus](#run-corpus)
 - [Next roadmap](#next-roadmap)
 - [Backend-specific cookbooks](#backend-specific-cookbooks)
 - [Testing your instrumentation](#testing-your-instrumentation)
@@ -125,6 +126,58 @@ Example:
 ```
 
 When `--follow` is combined with `--json`, newly discovered events use the same object shape. Consumers should parse line-by-line and ignore unknown future fields.
+
+## Run corpus
+
+Every headless dispatch (`devteam run`, `devteam stage <name> --headless`,
+`devteam replay`, the a11y-fixer) appends one sanitized JSON line to
+`.devteam/corpus/dispatches.jsonl` — project-local, gitignored by the
+managed block (`core/gitignore.js`), never uploaded (phase-28 item 28.5,
+[`plans/phase-28-ground-truth-telemetry.md`](../plans/phase-28-ground-truth-telemetry.md)
+§28.5). This is the substrate for D5 (adaptive routing) and H3 (recipe
+factory), both evidence-gated pending real dispatch history — see
+[`docs/BACKLOG.md`](BACKLOG.md).
+
+Each record:
+
+```json
+{"ts":"2026-07-31T00:00:00.000Z","run_id":"2026-07-31T00:00:00.000Z","stage":"stage-04","role":"backend","host":"claude-code","model_observed":"claude-sonnet-5","track":"full","prompt_hash":"a1b2...","prompt_bytes":4213,"tokens_in":1234,"tokens_out":56,"cost_usd":0.0456,"cost_basis":"observed","duration_ms":18234,"queue_ms":0,"gate_status":"PASS","blockers":null,"retry_of":null,"framework_version":"0.9.0"}
+```
+
+Fields missing for a given dispatch are `null`, never omitted, so consumers can rely on a stable shape.
+
+- `model_observed`, `tokens_in`/`tokens_out`, `cost_usd` prefer the gate's
+  `_orchestrator_observed` block (orchestrator-parsed CLI/API output — see
+  items 28.1–28.3) over the model-asserted top-level gate fields.
+  `cost_basis` records which one won: `"observed"` or `"model-asserted"`
+  (`null` when neither is present).
+- `blockers` is sanitized through the same secret-scan path
+  (`core/hooks/secret-scan.js scanContent`, reused by `core/patterns.js`
+  collection) used elsewhere in the project — a blocker containing
+  secret-shaped text is fully redacted, never partially leaked.
+- `retry_of` is sourced from the gate's model-written `retry_number` — a
+  claim, not an orchestrator observation, since there's no orchestrator-
+  tracked per-dispatch retry-chain id today.
+- Writes are fire-and-forget: an unwritable `.devteam/corpus/` directory
+  logs one warning and never fails the run (`core/corpus.js`
+  `appendDispatchRecord`).
+
+### `devteam corpus stats`
+
+```
+devteam corpus stats [--json]
+```
+
+Summarizes the corpus: total dispatches, per-stage pass rates, and
+per-(role, host) dispatch counts — worded to answer the D5/H3
+evidence-gate questions directly, for this project. D5/H3 also require
+evidence across ≥2 real projects; run `corpus stats` per project and
+combine manually — the corpus itself is never aggregated across projects
+automatically (privacy model: local-only).
+
+`scripts/routing-suggest.js` (D5) reads the corpus as an additional data
+source alongside `pipeline/gates/` archives, so dispatch history survives
+gate archiving/pruning.
 
 ## Next roadmap
 
