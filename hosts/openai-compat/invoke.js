@@ -24,6 +24,7 @@ const path = require("node:path");
 const { gatesDir, logsDir, pipelineRoot } = require("../../core/paths");
 const { loadConfig } = require("../../core/config");
 const { snapshotWritables, auditWrites } = require("../../core/guards/write-audit");
+const { computeCostUsd } = require("../../core/pricing");
 const { buildTools, executeTool } = require("./tools");
 
 const MAX_TOOL_ITERATIONS = 40;
@@ -129,6 +130,16 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
   const start = Date.now();
   let iterations = 0;
 
+  // Phase-28 item 28.2: accumulate `usage` across every turn of the tool
+  // loop — a multi-turn dispatch bills once per completion, not once per
+  // dispatch. cachedTokens comes from prompt_tokens_details.cached_tokens
+  // (OpenAI-style prompt caching); not every provider reports it.
+  let observedPromptTokens = 0;
+  let observedCompletionTokens = 0;
+  let observedCachedTokens = 0;
+  let sawUsage = false;
+  let observedModel = null;
+
   while (iterations < MAX_TOOL_ITERATIONS) {
     iterations++;
     let json;
@@ -137,6 +148,15 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     } catch (err) {
       throw new Error(`openai-compat invoke failed (iteration ${iterations}): ${err.message}`);
     }
+
+    if (json.usage) {
+      sawUsage = true;
+      if (typeof json.usage.prompt_tokens === "number") observedPromptTokens += json.usage.prompt_tokens;
+      if (typeof json.usage.completion_tokens === "number") observedCompletionTokens += json.usage.completion_tokens;
+      const cached = json.usage.prompt_tokens_details?.cached_tokens;
+      if (typeof cached === "number") observedCachedTokens += cached;
+    }
+    if (typeof json.model === "string") observedModel = json.model;
 
     const choice = json.choices?.[0];
     if (!choice) throw new Error("openai-compat: API returned no choices");
@@ -260,6 +280,28 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     } catch { /* unreadable; treat as real gate */ }
   }
 
+  // Phase-28 item 28.2: same usage/telemetry contract as claude-code's
+  // stream-json extractor (core/adapters/claude-stream-json.js) — usage is
+  // null and telemetry is "unavailable" when the API never reported usage,
+  // so the orchestrator's generic `if (r.usage)` gate patch (core/orchestrator.js)
+  // skips a mutation rather than writing zeros. Unlike claude-code, the API
+  // never reports its own bill — cost_usd is computed from the pricing table,
+  // and is null for unpriced models rather than a guess.
+  const usage = sawUsage
+    ? {
+        tokensIn: observedPromptTokens,
+        tokensOut: observedCompletionTokens,
+        ...(observedCachedTokens > 0 ? { cachedTokens: observedCachedTokens } : {}),
+        costUsd: computeCostUsd({
+          model: observedModel || model,
+          tokens_in: observedPromptTokens,
+          tokens_out: observedCompletionTokens,
+        }),
+        model: observedModel || model,
+        source: "openai-compat:usage",
+      }
+    : null;
+
   return {
     exitCode: 0,
     gatePath: gateExists && !isStub ? gatePath : null,
@@ -268,6 +310,8 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     durationMs: Date.now() - start,
     timedOut: false,
     writeViolations: violations,
+    usage,
+    telemetry: usage ? "observed" : "unavailable",
   };
 }
 

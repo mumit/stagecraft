@@ -729,6 +729,139 @@ hosts:
   });
 });
 
+// ── 3b. invoke.js — usage/cost telemetry accumulation (phase-28 item 28.2) ──
+
+describe("openai-compat invoke() usage telemetry (phase-28 item 28.2)", () => {
+  const { computeCostUsd } = require(path.join(REPO_ROOT, "core", "pricing"));
+
+  let fetchQueue = [];
+  let origFetch;
+
+  before(() => {
+    origFetch = global.fetch;
+    global.fetch = async () => {
+      if (fetchQueue.length === 0) throw new Error("fetch stub: no more queued responses");
+      const next = fetchQueue.shift();
+      return { ok: true, json: async () => next, text: async () => JSON.stringify(next) };
+    };
+  });
+
+  after(() => { global.fetch = origFetch; });
+  afterEach(() => { fetchQueue = []; });
+
+  function toolCallResponse(usage) {
+    return {
+      usage,
+      choices: [{
+        finish_reason: "tool_calls",
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: "tc_gate",
+            function: {
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "pipeline/gates/stage-01.json",
+                content: JSON.stringify({
+                  stage: "stage-01", status: "PASS", blockers: [], warnings: [],
+                  timestamp: "2026-01-01T00:00:00Z",
+                }),
+              }),
+            },
+          }],
+        },
+      }],
+    };
+  }
+
+  function stopResponse(usage) {
+    return {
+      usage,
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Done." } }],
+    };
+  }
+
+  function projectFor(apiKeyEnv, model) {
+    const cwd = makeProject(`
+routing:
+  default_host: openai-compat
+pipeline:
+  default_track: full
+hosts:
+  openai-compat:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: ${apiKeyEnv}
+    models:
+      default: ${model}
+`);
+    process.env[apiKeyEnv] = "sk-usage-stub";
+    return cwd;
+  }
+
+  it("sums prompt/completion/cached tokens across a multi-turn tool loop and computes cost_usd from the pricing table", async () => {
+    const apiKeyEnv = "OPENAI_COMPAT_USAGE_KEY";
+    const cwd = projectFor(apiKeyEnv, "gpt-4o-mini");
+
+    // Turn 1: model calls a tool; usage reports cached tokens.
+    fetchQueue.push(toolCallResponse({
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      prompt_tokens_details: { cached_tokens: 10 },
+    }));
+    // Turn 2: model writes the gate and stops; no cached tokens this turn.
+    fetchQueue.push(stopResponse({ prompt_tokens: 150, completion_tokens: 30 }));
+
+    const { invoke } = require(invokePath);
+    const result = await invoke(fixtureDescriptor(), fixtureContext(cwd), "test prompt");
+
+    assert.equal(result.telemetry, "observed");
+    assert.ok(result.usage, "usage must be present when the API reported it");
+    assert.equal(result.usage.tokensIn, 250, "prompt_tokens summed across both turns");
+    assert.equal(result.usage.tokensOut, 50, "completion_tokens summed across both turns");
+    assert.equal(result.usage.cachedTokens, 10, "cached_tokens summed across turns that reported it");
+    assert.equal(result.usage.model, "gpt-4o-mini");
+    assert.equal(result.usage.source, "openai-compat:usage");
+    const expectedCost = computeCostUsd({ model: "gpt-4o-mini", tokens_in: 250, tokens_out: 50 });
+    assert.equal(result.usage.costUsd, expectedCost);
+    assert.ok(expectedCost > 0, "sanity: gpt-4o-mini is a priced model");
+
+    delete process.env[apiKeyEnv];
+  });
+
+  it("degrades to telemetry: 'unavailable' when the API never reports usage", async () => {
+    const apiKeyEnv = "OPENAI_COMPAT_NO_USAGE_KEY";
+    const cwd = projectFor(apiKeyEnv, "gpt-4o-mini");
+
+    fetchQueue.push(stopResponse(undefined));
+
+    const { invoke } = require(invokePath);
+    const result = await invoke(fixtureDescriptor(), fixtureContext(cwd), "test prompt");
+
+    assert.equal(result.telemetry, "unavailable");
+    assert.equal(result.usage, null);
+
+    delete process.env[apiKeyEnv];
+  });
+
+  it("reports cost_usd: null for an unpriced model, without guessing", async () => {
+    const apiKeyEnv = "OPENAI_COMPAT_UNPRICED_KEY";
+    const cwd = projectFor(apiKeyEnv, "totally-fake-model-xyz");
+
+    fetchQueue.push(stopResponse({ prompt_tokens: 100, completion_tokens: 10 }));
+
+    const { invoke } = require(invokePath);
+    const result = await invoke(fixtureDescriptor(), fixtureContext(cwd), "test prompt");
+
+    assert.equal(result.telemetry, "observed");
+    assert.equal(result.usage.tokensIn, 100);
+    assert.equal(result.usage.tokensOut, 10);
+    assert.equal(result.usage.costUsd, null, "unknown model must never produce a guessed cost");
+
+    delete process.env[apiKeyEnv];
+  });
+});
+
 // ── 4. adapter.js — contract checks ──────────────────────────────────────────
 
 describe("openai-compat adapter contract", () => {
