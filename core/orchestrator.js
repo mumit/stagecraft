@@ -111,14 +111,18 @@ function patchGateForToolBudget(gatePath, toolBudget) {
   fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
 }
 
-// Phase-28 item 28.1: patch a gate file with orchestrator-observed usage
-// telemetry from a headless invoke() result (r.usage — see
-// core/adapters/headless.js / core/adapters/claude-stream-json.js). Mirrors
+// Phase-28 item 28.1 (generalized in 28.2): patch a gate file with
+// orchestrator-observed usage telemetry from a headless invoke() result
+// (r.usage — see core/adapters/headless.js / core/adapters/claude-stream-json.js
+// for claude-code, hosts/openai-compat/invoke.js for openai-compat). Mirrors
 // core/verify/stamp.js's `_orchestrator_stamped` pattern: this never touches
 // the model-asserted tokens_in/tokens_out/cost_usd/model top-level fields
 // (self-reported, still gate-schema-legal) — it adds a distinct
 // `_orchestrator_observed` block so downstream consumers can prefer the
-// observed side without losing the model's claim.
+// observed side without losing the model's claim. `usage.source` identifies
+// which adapter produced the observation (e.g. "claude-code:stream-json",
+// "openai-compat:usage"); defaults to the pre-28.2 claude-code value for
+// callers that don't set it.
 function patchGateForObservedUsage(gatePath, usage) {
   if (!fs.existsSync(gatePath)) return;
   const { gate, error } = loadGateSafe(gatePath);
@@ -128,9 +132,10 @@ function patchGateForObservedUsage(gatePath, usage) {
     _orchestrator_observed: {
       tokens_in: usage.tokensIn,
       tokens_out: usage.tokensOut,
+      ...(typeof usage.cachedTokens === "number" ? { cached_tokens: usage.cachedTokens } : {}),
       cost_usd: usage.costUsd,
       model_observed: usage.model,
-      source: "claude-code:stream-json",
+      source: usage.source || "claude-code:stream-json",
       at: new Date().toISOString(),
     },
   };
@@ -839,12 +844,13 @@ async function runStageHeadless(stageName, opts = {}) {
           patchGateForToolBudget(budgetGatePath, ws.descriptor.toolBudget);
         }
       }
-      // Phase-28 item 28.1: orchestrator-observed token/cost telemetry.
-      // r.usage is only present for adapters that declare
-      // capabilities.usageFormat (currently claude-code) and the host's
-      // output was parseable — see core/adapters/headless.js. A telemetry
-      // parse failure (r.telemetry === "unavailable") never touches the
-      // gate, matching the pre-28.1 behavior for those dispatches.
+      // Phase-28 items 28.1/28.2: orchestrator-observed token/cost telemetry.
+      // r.usage is present for claude-code (via capabilities.usageFormat —
+      // see core/adapters/headless.js) and openai-compat (returned directly
+      // by hosts/openai-compat/invoke.js) when the dispatch's usage was
+      // parseable/reported. A telemetry miss (r.telemetry === "unavailable",
+      // r.usage null/absent) never touches the gate — same fire-and-forget
+      // contract as before 28.1 for those dispatches.
       if (r.usage) {
         patchGateForObservedUsage(r.gatePath || wsGatePathExpected, r.usage);
       }
