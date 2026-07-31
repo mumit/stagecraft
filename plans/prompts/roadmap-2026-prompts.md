@@ -1,0 +1,959 @@
+# Stagecraft Execution Prompts — Phases 28–34 (2026-H2 Roadmap)
+
+Companion to [landscape-review-2026-07.md](../landscape-review-2026-07.md) and the
+phase plans `plans/phase-28-*` … `plans/phase-34-*`. Same execution model as
+[ALL-PROMPTS.md](ALL-PROMPTS.md): paste the **PREAMBLE** (§0) plus one item prompt into a
+fresh Claude (Sonnet) session at the repo root. One item = one session = one branch = one PR.
+
+Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see dependency).
+
+| Phase | Theme | Items | Status |
+|---|---|---|---|
+| 28 | Ground truth: telemetry, corpus, host continuity | 28.1–28.6 | 🔲 all ready |
+| 29 | Scale-adaptive ceremony | 29.1–29.5 | 🔲 all ready |
+| 30 | Closed learning loop | 30.1–30.5 | 🔲 30.3 benefits from 28.5 |
+| 31 | Verification depth | 31.1–31.5 | 🔲 all ready |
+| 32 | Performance & parallelism | 32.1–32.5 | ⏸ 32.2 needs its ADR accepted; rest ready |
+| 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ⏸ 33.3 after 28.5; 33.4 after 33.1–33.3 |
+| 34 | Interop & auditable SDLC | 34.1–34.4 | 🔲 34.4 after 28.6 ships one release |
+
+Recommended order: 28 → 29 → (30 ∥ 31) → 32 → 33 → 34, but items within a phase are
+independently mergeable unless the item says otherwise.
+
+---
+
+## 0. PREAMBLE (paste first, verbatim, before every item prompt)
+
+```
+You are implementing exactly one pre-approved work item in the Stagecraft repository
+(current directory). Stagecraft is a Node.js CLI (`devteam`) that orchestrates AI coding
+tools through a gated, tracked pipeline. The work item is specified below and in a plan
+file under plans/ — the plan file is the authoritative spec; read its referenced section
+in full before touching any code. Also skim plans/landscape-review-2026-07.md §3 for the
+strategic intent behind this phase.
+
+Hard rules:
+1. SCOPE: implement only this item. If you notice other problems, list them under
+   "Out-of-scope findings" in your final report. Do not fix them.
+2. PRECONDITIONS: if the item lists a PRECONDITION CHECK, run it first and STOP with a
+   report if any check fails.
+3. VERIFY-FIRST: any step marked [verify-first] is a claim that must be confirmed by
+   reading the code before editing. If the claim does not hold, STOP all work on that
+   step and report what you actually found. Do not "fix" code that already works.
+4. LINE NUMBERS and file references in plan files are anchors verified 2026-07-31.
+   Always locate the quoted code by searching; never edit by line number alone.
+5. TESTS: run `npm test`, `CI=true DEVTEAM_HEADLESS_COMMAND=cat npm test` (mirrors
+   GitHub Actions exactly), `npx eslint .`, and `npm run consistency` before and after.
+   All green when you finish. Never weaken, skip, or delete an existing test to make
+   your change pass; if a test legitimately encodes OLD behavior this item changes,
+   update it and call that out explicitly.
+6. NEW BEHAVIOR NEEDS A TEST: the change must be covered by at least one test that
+   fails without it. Telemetry/learning writes must additionally have a test proving
+   they NEVER fail the run when they error (fire-and-forget contract).
+7. TEST HYGIENE: tests that spawn subprocesses must explicitly control every env var
+   the code under test reads (especially CI). Tests must never read or write repo-root
+   state — per-test mkdtempSync tempdirs with the devteam-test- guard
+   (tests/_helpers.js). Never point test cwd at the real repo. Meta-tests must never
+   assert exact state of the live repo tree — use fixture trees.
+8. SOURCE OF TRUTH: core/pipeline/stages.js is canonical for stages/gates/tracks.
+   Prose follows code, never the reverse — EXCEPT if prose describes BETTER behavior
+   than code implements: flag it, don't silently align.
+9. CONVENTIONS: comments explain *why* and cite plan/ADR/backlog IDs (house style:
+   core/driver.js header). Match surrounding code style. Preserve the project's candid
+   tone in prose; never delete a limitation or caveat while moving content. New
+   model-visible prompt text must respect existing prompt-budget discipline
+   (docs/reference/prompt-budget.md; consistency fails on >10% growth — if you must
+   exceed it, say so and stop).
+10. TRUST BOUNDARY: anything the model writes (gates, artifacts, self-reported cost)
+    is a claim; anything the orchestrator observes (exit codes, parsed CLI/API output,
+    command results) is truth. New fields must record which side produced them —
+    follow the `_orchestrator_stamped` / `_orchestrator_observed` pattern in
+    core/verify/stamp.js. Never let a model-asserted value overwrite an observed one.
+11. GIT: create the branch named in the item (from main unless stated otherwise).
+    Commit with a conventional-commit message ending:
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+    Do NOT push, do NOT open a PR, do NOT merge, do NOT switch branches at the end.
+12. CHANGELOG: add a fragment file under changelog.d/ matching existing style, with an
+    "Honest scope note" line if limitations remain.
+13. STOP CONDITIONS — stop and report rather than improvise if: a [verify-first] claim
+    fails; the change requires editing more than ~3 existing tests beyond any the item
+    authorizes; you need to modify a file the item doesn't mention and can't justify in
+    one sentence; npm test fails for reasons unrelated to your change.
+
+Final report format (this is your last message — it is the deliverable):
+- WHAT CHANGED: file list with one line each.
+- EVIDENCE: the exact verification commands run and their results (paste test counts).
+- TESTS ADDED/UPDATED: names and what each proves; pre-existing tests touched + why.
+- VERIFY-FIRST RESULTS: each claim → confirmed / not-confirmed + what you found.
+- DEVIATIONS from the plan item, if any, with justification.
+- OUT-OF-SCOPE FINDINGS, if any.
+- The commit hash(es).
+```
+
+---
+
+## Phase 28 — Ground Truth 🔲
+
+### 28.1 claude-code observed usage 🔲
+
+```
+TASK: Implement plans/phase-28-ground-truth-telemetry.md item 28.1 — orchestrator-observed
+token/cost telemetry for the claude-code headless path.
+Branch: feat/claude-code-usage-telemetry
+
+[verify-first] The claude-code headless invocation (see hosts/claude-code/ and
+core/adapters/headless.js) uses `--print` with no `--output-format`, so usage metadata
+is discarded. Confirm by reading how headlessCommand is built and how runHeadless
+consumes stdout.
+
+Implement: request stream-json output from the claude CLI (check `claude --help` for the
+current flag set — likely `--output-format stream-json --verbose`), parse the stream for
+the final result message's usage (input_tokens, output_tokens, total_cost_usd, model),
+and return them on the runHeadless result. The ORCHESTRATOR writes tokens_in/tokens_out/
+cost_usd/model_observed into the workstream gate under `_orchestrator_observed` (mirror
+the `_orchestrator_stamped` pattern in core/verify/stamp.js — preserve model-asserted
+fields, observed wins for any consumer). Text content of the stream must still be teed
+to pipeline/logs/<workstreamId>.log so transcripts stay readable.
+
+Degradation contract: if the output is not parseable JSON (older CLI, plain text), keep
+today's behavior and set telemetry:"unavailable" on the result. A telemetry failure must
+NEVER fail a dispatch — add the test proving it.
+
+Tests: stream-json fixture via DEVTEAM_HEADLESS_COMMAND pointing at a script that emits
+a realistic stream; plain-text fixture for degradation; gate contains observed fields;
+log file still contains the transcript text.
+Do not touch other adapters (28.2/28.3 cover them).
+```
+
+### 28.2 openai-compat usage accumulation 🔲
+
+```
+TASK: Implement plans/phase-28-ground-truth-telemetry.md item 28.2 — record API `usage`
+across the openai-compat tool loop.
+Branch: feat/openai-compat-usage
+
+[verify-first] hosts/openai-compat/invoke.js receives `usage` on each chat-completion
+response and never reads it. Confirm by reading invoke.js end to end.
+
+Implement: accumulate prompt_tokens / completion_tokens (and
+prompt_tokens_details.cached_tokens when present) across ALL iterations of the loop;
+return totals on the invoke result; the orchestrator writes `_orchestrator_observed`
+(same shape as 28.1 — if 28.1 hasn't merged, create the shared writer in
+core/orchestrator.js and note it). Compute cost_usd via core/pricing.js computeCostUsd;
+unknown model → cost_usd null, never a guess.
+
+Tests: extend the existing openai-compat stub-server suite (tests/openai-compat-*.test.js)
+with a multi-turn tool-loop case asserting summed usage including cached_tokens, and an
+absent-usage case degrading to telemetry:"unavailable".
+```
+
+### 28.3 codex + gemini/antigravity usage-or-estimate 🔲
+
+```
+TASK: Implement plans/phase-28-ground-truth-telemetry.md item 28.3 — usage capture where
+the host CLI reports it, labelled estimates otherwise.
+Branch: feat/host-usage-estimates
+
+Investigate (and record findings in the PR-ready report): does `codex exec` offer JSON
+output with usage? Does the gemini/antigravity binary? Implement native capture where
+available (same `_orchestrator_observed` contract as 28.1/28.2). Where unavailable,
+record {tokens_estimated: true, tokens_in_estimate} using a promptBytes/4 heuristic —
+the flag is mandatory so downstream consumers (routing-suggest, corpus, report) can
+filter estimated rows; never mix estimated and observed without it.
+
+Add `telemetry: "native" | "estimated"` to each host's capabilities.json and update
+tests/adapter-contract.test.js to require the field on all adapters (claude-code and
+openai-compat = native once 28.1/28.2 land; set honestly per adapter today otherwise).
+
+Tests: per-adapter fixtures for the paths you implement; contract test update; the
+estimate heuristic unit-tested.
+```
+
+### 28.4 Budget enforcement on observed cost 🔲
+
+```
+TASK: Implement plans/phase-28-ground-truth-telemetry.md item 28.4 — `--budget-usd`
+prefers orchestrator-observed cost.
+Branch: feat/budget-observed-cost
+
+[verify-first] driver.totalCostUsd() (core/driver.js) sums gate.cost_usd, which is
+model-written. Confirm, and map every consumer of that total (budget check, status,
+report).
+
+Implement: totalCostUsd prefers `_orchestrator_observed.cost_usd` per gate, falling back
+to model-asserted cost_usd; the run records cost_basis ("observed" / "model-asserted" /
+"mixed") once per run in run-state.json with a single run-log warning when any asserted
+values are included. `devteam status` and `devteam report` display the basis. Do not
+change halt semantics or the pre-dispatch check logic (ADR-003 refinement of decision #8
+stands).
+
+Tests: mixed-gate fixture (observed + asserted) sums correctly and reports "mixed";
+pure-observed reports "observed"; report/status render the basis.
+```
+
+### 28.5 Run corpus 🔲
+
+```
+TASK: Implement plans/phase-28-ground-truth-telemetry.md item 28.5 — one sanitized JSONL
+record per headless dispatch, plus `devteam corpus stats`.
+Branch: feat/run-corpus
+
+After every headless dispatch completes (success or failure), append one line to
+.devteam/corpus/dispatches.jsonl: {ts, run_id, stage, role, host, model_observed, track,
+prompt_hash, prompt_bytes, tokens_in, tokens_out, cost_usd, cost_basis, duration_ms,
+queue_ms, gate_status, blockers (sanitized via the same secret-scan path
+core/patterns.js collection uses), retry_of, framework_version}. Fields missing from a
+given dispatch are null, never omitted. Corpus writes are fire-and-forget: an
+unwritable corpus directory logs one warning and never fails the run (test this).
+
+Add .devteam/corpus/ to the managed gitignore block (see ADR-010 / devteam init
+managed block code). New command `devteam corpus stats [--json]`: total dispatches,
+per-stage pass rates, per-(role,host) dispatch counts — worded to answer the D5/H3
+evidence-gate questions in docs/BACKLOG.md directly. Wire scripts/routing-suggest.js to
+accept the corpus as an additional data source alongside gate archives.
+
+Tests: stubbed multi-stage run produces one line per dispatch with correct fields;
+planted secret in a blocker never reaches disk; stats aggregates a fixture corpus;
+unwritable-dir case. Update docs/observability.md with a short corpus section.
+```
+
+### 28.6 Antigravity host adapter 🔲
+
+```
+TASK: Implement plans/phase-28-ground-truth-telemetry.md item 28.6 — Antigravity CLI
+host continuity (Gemini CLI is being sunset; it stopped serving free/Pro/Ultra requests
+2026-06-18).
+Branch: feat/host-antigravity
+
+Add hosts/antigravity/ as a thin shell over makeMarkdownHostAdapter (follow
+hosts/gemini-cli/adapter.js and hosts/codex/adapter.js as the pattern — expect ~40
+lines + capabilities.json + install payload dirs). Research the antigravity CLI's
+actual binary name, headless invocation flags, and skills/prompt directory layout from
+its public docs before writing the capabilities — record what you found and its source
+in the report. Declare capabilities honestly (headless only if verified; worktrees/
+goalLoop false unless documented).
+
+devteam doctor: when routing resolves any role/stage to gemini-cli, warn that the host
+is deprecated upstream and suggest `--host antigravity` (pattern: existing doctor
+host-CLI-on-PATH checks). Do NOT remove or break gemini-cli (retirement is 34.4).
+Update: docs/user-guide.md multi-host section, README host lists, and every place the
+consistency checker requires host enumeration (run `npm run consistency` to find them).
+
+Tests: adapter-contract coverage for the new adapter; init roundtrip on a tmpdir;
+doctor warning fixture.
+```
+
+---
+
+## Phase 29 — Scale-Adaptive Ceremony 🔲
+
+### 29.1 `loop` track 🔲
+
+```
+TASK: Implement plans/phase-29-scale-adaptive-ceremony.md item 29.1 — a 4-slot `loop`
+track: brief → build → verify → review.
+Branch: feat/track-loop
+
+In core/pipeline/stages.js STAGES_BY_TRACK add `loop`: stage-01 (minimal brief),
+stage-04 (single-workstream build — decide and document which single role, default
+backend, config-overridable), stage-06 (QA — already orchestrator-stampable), stage-05
+(single-reviewer). Reuse existing stage definitions and schemas unchanged. Add a
+one-screen loop brief template under templates/ (intent, AC-N list, affected files) and
+route stage-01 to it on this track only.
+
+Constraints: consequence ceiling untouched (loop has no sign-off/deploy — `devteam run
+--track loop` ends at review; document that promotion to deploy = re-run with --until on
+a bigger track or a config'd custom_stages). verify-chain must pass on the short track
+(nearest-earlier-gate predecessor logic should already handle it — add the test).
+Update docs/tracks.md and every stage-count claim the consistency checker flags.
+
+Tests: full stubbed loop run = exactly 4 dispatches to pipeline-complete; chain verify
+green; track selection plumbing (assess keywords NOT in scope — 29.2).
+```
+
+### 29.2 Assess-by-default 🔲
+
+```
+TASK: Implement plans/phase-29-scale-adaptive-ceremony.md item 29.2 — `devteam run`
+with no track runs assess inline and proceeds with inferred provenance.
+Branch: feat/assess-by-default
+
+[verify-first] Trace what `devteam run` does today when neither --track nor
+pipeline/track.json exists (core/driver.js + core/cli/commands/run.js + ADR-006
+provenance in devteam assess). Confirm the assess heuristics live in a callable module
+(not just the CLI command) — if not, extract without behavior change first.
+
+Implement: no-track + no-track.json → run assess heuristics inline, print
+recommendation + rationale (+ ceremony preview once 29.3 lands — if it hasn't, print
+slots/dispatch counts only and leave a TODO citing 29.3), write pipeline/track.json
+with source:"inferred", proceed. Explicit --track wins and records source:"human".
+No interactive prompt anywhere (CI-identical behavior). The existing unconfirmed-track
+guard semantics must be preserved exactly — read its tests first.
+
+Tests: the three paths (no-track infers; --track is human; existing track.json
+respected), plus assess-inline output snapshot.
+```
+
+### 29.3 Ceremony cost preview 🔲
+
+```
+TASK: Implement plans/phase-29-scale-adaptive-ceremony.md item 29.3 — per-track ceremony
+cost preview in assess and pre-run output.
+Branch: feat/ceremony-preview
+
+Static basis: per-dispatch framework overhead numbers are generated into
+docs/reference/prompt-budget.md — find the generator (scripts/consistency.js prompt-
+budget sync references it) and read the machine source it uses rather than parsing the
+doc. Estimate per track: stage slots, dispatch count (respect track shape + fanout
+config), token range (framework overhead + sampled sizes of existing pipeline/ artifacts
+when present), cost range via core/pricing.js against currently-routed models (unknown
+model → show tokens only, never invent dollars).
+
+Empirical basis: when .devteam/corpus/dispatches.jsonl (28.5) has ≥5 runs of the same
+track, use median observed tokens/cost instead and label estimate_basis:"empirical" vs
+"static". Surface in `devteam assess` (text + --json) and at the top of `devteam run`
+pre-flight output. Every number is labelled an estimate (house honesty rules).
+
+Tests: static estimates for two tracks from a fixture project; empirical path from a
+fixture corpus; unknown-model path shows tokens without dollars.
+PRECONDITION CHECK: 28.5 merged (corpus exists) — if not, implement static-only and mark
+the empirical branch with a guarded TODO citing 28.5; say so in the report.
+```
+
+### 29.4 Fold specialty QA on small tracks 🔲
+
+```
+TASK: Implement plans/phase-29-scale-adaptive-ceremony.md item 29.4 — render 06b/06c/06d/06e
+as one combined verification-sweep dispatch on compact tracks.
+Branch: feat/compact-qa-fold
+
+[verify-first] Confirm which tracks include stages 06b (a11y), 06c (observability),
+06d (verification-beyond-tests), 06e (performance-budget) in STAGES_BY_TRACK, and that
+each is currently a separate sequential dispatch with its own gate schema.
+
+Implement: a track-level `compact_qa: true` flag (set it on `quick`). When set, the
+orchestrator plans ONE workstream for a new stage-06x ("verification sweep") in place of
+the four; its gate schema embeds the four existing shapes as optional sections (new
+schema file core/gates/schemas/stage-06x.schema.json; validator must accept both the
+folded and unfolded forms depending on track). Full track unchanged — byte-identical
+prompts (add the regression test). Right-sizing skip logic must still be able to skip
+the folded slot. devteam next / merge / summary must handle 06x like any stage.
+
+Tests: quick-track stubbed run makes 1 dispatch where it made 4; full-track prompt
+byte-comparison; validator both-shapes; consistency stage/schema enumeration checks
+updated (the checker WILL flag the new stage — follow what it says).
+```
+
+### 29.5 Docs: loop as default, full as audited path 🔲
+
+```
+TASK: Implement plans/phase-29-scale-adaptive-ceremony.md item 29.5 — reposition docs.
+Branch: docs/scale-adaptive-positioning
+
+PRECONDITION CHECK: 29.1 merged (loop track exists). Update README.md (Quick start
+shows loop first; "which track" decision table with ceremony-cost column referencing
+29.3 output), docs/tracks.md, docs/user-guide.md, docs/adoption-guide.md: loop is the
+day-to-day default; full is the AUDITED path chosen when stakes/compliance justify it
+(forward-reference the Phase 34 evidence story in one sentence, marked as roadmap).
+Preserve every existing caveat and the candid tone; this is a repositioning, not a
+marketing pass. Run `npm run consistency` — the doc drift checks are the acceptance
+gate here. No code changes.
+```
+
+---
+
+## Phase 30 — Closed Learning Loop 🔲
+
+### 30.1 Auto-collect + retirement suppression 🔲
+
+```
+TASK: Implement plans/phase-30-closed-learning-loop.md item 30.1 — patterns collect at
+run end, retired keys suppressed at collection.
+Branch: feat/patterns-autocollect
+
+[verify-first] (a) core/patterns.js collect() has zero callers outside
+core/cli/commands/patterns.js; (b) collection does not consult retired patterns, so a
+retired pattern_key can re-enter candidates from the same observations. Confirm both.
+
+Implement: core/driver.js calls collect() on pipeline-complete AND on any halt where ≥1
+gate was written this run — fire-and-forget (try/catch → one run-log event
+`pattern-collect-failed`, never affects exit code; test this contract). collect() loads
+retired.json and drops candidates whose identity hash matches a retired pattern,
+counting them in the collect summary as suppressed. `devteam patterns collect` CLI
+unchanged for manual/backfill.
+
+Tests: stubbed run with a FAIL→retry ends with candidates on disk, no manual step;
+retired-key suppression; collect-throws-run-unaffected.
+```
+
+### 30.2 Outcome-feedback counters 🔲
+
+```
+TASK: Implement plans/phase-30-closed-learning-loop.md item 30.2 — wire the inert
+injected/recurrence/noise counters and the demotion flow from docs/pattern-learning.md.
+Branch: feat/patterns-feedback
+
+[verify-first] stats.injected, recurrence_after_injection, noise_reports in
+core/patterns.js are initialized at promotion and never incremented anywhere
+(grep the repo). docs/pattern-learning.md specifies decay/demotion driven by them.
+
+Implement: (a) orchestrator increments stats.injected for each pattern included by
+selectForDescriptor() at DISPATCH time (headless execute or prompt print — not at
+preview/render-only paths; find and enumerate the call sites in your report);
+(b) collect() (30.1 shape) detects recurrence: a gate blocker mapping to a pattern_key
+that was injected into that same stage's dispatch this run → increment
+recurrence_after_injection; (c) `devteam patterns review` shows both counters and flags
+recurrence ≥ 3 (configurable) as demotion candidates; (d) `devteam patterns demote <id>`
+moves promoted → candidate with an audit line (who: operator, when, counters at time).
+NO automatic demotion/retirement — explicit operator action only, per the design doc's
+open question.
+
+Tests: inject-once-per-dispatch (a preview must NOT increment); seeded recurrence
+scenario flags; demote round-trip preserves history; counter persistence across
+collect/promote cycles.
+```
+
+### 30.3 Reflector pass (ACE-lite) 🔲
+
+```
+TASK: Implement plans/phase-30-closed-learning-loop.md item 30.3 — opt-in run-end
+Reflector dispatch that proposes itemized pattern deltas.
+Branch: feat/reflector-pass
+
+Config: learning.reflector: false by default. When true, after pipeline-complete the
+driver dispatches ONE extra headless call: new role roles/reflector.md (~1 page: read
+run-log.jsonl, the run's gates, and .devteam/patterns/promoted; output ONLY JSON
+matching the new candidates-delta schema — new candidates incl. positive tier,
+counter-adjustment suggestions, dedup-merge proposals). Route it like any role
+(routing.roles.reflector), so it can go to a cheap model. Validate output against a new
+JSON schema (core/gates/schemas/ naming conventions apply — but this is NOT a stage
+gate; put it under a learning/ schema path and say why in a comment). Malformed output
+→ discard WHOLE response, log one event, run unaffected. Valid proposals land in the
+existing candidates store tagged source:"reflector" — promotion remains the existing
+explicit human flow (the Curator is the human; cite ACE arXiv 2510.04618 in the role
+brief header comment).
+
+Tests: scripted reflector output → candidates with source tag; malformed output
+discarded whole; disabled → byte-identical behavior; prompt-budget check for the new
+role brief.
+```
+
+### 30.4 Memory retrieval into prompts 🔲
+
+```
+TASK: Implement plans/phase-30-closed-learning-loop.md item 30.4 — close the RAG loop:
+retrieval into stage prompts, auto-ingest at run end.
+Branch: feat/memory-injection
+
+[verify-first] core/memory/ is consumed only by core/cli/commands/{memory,architecture}.js;
+buildDescriptor() (core/orchestrator.js) has no memory hook; docs/memory.md says the
+explicit interface is manual ingest. Confirm all three.
+
+Implement: when .devteam/memory/ exists and memory.inject !== false, buildDescriptor()
+queries top-k=3 (config memory.inject_top_k) against feature/brief text, applies a
+similarity floor (config, default per store scoring semantics — read
+core/memory/store.js first), and renders "## Prior Project Knowledge" (≤1,200 bytes,
+kind+source attribution per entry) — mirror renderKnownPatterns() in
+core/adapters/render-helpers.js exactly for budget/ordering discipline. Stage-02
+descriptors additionally query the org store kind:adr (making `devteam architecture
+lookup` automatic; note it in docs/memory.md). Driver auto-ingests at pipeline-complete
+(existing ARTIFACT_KINDS; fire-and-forget). Optional-dep-absent (@huggingface/
+transformers) → one warning, no section, no failure.
+
+Tests: seeded store → section present within budget, correct attributions; no store →
+byte-identical prompts; ingest-at-complete; embedder-absent degradation; budget
+truncation order deterministic.
+```
+
+### 30.5 SKILL.md export 🔲
+
+```
+TASK: Implement plans/phase-30-closed-learning-loop.md item 30.5 — serialize promoted
+patterns to the Agent Skills (SKILL.md) open standard.
+Branch: feat/patterns-skill-export
+
+`devteam patterns export --skill [--out <dir>]`: generate a directory containing
+SKILL.md (YAML frontmatter: name, description; body: per-domain sections rendering each
+promoted pattern's prompt text with its rationale). Follow the published SKILL.md spec —
+research the current frontmatter requirements and record your source. Header comment in
+the generated file: "Generated by devteam patterns export; regenerate to update; do not
+hand-edit." Idempotent: re-export over an existing dir rewrites deterministically.
+Secret-scan the rendered output before writing (reuse the promotion-time scan path).
+`devteam init`: when promoted patterns exist and the host has a skills directory
+(claude-code .claude/skills/, codex .codex/skills/ — read each adapter's install
+payload), offer the export path in the init summary output (no auto-install without the
+existing init overwrite rules).
+
+Tests: export fixture → spec-shaped file; idempotency (two exports byte-identical);
+secret-scan blocks a poisoned pattern; init summary mentions it only when patterns exist.
+```
+
+---
+
+## Phase 31 — Verification Depth 🔲
+
+### 31.1 Per-role stamping 🔲
+
+```
+TASK: Implement plans/phase-31-verification-depth.md item 31.1 — extend orchestrator
+stamping to multi-workstream stages.
+Branch: feat/per-role-stamping
+
+[verify-first] core/orchestrator.js gates stamping behind
+`STAMPABLE_STAGES.has(stage) && plan.workstreams.length === 1` with a comment that
+multi-role stamping is out of scope. Confirm, and read core/verify/stamp.js +
+core/verify/receipts.js fully first.
+
+Implement: two stamp scopes. Workstream-scoped checks (lint over the workstream's
+allowedWrites surface) stamp each workstream gate as it completes. Workspace-global
+checks (full test suite) run once after merge and stamp the MERGED stage gate.
+Verification receipts must dedupe identical commands across workstreams (4 builds ≠ 4
+full suite runs — assert this in a test via receipt-hit counting). Preserve the
+existing single-workstream behavior byte-for-byte. Extend, don't fork, stamp.js.
+
+Tests: 4-workstream stage-04 stubbed run → per-role stamps + merged stamp; false
+tests_passed claim overridden on the merged gate; receipts prevent duplicate suite
+runs; single-workstream regression suite untouched and green.
+```
+
+### 31.2 Mechanical red-team floor 🔲
+
+```
+TASK: Implement plans/phase-31-verification-depth.md item 31.2 — stage-04c gets an
+orchestrator-run mechanical floor.
+Branch: feat/redteam-mechanical-floor
+
+Post-dispatch for stage-04c, the orchestrator runs (recording each as ran/skipped+why):
+(a) dependency audit — npm audit --json or the polyglot equivalent via the existing
+suite-detection in core/verify/ [verify-first: confirm what polyglot detection exists
+from Phase 19 / PR #264 before assuming]; network-unavailable → skipped:"offline",
+NEVER treated as pass; (b) the existing secret-scan over the changed-file set (reuse
+core/hooks/secret-scan.js as a library); (c) semgrep ONLY if a semgrep config exists in
+the project and the binary is on PATH — never install anything; (d) new-dependencies
+diff (lockfile delta since previous gate) listed on the gate.
+
+Merge mechanical findings into the stage-04c gate: findings_count :=
+max(model_reported, mechanical); any mechanical HIGH severity appends to
+must_address_before_peer_review (the existing injectRedTeamBlockers consequence
+plumbing in core/gates/validator.js then carries it — do not duplicate that plumbing).
+Add stage-04c to the stampable set with a multi-tool stamp block recording per-tool
+{ran, skipped, reason, findings}.
+
+Tests: seeded vulnerable fixture flips model-PASS to FAIL; offline skip recorded
+honestly; semgrep absent → skipped; model findings_count 0 + mechanical 2 → 2.
+```
+
+### 31.3 Adversarial review pair 🔲
+
+```
+TASK: Implement plans/phase-31-verification-depth.md item 31.3 — reviewer+critic
+adversarial mode for stage-05, cross-host by default when possible.
+Branch: feat/adversarial-review
+
+Config review.mode: "panel" (default, byte-identical to today — regression-test it) |
+"adversarial". Adversarial plans TWO workstreams: reviewer (existing reviewer role) and
+critic (new roles/critic.md, ~1 page: attack the REVIEW — missed findings, unsupported
+approvals, answer "what would make this approval wrong?"; require file:line evidence for
+every challenge). Critic runs AFTER reviewer completes (sequential within the stage —
+[verify-first: confirm the scheduler supports ordered workstreams within a stage or
+plan them as two orchestrator steps; report which you found]). Critic gate fields:
+challenges[] with per-challenge disposition, challenges_resolved boolean. Stage-05
+merged gate passes only when reviewer approves AND challenges_resolved. Routing: when
+≥2 hosts configured, default critic to a different host than reviewer (config
+override allowed) — cite the collusion evidence (plan file §31.3) in a why-comment.
+Reuse approval-derivation parsing for both files (by-reviewer.md, by-critic.md naming —
+follow existing by-*.md conventions).
+
+Tests: adversarial stubbed flow (approve + unresolved challenge blocks; resolved
+passes); host-splitting resolution; panel-mode regression (prompt+plan byte-identical);
+schema + consistency updates for the new gate shape.
+```
+
+### 31.4 Mutation smoke gate 🔲
+
+```
+TASK: Implement plans/phase-31-verification-depth.md item 31.4 — opt-in, time-boxed,
+changed-files-only mutation testing at stage-06 stamping.
+Branch: feat/mutation-gate
+
+Config pipeline.verify.mutation: {enabled:false, threshold:0.7, threshold_hard:false,
+timeout_ms, paths}. When enabled during stage-06 stamping: detect a supported runner
+(Stryker via project devDependency, mutmut via project venv/PATH — NEVER install),
+run against the changed-file set only (intersect with paths config), time-boxed via the
+existing process-kill machinery (core/process-kill.js), parse the score, stamp
+mutation_score + runner + scope on the gate. Below threshold → WARN (advisory; must
+surface in devteam advise classification [verify-first: read core/advise.js
+classification rules first]); FAIL only when threshold_hard. Absent runner → recorded
+skip. Document in docs/verification-beyond-tests.md (it already discusses mutation
+testing as prompt-level guidance — mark which part is now mechanical).
+
+Tests: fixture project with a surviving-mutant gap scores below threshold → WARN;
+threshold_hard → FAIL; timeout kills cleanly; no-runner skip; disabled = today.
+```
+
+### 31.5 Stage-05 quorum verification 🔲
+
+```
+TASK: Implement plans/phase-31-verification-depth.md item 31.5 — orchestrator re-derives
+approval state from review files on every host.
+Branch: feat/review-quorum-stamp
+
+[verify-first] Approval state comes from the claude-code PostToolUse hook
+(core/hooks/approval-derivation.js) or model-written gates on other hosts; `devteam
+derive-approvals` exists because non-hook saves bypass derivation. Confirm by reading
+the hook, the command, and the stage-05 merge path.
+
+Implement: after stage-05 merge, the orchestrator calls the approval-derivation parser
+DIRECTLY (as a library — do not reimplement the REVIEW:/CHANGES REQUESTED grammar) over
+pipeline/code-review/by-*.md and compares derived state to each workstream gate. A gate
+claiming approval whose file says otherwise (or has no parseable verdict) → merged gate
+flips to FAIL with a field-level {workstream, gate_said, file_said} record in the stamp
+block. This must run on ALL hosts (it's post-hoc, host-independent).
+
+Tests: seeded mismatch caught on a non-claude-code host fixture; agreeing states leave
+the merge untouched; unparseable file handled as its own mismatch class.
+```
+
+---
+
+## Phase 32 — Performance & Parallelism
+
+### 32.1 Cache-first prompt assembly 🔲
+
+```
+TASK: Implement plans/phase-32-performance-parallelism.md item 32.1 — stable-prefix
+prompt layout + provider cache breakpoints.
+Branch: feat/cache-first-prompts
+
+[verify-first] Map today's rendered-prompt section order by reading
+core/adapters/render-helpers.js and one adapter's renderStagePrompt end to end; confirm
+whether volatile content (changed-file manifest, stage objective) currently precedes
+constant content (role brief, rules) anywhere.
+
+Implement the four-layer order everywhere prompts are assembled: (1) framework
+preamble/rules [constant per version] → (2) role brief [constant per role] → (3)
+learned context: Known Project Patterns + Prior Project Knowledge [constant per run] →
+(4) volatile tail: stage objective, readFirst, manifest, gate shape. Add the regression
+test: two different stages, same run, same role config → sections 1–2 byte-identical
+prefixes. For openai-compat against Anthropic-style endpoints add optional
+cache_control breakpoints after layers 1/2/3 (config caching.enabled); OpenAI-style
+prefix caching needs only the ordering. Record cached_tokens when the API reports it
+(28.2 field). Regenerate the prompt-budget reference (find its generator; consistency
+will fail until you do).
+
+CAUTION: reordering changes every rendered prompt — expect prompt-snapshot tests to
+need updates; that is authorized here, enumerate each in the report. Gate JSON shapes
+must not change.
+
+Tests: prefix-stability test; cache_control emission fixture; budget doc regenerated;
+full suite green.
+```
+
+### 32.2 Stage DAG waves ⏸ (ADR first)
+
+```
+TASK: Implement plans/phase-32-performance-parallelism.md item 32.2 — ADR-016 stage
+dependency metadata + wave execution in the driver.
+Branch: feat/stage-waves
+PRECONDITION CHECK: docs/adr/016-*.md exists with status Accepted. If not: write ONLY
+the ADR (following docs/adr/ house format, covering: dependsOn derivation from
+readFirst/artifact flow, wave semantics, chain stays track-order, failure-in-wave
+handling, --max-iterations accounting where one wave = one iteration, max_parallel_stages
+default 2) and STOP for human review. Do not implement in the same session as the ADR.
+
+If the ADR is Accepted: add dependsOn[] to the STAGES table for the two safe regions
+only ({04a ∥ 04c} and {06b ∥ 06c ∥ 06d ∥ 06e} — or the folded 06x from 29.4 if merged);
+driver collects all ready actions whose dependencies hold PASS/WARN gates and executes
+up to autonomy.max_parallel_stages concurrently via the existing scheduler
+(core/scheduler.js — extend keying, don't fork). run-log events gain wave_id; heartbeat/
+stall-probe/lock semantics hold per wave member ([verify-first] read how the stall probe
+watches "the workstream log" and generalize). fix-and-retry clears only the failing
+member. devteam performance critical-path reports realized parallel savings.
+
+Tests: full-track stubbed run ≤13 sequential slots; one wave-member FAIL halts per
+failure class without corrupting siblings' gates; chain verify green; wave accounting
+in run-log.
+```
+
+### 32.3 Model-tier routing 🔲
+
+```
+TASK: Implement plans/phase-32-performance-parallelism.md item 32.3 — per-role/per-stage
+model selection in routing config + escalate-on-retry.
+Branch: feat/model-tier-routing
+
+[verify-first] Inventory how each headless adapter currently receives a model (env,
+flag, config — e.g. openai-compat per-role model mapping exists; claude-code/codex may
+use CLI flags or default). Report the inventory, then unify: routing.roles.<role> and
+routing.stages.<stage> accept either "host" (string, today's form — MUST keep working)
+or {host, model}. resolveRoute returns both; each adapter maps model → its native
+mechanism (claude --model, codex --model / -c model=, API body model) and records
+model_requested on the dispatch (model_observed from 28.x tells you what actually
+served it). Config routing.escalate_on_retry: false — when true, a fix-and-retry of a
+dispatch whose route carried a model bumps one tier up a documented tier table
+(config routing.tiers, shipped example in docs), recorded on the new gate. Ship the
+"frontier plans / cheap executes" preset as a documented config block in
+docs/user-guide.md + docs/cost.md, NOT as a changed default. Extend
+scripts/routing-suggest.js grouping to (role, host, model) using corpus rows.
+
+Tests: back-compat string form; object form reaches each adapter's command/body;
+escalate-on-retry records provenance; suggest groups by model.
+```
+
+### 32.4 Gate-verified best-of-N 🔲
+
+```
+TASK: Implement plans/phase-32-performance-parallelism.md item 32.4 — opt-in parallel
+attempts in worktrees, gate picks the winner.
+Branch: feat/best-of-n
+
+`devteam stage <name> --best-of N` (and pipeline.best_of.<stage>: N config): only for
+single-workstream stages on hosts with worktrees:true capability (refuse loudly
+otherwise). Dispatch N attempts concurrently (existing scheduler + host worktree
+mapping — [verify-first] read how isolation modes map to host primitives in the
+adapters and ADR/architecture notes before building). Each attempt writes its gate to
+an attempt-scoped path; the orchestrator stamps each (31.1 machinery if merged; else
+existing single-workstream stamping), then selects: first PASS by completion order →
+tie-break fewest blockers → lowest observed cost. Winner's gate + artifacts land in
+the canonical paths; losers archive to pipeline/attempts/<stage>/<n>/ (gate + prompt
+hash + log pointer, NOT full worktrees — clean those up). All-fail → single canonical
+FAIL (one fix-and-retry cycle, not N). Cost accounting sums every attempt
+(cost_basis/observed rules from 28.4). run-log records attempt fan-out.
+
+Tests: stubbed best-of-3, one pass → selection + archive + worktree cleanup; all-fail
+collapse; cost summation; non-worktree host refusal; N=1 ≡ today.
+```
+
+### 32.5 context.md diet 🔲
+
+```
+TASK: Implement plans/phase-32-performance-parallelism.md item 32.5 — context budget with
+auto-compaction + per-workstream delta sections.
+Branch: feat/context-diet
+
+[verify-first] pipeline/context.md grows via devteam:* marker sections written by the
+validator/driver and stripped on resolution; devteam compact regex-strips them all;
+every stage prompt includes/points at the whole file. Confirm by reading
+core/gates/validator.js marker functions + core/cli/commands/compact.js.
+
+Implement: (a) pipeline.context_budget_bytes (default 8192) checked whenever a marker
+section is written — over budget → oldest RESOLVED sections compact to one-line digests
+with pointers into pipeline/context-archive/<ts>-<section>.md (deterministic naming;
+archive is append-only). Unresolved/active sections are never auto-compacted. (b) each
+rendered prompt gains a "Context changes since your last dispatch" delta: marker
+sections added/removed since this workstream's previous dispatch, derived from
+run-log.jsonl events ([verify-first] confirm section writes are already logged as
+events; if not, add the event first as its own commit). (c) devteam compact unchanged
+for manual full strips.
+
+Tests: seeded oversize context compacts deterministically with archive round-trip;
+active sections survive; delta correct across a retry sequence; prompts under budget.
+```
+
+---
+
+## Phase 33 — Eval Flywheel
+
+### 33.1 Failed gates → eval cases 🔲
+
+```
+TASK: Implement plans/phase-33-eval-flywheel.md item 33.1 — capture replayable eval
+cases from FAIL/ESCALATE gates and stamp overrides.
+Branch: feat/eval-capture
+
+On gate FAIL/ESCALATE and on every stamp override (status_overridden in stamp blocks —
+the model-lied class, capture these ALWAYS when capture is on), write
+.devteam/evals/cases/<ts>-<stage>-<hash>/: case.json (stage, role, host, track,
+prompt_hash + reproducibility fields from the gate per C4, gate snapshot, run/framework
+versions), inputs/ (content-addressed snapshots of the readFirst artifact set, deduped
+into .devteam/evals/blobs/ by sha256), and — appended LATER when the failure resolves —
+resolution.json (which retry cleared it, linked via run-log; implement as a
+resolution-linker pass at run end). Config evals.capture (default true), sanitization
+via the secret-scan path, fire-and-forget contract (test). Blob GC: `devteam evals gc`
+removes unreferenced blobs. Managed-gitignore the evals dir.
+
+Tests: stubbed FAIL → complete case; stamp-override capture; resolution linking after a
+successful retry; dedup (two cases, same artifact → one blob); disabled → nothing;
+planted secret excluded.
+```
+
+### 33.2 `devteam evals run` 🔲
+
+```
+TASK: Implement plans/phase-33-eval-flywheel.md item 33.2 — the replay harness.
+Branch: feat/evals-run
+PRECONDITION CHECK: 33.1 merged (case format exists).
+
+`devteam evals run [--stub | --headless-host <h>] [--filter <stage|id>] [--json]`:
+for each case, re-render the stage prompt from the case's captured inputs against the
+CURRENT framework (current roles/rules/patterns/layout — the point is detecting
+framework regressions). --stub mode (default): structural scoring only — prompt
+renders, injected sections present, budgets respected, prompt_hash drift vs the case
+reported; free, no model. --headless-host mode: dispatch for real (existing headless
+machinery, DEVTEAM_HEADLESS_COMMAND respected for tests), validate the produced gate;
+a case whose original failure was RESOLVED must PASS now — failing = regression, exit
+1. Print the 29.3-style cost preview before any real-model sweep and require
+--budget-usd for it. Output: table + JSONL. Add a CI job to this repo running --stub
+over a small checked-in fixture corpus (tests/fixtures/evals/).
+
+Tests: stub scoring on fixture corpus; real-mode via scripted headless command;
+regression detection on a seeded re-break; budget refusal.
+```
+
+### 33.3 Prompt-pack versioning ⏸ (after 28.5)
+
+```
+TASK: Implement plans/phase-33-eval-flywheel.md item 33.3 — content-hash version for the
+prompt surface, recorded everywhere, comparable.
+Branch: feat/prompt-pack-version
+PRECONDITION CHECK: 28.5 merged (corpus carries the field).
+
+prompt_pack_version = short content hash over roles/ + rules/ + templates/ (stable file
+ordering; [verify-first] the consistency script already hashes prompt-budget inputs —
+reuse its walker if suitable, report either way). Record it: on every gate (validator
+additionalProperties check — extend schemas' shared identity fields per ADR-011
+conventions), every corpus row, every eval case. `devteam evals compare --pack <A> --pack
+<B> [--json]`: per-stage pass-rate deltas between pack versions from the corpus, with
+dispatch counts (refuse comparison below a minimum-n, default 5 per cell, honesty
+rules). Document in docs/reproducibility.md as C4's consumer.
+
+Tests: version changes iff prompt-surface content changes; propagation to gate/corpus/
+case; compare on fixture corpus; minimum-n refusal.
+```
+
+### 33.4 Offline prompt optimization (experimental) ⏸ (after 33.1–33.3)
+
+```
+TASK: Implement plans/phase-33-eval-flywheel.md item 33.4 — GEPA-style reflective
+optimizer as an out-of-band script.
+Branch: feat/prompt-optimize
+PRECONDITION CHECK: 33.1, 33.2, 33.3 merged.
+
+scripts/prompt-optimize.js (out-of-band like scripts/budget.js — NOT a devteam command;
+header comment explains why, citing the plan): inputs --target <roles/x.md|rules/y.md>
+(exactly one file), --budget-usd (MANDATORY, hard-refuse without), --model, corpus +
+eval cases filtered to stages exercising the target. Loop (bounded iterations, default
+4): sample failing/regressed cases → one frontier-model call diagnosing failures in
+natural language and proposing a revised target file → score the candidate via
+`devteam evals run --stub` (must stay structurally valid + within prompt budget) and a
+bounded real-model subset (respect the budget) → keep a Pareto set (pass-rate vs token
+size), never a single greedy winner (cite GEPA arXiv 2507.19457 in the header).
+Output: proposed unified diff + evidence table (before/after pass rates on the eval
+subset, token delta, spend) to stdout and a report file under .devteam/evals/optimize/.
+NEVER writes to the target file itself. Only the target file may appear in the diff.
+
+Tests: end-to-end with scripted model + fixture corpus → diff + evidence table; budget
+refusal; diff-scope guard (proposal touching another file is rejected); iteration bound.
+```
+
+---
+
+## Phase 34 — Interop & Auditable SDLC
+
+### 34.1 ACP host adapter 🔲
+
+```
+TASK: Implement plans/phase-34-interop-auditable-sdlc.md item 34.1 — an Agent Client
+Protocol client adapter: any ACP agent becomes a Stagecraft host.
+Branch: feat/host-acp
+
+Research the current ACP spec (agentclientprotocol.com / Zed docs) first; record
+version + source in the report and pin the protocol version in capabilities.json.
+hosts/acp/: adapter speaking ACP as client over stdio to a configured agent command
+(routing target form "acp:<command>" — extend config parsing with back-compat tests).
+Dispatch = initialize session → send rendered stage prompt → stream agent
+progress/tool events into pipeline/logs/<workstreamId>.log → resolve when the session
+ends and the gate file exists (existing poll fallback applies). Map enforcement to ACP
+permissions: stoplist and allowed-writes violations DENY at permission-request time —
+declare enforces: tool-call-time for those rules in capabilities (this is the first
+non-claude-code host with call-time enforcement; note it in the capabilities comment).
+No network in tests: scripted stub ACP agent (Node script speaking the wire protocol
+over stdio) under tests/fixtures/.
+
+Tests: adapter-contract structural pass; end-to-end stage via stub agent; stoplisted
+write denied at call time; malformed-protocol handling (timeout + structural dispatch
+failure class).
+```
+
+### 34.2 Attestation export 🔲
+
+```
+TASK: Implement plans/phase-34-interop-auditable-sdlc.md item 34.2 — gate chain →
+in-toto-shaped signed evidence bundle.
+Branch: feat/attestation-export
+
+[verify-first] Read core/evidence/ (identity, bundle, resolutions — Phases 16–18) and
+core/gates/chain.js before designing; this item PRODUCTIZES that machinery, it must not
+fork it.
+
+`devteam evidence export --attestation [--out <file>] [--sign]`: run verify-chain
+first (refuse on a broken chain unless --allow-unverified, which stamps the bundle
+accordingly); emit an in-toto-Statement-shaped JSON: subject = produced commit(s) (from
+run-state/git), predicateType = a stagecraft-namespaced URI with a version, predicate =
+per-stage entries {gate status, per-field provenance (model-asserted vs
+orchestrator-observed/stamped), prompt_pack_version (33.3 if present), C4
+reproducibility fields, chain hashes/HMAC presence, ADR-012 human-acceptance records as
+their own entries}. Check the predicate schema into core/evidence/schemas/ and validate
+on emit. --sign shells to cosign sign-blob when on PATH (never bundled; absent →
+clear error). Counterpart `devteam evidence verify-attestation <bundle>`: offline
+re-check of internal hashes + schema. Document in docs/evidence.md.
+
+Tests: fixture pipeline → schema-valid bundle; tamper → verify fails; broken chain
+refusal; resolutions appear; sign path via a stubbed cosign on PATH.
+```
+
+### 34.3 Compliance control mapping 🔲
+
+```
+TASK: Implement plans/phase-34-interop-auditable-sdlc.md item 34.3 — docs/compliance.md.
+Branch: docs/compliance-mapping
+
+Write docs/compliance.md: a table mapping control families → the pipeline artifact +
+the exact command that verifies it. Rows per the plan §34.3: change approval (stage-07
++ ADR-012 acceptance), segregation of duties (per-role dispatch provenance; reviewer ≠
+author hosts when adversarial mode splits them), testing evidence (stamped 04a/06 +
+receipts), security review (04c incl. the 31.2 mechanical floor if merged — otherwise
+describe today's honestly as model-asserted), deployment control (consequence ceiling +
+--allow-stage), tamper evidence (verify-chain / 34.2 attestation if merged). EVERY row
+must name a real file path and a runnable command — no aspirational rows; where the
+capability is roadmap, omit it or mark it "planned (phase-NN)" explicitly. Scope
+banner: "evidence your auditors can map, not certified compliance." Add to
+docs/README.md index + the README documentation map (Evaluator path). No code. `npm run
+consistency` green is the acceptance gate.
+```
+
+### 34.4 gemini-cli to plugin status ⏸ (one release after 28.6)
+
+```
+TASK: Implement plans/phase-34-interop-auditable-sdlc.md item 34.4 — move gemini-cli
+out of first-party hosts via the A4 plugin mechanism.
+Branch: feat/gemini-plugin-retirement
+PRECONDITION CHECK: 28.6 (antigravity host) merged AND at least one release has shipped
+with the doctor deprecation warning (check CHANGELOG.md releases since). If not, STOP.
+
+[verify-first] Read the A4 plugin-host mechanism (core/router.js @devteam/host-<name>
+resolution + any plugin docs) and confirm a local-package layout a project can install.
+Create packages/host-gemini-cli/ (or the repo's chosen plugin layout — if none exists
+for first-party-maintained plugins, propose the smallest one in the ADR-comment style)
+containing the moved adapter + its tests; remove hosts/gemini-cli/ from the first-party
+enumeration; `devteam init --host gemini-cli` errors with the exact install
+instruction for the plugin package. Update every host list (README, docs, consistency
+checker enumerations — the checker will find them). Contract tests run against the
+plugin from its new location.
+
+Tests: init error message; plugin-path resolution round-trip in a tmpdir project;
+consistency green; no orphaned gemini references (grep sweep in the report).
+```
+
+---
+
+## Post-merge follow-ups (not items — reminders)
+
+- After 28.x lands: re-run the D5 / H3 evidence reviews (plans/adaptive-routing-evidence.md,
+  plans/h3-ground-truth.md) once ≥2 real projects have corpus data — the gates were
+  blocked on exactly this telemetry.
+- After 31.x lands: refresh docs/comparative-analysis.md §"mechanically overrules model
+  claims" with the new stampable-stage count.
+- After 33.2 lands: add the stub-eval CI job to .github/workflows/test.yml (separate
+  small PR; workflow edits are deliberately excluded from the items above).
+```

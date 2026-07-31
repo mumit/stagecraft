@@ -35,6 +35,13 @@ observability remain the active capability priorities.**
 | 24 | [phase-24-omnigent-runtime.md](phase-24-omnigent-runtime.md) | — | Omnigent as a host runtime with policy/session bridge and experimental director prototype | ✅ complete (PRs #298–#304) |
 | 25 | [phase-25-omnigent-director-hardening.md](phase-25-omnigent-director-hardening.md) | — | Harden the Omnigent director prototype through dogfood, partial resume design, session evidence, policy conformance, and topology decisions | 📝 proposed and parked (#305) |
 | 26 | [phase-26-performance-observability-usability.md](phase-26-performance-observability-usability.md) | — | Performance, live-run observability, and operator usability overhaul | 📝 proposed (#312) |
+| 28 | [phase-28-ground-truth-telemetry.md](phase-28-ground-truth-telemetry.md) | [prompts](prompts/roadmap-2026-prompts.md) | Token/cost telemetry at the adapter layer, sanitized run corpus, Antigravity host continuity | 📝 proposed (2026-07 landscape review) |
+| 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | 📝 proposed (2026-07 landscape review) |
+| 30 | [phase-30-closed-learning-loop.md](phase-30-closed-learning-loop.md) | [prompts](prompts/roadmap-2026-prompts.md) | Auto-collect patterns, outcome-feedback counters, memory injection, ACE-lite reflector, SKILL.md export | 📝 proposed (2026-07 landscape review) |
+| 31 | [phase-31-verification-depth.md](phase-31-verification-depth.md) | [prompts](prompts/roadmap-2026-prompts.md) | Per-role stamping, mechanical red-team floor, adversarial review pair, mutation gate, quorum verification | 📝 proposed (2026-07 landscape review) |
+| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-016), model-tier routing, best-of-N, context diet | 📝 proposed (2026-07 landscape review) |
+| 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | 📝 proposed (2026-07 landscape review) |
+| 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | 📝 proposed (2026-07 landscape review) |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt in
 [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md) (single source of truth, with status
@@ -58,7 +65,8 @@ They document why certain capability gates remain shut and what would open them.
 
 | File | Topic | Status |
 |---|---|---|
-| [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md) | End-to-end pipeline critical path and safe acceleration roadmap | Proposed; no implementation authorized |
+| [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md) | End-to-end pipeline critical path and safe acceleration roadmap | Proposed; no implementation authorized — items #1/#5/#10 superseded by phase-32 |
+| [landscape-review-2026-07.md](landscape-review-2026-07.md) | Full competitive review vs the mid-2026 coding-agent landscape; strategy ("the auditable agent SDLC that learns") and the phase 28–34 roadmap | Proposed; no implementation authorized |
 
 ---
 
