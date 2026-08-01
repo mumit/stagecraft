@@ -40,7 +40,7 @@ Before drafting a spec, chairing a review, or synthesising a retro, read:
 
 **Before drafting** — architectural continuity:
 
-The architecture across this team's projects is a long-running commitment, not a per-feature blank slate. Before writing a new design:
+The architecture across this team's projects is a long-running commitment, not a per-feature blank slate. When your dispatch was headless, check the `## Prior Project Knowledge` section above first — the top org ADR hits for this feature/brief are already injected there (phase-30 item 30.4). That section is bounded to a handful of top-k results within a small byte budget, so still run the manual queries below for a deeper or broader search, or when the section is absent (interactive dispatch, no org-shared store, or nothing scored above the similarity floor). Before writing a new design:
 
 1. **Query the org-shared memory for prior ADRs touching this area.** Run, in a shell:
    ```bash

@@ -72,6 +72,22 @@ const DEFAULTS = {
     // source: "reflector". Promotion is still the existing human flow.
     reflector: false,
   },
+  memory: {
+    // 30.4: retrieval into stage prompts + auto-ingest at pipeline-complete.
+    // Both sides of the loop gate on this one flag — false turns off both
+    // the "## Prior Project Knowledge" prompt section and the run-end
+    // auto-ingest (core/driver.js). Retrieval additionally requires
+    // .devteam/memory/ to already exist (core/memory/inject.js); a project
+    // that has never run `devteam memory ingest` sees no behavior change.
+    inject: true,
+    // Top-k results queried per stage dispatch (core/memory/inject.js).
+    inject_top_k: 3,
+    // Cosine-similarity floor below which a result is dropped. 0 is the
+    // principled default given the store's scoring semantics (dot product
+    // of L2-normalized vectors, core/memory/store.js): 0 means "no positive
+    // alignment with the query," the natural cutoff before any tuning.
+    inject_similarity_floor: 0,
+  },
 };
 
 function configPath(cwd) {
@@ -134,6 +150,15 @@ function loadConfig(cwd = process.cwd()) {
       },
       learning: {
         reflector: parsed.learning?.reflector === true,
+      },
+      memory: {
+        inject: parsed.memory?.inject !== false,
+        inject_top_k: Number.isInteger(parsed.memory?.inject_top_k) && parsed.memory.inject_top_k > 0
+          ? parsed.memory.inject_top_k
+          : DEFAULTS.memory.inject_top_k,
+        inject_similarity_floor: typeof parsed.memory?.inject_similarity_floor === "number"
+          ? parsed.memory.inject_similarity_floor
+          : DEFAULTS.memory.inject_similarity_floor,
       },
       _source: "file",
       _path: p,
@@ -306,6 +331,12 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("# learning:");
   lines.push("  # reflector: false  # opt-in run-end Reflector dispatch (phase-30 item 30.3)");
   lines.push("  #                   # proposes pattern candidates, never auto-promotes");
+  lines.push("");
+  lines.push("# memory:");
+  lines.push("  # inject: true                   # phase-30 item 30.4 — retrieval into stage prompts");
+  lines.push("  #                                 # + run-end auto-ingest; false disables both");
+  lines.push("  # inject_top_k: 3                # results queried per stage dispatch");
+  lines.push("  # inject_similarity_floor: 0     # drop results below this cosine similarity");
   lines.push("");
   if (opts.adapter) {
     lines.push("deploy:");

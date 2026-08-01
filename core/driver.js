@@ -22,6 +22,7 @@ const path = require("node:path");
 const { next, runStageHeadless, mergeWorkstreamGates } = require("./orchestrator");
 const { collect: collectPatterns } = require("./patterns");
 const { runReflector } = require("./learning/reflector");
+const { ingest: ingestMemory } = require("./memory");
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom } = require("./config");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
@@ -899,6 +900,7 @@ async function run(opts = {}) {
   const _merge = opts.mergeWorkstreamGates || mergeWorkstreamGates;
   const _collectPatterns = opts.collectPatterns || collectPatterns;
   const _runReflector = opts.runReflector || runReflector;
+  const _ingestMemory = opts.ingestMemory || ingestMemory;
   const maxIterations = Number.isInteger(opts.maxIterations) ? opts.maxIterations : DEFAULT_MAX_ITERATIONS;
   const budgetUsd = typeof opts.budgetUsd === "number" ? opts.budgetUsd : null;
   if (budgetUsd === null) {
@@ -1938,6 +1940,28 @@ async function run(opts = {}) {
       });
     } catch (err) {
       logEvent(cwd, changeId, { outcome: "reflector-dispatch-failed", reason: String((err && err.message) || err) });
+    }
+  }
+
+  // Phase 30 item 30.4: auto-ingest at pipeline-complete — the write side of
+  // the closed loop (30.4's read side is memory retrieval into stage prompts,
+  // core/orchestrator.js resolvePriorKnowledgeOpts()). docs/memory.md already
+  // named "end of pipeline" as a designed ingest trigger point; this wires it
+  // up instead of requiring a manual `devteam memory ingest`. Gated on
+  // .devteam/memory/ already existing — same "opted in once, stays wired up"
+  // condition as the read side — so a project that has never run `devteam
+  // memory ingest` sees zero behavior change (no embedder load, no model
+  // download attempt) and reuses memory.inject as the single off switch for
+  // both sides of the loop. Fire-and-forget like auto-collection and the
+  // reflector above: an ingest failure (including the optional
+  // @huggingface/transformers dependency being absent) is logged, never
+  // thrown — it must never fail an otherwise-clean run.
+  if (summary.completed && config.memory.inject !== false && fs.existsSync(path.join(cwd, ".devteam", "memory"))) {
+    try {
+      const result = await _ingestMemory({ cwd });
+      logEvent(cwd, changeId, { outcome: "memory-ingest", artifacts: result.artifacts, chunks: result.chunks });
+    } catch (err) {
+      logEvent(cwd, changeId, { outcome: "memory-ingest-failed", error: String((err && err.message) || err) });
     }
   }
 

@@ -21,7 +21,7 @@ Multi-role stages appear once per dispatched role. The CI advisory
 | Stage     | Name                      | Role       | Framework B | Role brief B | Dispatch B | Tokens~ |
 | --------- | ------------------------- | ---------- | ----------- | ------------ | ---------- | ------- |
 | stage-01  | requirements              | pm         | 12,445      | 9,828        | 22,273     | 5569    |
-| stage-02  | design                    | principal  | 12,445      | 14,066       | 26,511     | 6628    |
+| stage-02  | design                    | principal  | 12,445      | 14,528       | 26,973     | 6744    |
 | stage-03  | clarification             | pm         | 12,445      | 9,828        | 22,273     | 5569    |
 | stage-03b | executable-spec           | pm         | 12,445      | 9,828        | 22,273     | 5569    |
 | stage-04  | build                     | backend    | 12,445      | 7,530        | 19,975     | 4994    |
@@ -41,13 +41,13 @@ Multi-role stages appear once per dispatched role. The CI advisory
 | stage-07  | sign-off                  | pm         | 12,445      | 9,828        | 22,273     | 5569    |
 | stage-07  | sign-off                  | platform   | 12,445      | 2,400        | 14,845     | 3712    |
 | stage-08  | deploy                    | platform   | 12,445      | 2,400        | 14,845     | 3712    |
-| stage-09  | retrospective             | principal  | 12,445      | 14,066       | 26,511     | 6628    |
+| stage-09  | retrospective             | principal  | 12,445      | 14,528       | 26,973     | 6744    |
 
 ## Top 5 heaviest framework files
 
 | File                | Bytes  | Tokens~ |
 | ------------------- | ------ | ------- |
-| roles/principal.md  | 14,066 | 3517    |
+| roles/principal.md  | 14,528 | 3632    |
 | roles/red-team.md   | 13,683 | 3421    |
 | roles/pm.md         | 9,828  | 2457    |
 | roles/verifier.md   | 9,089  | 2273    |
@@ -79,7 +79,7 @@ when the manifest shows a relevant path or digest change.
 
 <!-- budget-data
 stage-01,22273
-stage-02,26511
+stage-02,26973
 stage-03,22273
 stage-03b,22273
 stage-04,19975
@@ -95,6 +95,6 @@ stage-06d,21534
 stage-06e,15163
 stage-07,22273
 stage-08,14845
-stage-09,26511
+stage-09,26973
 -->
 <!-- /generated -->

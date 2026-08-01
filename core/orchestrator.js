@@ -336,6 +336,9 @@ function buildDescriptor(stageDef, role, opts = {}) {
     toolBudget: opts.toolBudget ?? null,
     contextManifest: opts.contextManifest || null,
     knownPatterns: Array.isArray(opts.knownPatterns) ? opts.knownPatterns : [],
+    // 30.4: pre-fetched by runStageHeadless() (embedding is async; this
+    // function is not) — see core/memory/inject.js's module header.
+    priorKnowledge: Array.isArray(opts.priorKnowledge) ? opts.priorKnowledge : [],
     // When set, all workstreams of this stage dispatch to the same
     // subagent regardless of role (used by peer-review where the
     // workstreams are areas being reviewed but the dispatched agent
@@ -532,7 +535,7 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, priorKnowledge: opts.priorKnowledge });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       const descriptor = { ...baseDescriptor, knownPatterns };
       const prompt = withSpan("adapter.renderStagePrompt", {
@@ -560,11 +563,50 @@ function runStage(stageName, opts = {}) {
   });
 }
 
+// 30.4: feature/brief text to query memory against — the same text for
+// every role dispatched within one stage (retrieval is per-stage, not
+// per-role). Best-effort: an unreadable/absent brief just narrows the
+// query to ctx.feature (or empty, which short-circuits retrieval).
+function memoryQueryText(cwd, changeId, feature) {
+  const parts = [];
+  if (feature) parts.push(feature);
+  try {
+    const briefPath = path.join(pipelineRoot(cwd, changeId), "brief.md");
+    if (fs.existsSync(briefPath)) parts.push(fs.readFileSync(briefPath, "utf8"));
+  } catch {
+    // best-effort — retrieval still runs on ctx.feature alone
+  }
+  return parts.join("\n\n");
+}
+
+// 30.4: pre-fetch "## Prior Project Knowledge" before the synchronous
+// runStage()/buildDescriptor() pipeline runs — see core/memory/inject.js's
+// module header for why this can't live inside buildDescriptor() itself.
+// A no-op (no extra requires, no embedder load) when opts.priorKnowledge
+// is already supplied (tests) or the stage name doesn't resolve (runStage
+// will raise its own "Unknown stage" error momentarily).
+async function resolvePriorKnowledgeOpts(stageName, opts) {
+  if (opts.priorKnowledge !== undefined) return opts;
+  const stageDef = getStage(stageName);
+  if (!stageDef) return opts;
+  const cwd = opts.cwd || process.cwd();
+  const config = opts.config || loadConfig(cwd);
+  const isolation = opts.isolation || config.pipeline.isolation;
+  const feature = opts.feature || "";
+  const changeId = isolation === "bounded" ? changeIdFromFeature(feature) : null;
+  const queryText = memoryQueryText(cwd, changeId, feature);
+  const { priorKnowledgeForStage } = require("./memory/inject");
+  const { priorKnowledge, warning } = await priorKnowledgeForStage({ cwd, config, stageDef, queryText });
+  if (warning) process.stderr.write(`${warning}\n`);
+  return { ...opts, priorKnowledge };
+}
+
 // Headless variant of runStage — actually drives each adapter's invoke()
 // to spawn the host CLI per workstream. Resolves with an array of
 // {role, host, invokeResult, descriptor}. Honors per-workstream
 // capability check; rejects if any routed host has headless: false.
 async function runStageHeadless(stageName, opts = {}) {
+  opts = await resolvePriorKnowledgeOpts(stageName, opts);
   const plan = runStage(stageName, opts);
   const config = opts.config || loadConfig(opts.cwd || process.cwd());
   const onWorkstreamEvent = typeof opts.onWorkstreamEvent === "function" ? opts.onWorkstreamEvent : null;

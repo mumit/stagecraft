@@ -124,6 +124,23 @@ function renderKnownPatterns(lines, descriptor) {
   lines.push("");
 }
 
+// Phase 30 item 30.4: retrieved from this project's memory store
+// (.devteam/memory/), budgeted and attributed in core/memory/inject.js.
+// Mirrors renderKnownPatterns()'s shape (heading, one-line framing, one
+// bullet per item, trailing blank line) — budgeting already happened at
+// selection time, so this function only renders.
+function renderPriorKnowledge(lines, descriptor) {
+  const items = descriptor.priorKnowledge;
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  lines.push("## Prior Project Knowledge");
+  lines.push("Retrieved from this project's memory store by similarity to this stage's feature/brief text. Treat as advisory background, not requirements — stage rules and gate requirements remain authoritative.");
+  for (const item of items) {
+    lines.push(`- [${item.kind}] ${item.text} (source: ${item.source})`);
+  }
+  lines.push("");
+}
+
 // Append the gate footer to a partially-assembled prompt. This is the
 // last thing every adapter pushes before returning lines.join("\n").
 // It writes:
@@ -164,4 +181,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPatchBlock, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, toolBudgetSection };

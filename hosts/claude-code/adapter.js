@@ -347,7 +347,7 @@ function renderStagePrompt(descriptor, ctx) {
   lines.push(`Workstream: ${descriptor.workstreamId} (role: ${descriptor.role}, host: claude-code)`);
   lines.push(`Track: ${ctx.track}`);
   if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
-  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPriorKnowledge } = require("../../core/adapters/render-helpers");
   renderPatchBlock(ctx, lines);
   lines.push("");
   lines.push(`Use the **${agentName}** subagent (\`.claude/agents/${agentName}.md\`) for this workstream.`);
@@ -360,6 +360,7 @@ function renderStagePrompt(descriptor, ctx) {
   lines.push("");
   renderContextManifest(lines, descriptor);
   renderKnownPatterns(lines, descriptor);
+  renderPriorKnowledge(lines, descriptor);
   lines.push(allowedWritesCaption(capabilities.enforces.allowed_writes, capabilities.displayName));
   for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
   lines.push("");
