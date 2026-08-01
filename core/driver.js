@@ -21,6 +21,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { next, runStageHeadless, mergeWorkstreamGates } = require("./orchestrator");
 const { collect: collectPatterns } = require("./patterns");
+const { runReflector } = require("./learning/reflector");
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom } = require("./config");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
@@ -897,6 +898,7 @@ async function run(opts = {}) {
   const _runStageHeadless = opts.runStageHeadless || runStageHeadless;
   const _merge = opts.mergeWorkstreamGates || mergeWorkstreamGates;
   const _collectPatterns = opts.collectPatterns || collectPatterns;
+  const _runReflector = opts.runReflector || runReflector;
   const maxIterations = Number.isInteger(opts.maxIterations) ? opts.maxIterations : DEFAULT_MAX_ITERATIONS;
   const budgetUsd = typeof opts.budgetUsd === "number" ? opts.budgetUsd : null;
   if (budgetUsd === null) {
@@ -1916,6 +1918,26 @@ async function run(opts = {}) {
       _collectPatterns({ cwd, pipelineRoot: pipelineRoot(cwd, changeId) });
     } catch (err) {
       logEvent(cwd, changeId, { outcome: "pattern-collect-failed", error: String((err && err.message) || err) });
+    }
+  }
+
+  // Phase 30 item 30.3: opt-in run-end Reflector dispatch. Only on a clean
+  // completion (not on halts — a halted run's evidence is incomplete) and
+  // only when learning.reflector: true. Fire-and-forget like auto-collection
+  // above: runReflector() already never throws (see core/learning/reflector.js),
+  // but the try/catch here is defense in depth so a future defect there still
+  // can't take down the run summary.
+  if (summary.completed && config.learning.reflector === true) {
+    try {
+      await _runReflector({
+        cwd,
+        changeId,
+        pipelineRoot: pipelineRoot(cwd, changeId),
+        config,
+        logEvent: (entry) => logEvent(cwd, changeId, entry),
+      });
+    } catch (err) {
+      logEvent(cwd, changeId, { outcome: "reflector-dispatch-failed", reason: String((err && err.message) || err) });
     }
   }
 

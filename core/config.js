@@ -64,6 +64,14 @@ const DEFAULTS = {
     // stays an explicit `devteam patterns demote <id>` operator action.
     demotion_recurrence_threshold: 3,
   },
+  learning: {
+    // 30.3: opt-in run-end Reflector dispatch (core/learning/reflector.js).
+    // Off by default — it's an extra headless call per run. When true, the
+    // driver dispatches it once after a clean pipeline-complete; proposals
+    // land in the same candidate store patterns.collect() feeds, tagged
+    // source: "reflector". Promotion is still the existing human flow.
+    reflector: false,
+  },
 };
 
 function configPath(cwd) {
@@ -123,6 +131,9 @@ function loadConfig(cwd = process.cwd()) {
           && parsed.patterns.demotion_recurrence_threshold > 0
           ? parsed.patterns.demotion_recurrence_threshold
           : DEFAULTS.patterns.demotion_recurrence_threshold,
+      },
+      learning: {
+        reflector: parsed.learning?.reflector === true,
       },
       _source: "file",
       _path: p,
@@ -291,6 +302,10 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #     - id: browser");
   lines.push("  #       command: \"npm run test:browser\"");
   lines.push("  #       resource_group: browser   # suites sharing a group never overlap");
+  lines.push("");
+  lines.push("# learning:");
+  lines.push("  # reflector: false  # opt-in run-end Reflector dispatch (phase-30 item 30.3)");
+  lines.push("  #                   # proposes pattern candidates, never auto-promotes");
   lines.push("");
   if (opts.adapter) {
     lines.push("deploy:");

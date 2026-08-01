@@ -268,6 +268,51 @@ when, reason, and the counters at the moment of demotion) that survives a later
 `devteam patterns promote <pattern-id>` re-promotion. Demotion is reversible; retirement
 (`devteam patterns retire`) is not.
 
+## Reflector (ACE-lite)
+
+Collection (above) only sees what a gate recorded — a blocker, a warning, a
+follow-up. It never sees what the run got *right* on the first try, and it can't
+suggest that two promoted patterns are really the same thing, or that a counter looks
+wrong given what actually happened. The Reflector (`core/learning/reflector.js`, item
+30.3) is a second, optional pass over the same run that closes that gap, following the
+ACE pattern (Zhang et al., "Agentic Context Engineering", [arXiv:2510.04618]) of a
+Reflector that distills execution feedback into delta proposals for a separate Curator
+to accept.
+
+Opt-in only — set `learning.reflector: true` in `.devteam/config.yml`. When enabled, the
+driver dispatches one extra headless call after a *clean* `pipeline-complete` (never on
+a halt — a halted run's evidence is incomplete). It is routed like any other role
+(`routing.roles.reflector`, falling back to `routing.default_host`), so a project can
+point it at a cheaper model than the build agents use. The dispatch prompt embeds this
+run's gate summaries, its `run-log.jsonl` events (heartbeats stripped), and the current
+promoted-pattern set — the model is not given tool access to go read them live, and it
+outputs nothing but JSON matching the `candidates-delta` schema
+(`core/gates/schemas/learning/candidates-delta.schema.json`, validated by
+`core/learning/validate-candidates-delta.js`):
+
+- `new_candidates` — including `tier: "positive"`, the one tier gate-derived collection
+  can never produce (a gate FAIL/blocker is the only thing collection reads). These land
+  in the exact same observations store gate-derived candidates come from
+  (`patterns.ingestReflectorCandidates`), tagged `source: "reflector"`, and go through
+  the same fingerprint dedup — a reflector-sourced observation can reinforce an existing
+  candidate's `pattern_key` instead of always minting a new one.
+- `counter_adjustments` and `dedup_merges` — advisory suggestions about existing promoted
+  patterns' `stats` or near-duplicate `prompt_text`. These are **not applied
+  automatically**; they're logged in full as a `reflector-proposal` run-log event for an
+  operator to act on (or ignore) through the existing `devteam patterns
+  demote`/`promote` flow.
+
+Malformed output — invalid JSON, or JSON that fails schema validation — is discarded
+*whole*. Nothing partial is ever ingested; exactly one `reflector-output-malformed`
+run-log event is written and the run is otherwise unaffected. Any dispatch failure (no
+adapter, no `headlessCommand`, non-zero exit, timeout) is the same fire-and-forget
+contract collection already has: logged once as `reflector-dispatch-failed`, never fails
+the run.
+
+The Curator — the human running `devteam patterns promote` — is unchanged by any of
+this. The Reflector proposes; nothing here promotes automatically (see [Open
+Decisions](#open-decisions)).
+
 ## Prompt Injection
 
 At dispatch time, Stagecraft selects relevant promoted patterns and adds a bounded
@@ -368,6 +413,12 @@ Phase 30.2 closed the outcome-feedback half of the design: `stats.injected` and
 [Outcome-Feedback Counters](#outcome-feedback-counters)), and `devteam patterns demote`
 gives operators a reversible response to a pattern that keeps recurring after
 injection. `stats.noise_reports` remains unwired — no command produces one yet.
+
+Phase 30.3 added the opt-in Reflector pass (see [Reflector
+(ACE-lite)](#reflector-ace-lite)): an extra run-end dispatch that proposes candidates
+gate-derived collection structurally cannot — most notably `tier: "positive"` — plus
+advisory counter/dedup suggestions an operator can act on. Off by default; promotion is
+unchanged.
 
 ## Open Decisions
 

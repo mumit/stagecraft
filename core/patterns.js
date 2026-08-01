@@ -423,6 +423,35 @@ function collect({ cwd, pipelineRoot }) {
   return { added, total: all.length, candidates: candidates.length, suppressed, recurrenceFlagged, dir: patternsDir(cwd) };
 }
 
+// 30.3: land Reflector-proposed new_candidates (core/gates/schemas/learning/
+// candidates-delta.schema.json, already validated by
+// core/learning/validate-candidates-delta.js before this is called) into the
+// SAME observations store gate-derived candidates come from, tagged
+// source: "reflector". Reuses observationFor's domain/detector/pattern_key
+// inference (fed a synthetic gate + the delta item in place of a real gate
+// blocker/warning) so a reflector-sourced observation is structurally
+// identical to a gate-derived one — including fingerprint dedup, and the
+// ability to reinforce (share a pattern_key with) an existing candidate
+// instead of always minting a new one. Promotion is still the existing
+// human `devteam patterns promote` flow; this only ever appends candidates.
+function ingestReflectorCandidates({ cwd, candidates }) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return { added: 0, total: readObservations(cwd).length };
+  const existing = readObservations(cwd);
+  const byFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
+  let added = 0;
+  for (const item of candidates) {
+    if (!item || typeof item !== "object") continue;
+    const gate = { stage: item.stage || "reflector", status: null, workstream: item.workstream };
+    const obs = observationFor({ cwd, gate, item, tier: item.tier, source: "reflector" });
+    if (!byFingerprint.has(obs.fingerprint)) {
+      byFingerprint.set(obs.fingerprint, obs);
+      added += 1;
+    }
+  }
+  if (added > 0) writeObservations(cwd, [...byFingerprint.values()]);
+  return { added, total: byFingerprint.size };
+}
+
 function candidatesFromObservations(observations) {
   const groups = new Map();
   for (const obs of observations) {
@@ -700,6 +729,7 @@ module.exports = {
   DEFAULT_BUDGET,
   patternsDir,
   collect,
+  ingestReflectorCandidates,
   list,
   promote,
   retire,

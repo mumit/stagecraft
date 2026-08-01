@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stagecraft:schema:learning:candidates-delta",
+  "title": "Reflector Candidates Delta",
+  "$comment": "NOT a pipeline stage gate. core/gates/validator.js and the stage-*.schema.json files next door validate pipeline/gates/*.json written by dispatched build/review workstreams and are read by every host adapter's gate footer. This schema instead describes the one-shot advisory output of the opt-in Reflector pass (plans/phase-30-closed-learning-loop.md item 30.3, ACE arXiv:2510.04618) — it never becomes a gate, is read once by core/learning/reflector.js, and is discarded whole if invalid. It lives under gates/schemas/ for the same tooling conventions (draft 2020-12, urn:stagecraft:schema:* $id, contract.test.js's generic schema-shape checks) but in its own learning/ subdirectory so the stage↔schema 1:1 sweep in contract.test.js and scripts/consistency.js (which only look at *.schema.json files directly under gates/schemas/) doesn't need to special-case a schema with no matching stage.",
+  "description": "Validated by core/learning/validate-candidates-delta.js (hand-written checks, matching this repo's existing convention of not depending on a JSON Schema validator library). Malformed or non-conforming output is discarded in full — never partially applied.",
+  "type": "object",
+  "required": ["schema_version", "new_candidates", "counter_adjustments", "dedup_merges"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version this payload conforms to."
+    },
+    "new_candidates": {
+      "type": "array",
+      "description": "New pattern-candidate proposals. Landed into the same observations store gate-derived candidates come from (core/patterns.js ingestReflectorCandidates), tagged source: \"reflector\". Promotion is still the existing human `devteam patterns promote` flow — nothing here is auto-promoted.",
+      "items": {
+        "type": "object",
+        "required": ["tier", "signal", "summary"],
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": ["blocker", "warning", "nudge", "positive"],
+            "description": "Same tier vocabulary as promoted patterns (core/patterns.js DEFAULT_BUDGET). \"positive\" is the ACE-lite addition — a reinforcement of something the run got right, not just a failure signal."
+          },
+          "signal": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Short slug-able identifier for what was observed — feeds the same detector-derivation core/patterns.js uses for gate-derived observations (detectorFrom)."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What happened and why it matters. Feeds domain inference (core/patterns.js domainFrom) the same way a gate blocker's description does."
+          },
+          "workstream": {
+            "type": "string",
+            "description": "Optional. Role this observation concerns, e.g. \"backend\". Absent means unscoped."
+          },
+          "stage": {
+            "type": "string",
+            "description": "Optional. Stage id this observation concerns, e.g. \"stage-04\"."
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "counter_adjustments": {
+      "type": "array",
+      "description": "Suggested corrections to a promoted pattern's stats counters, when run evidence contradicts them. Advisory only — logged for audit (run-log.jsonl outcome: reflector-proposal), not auto-applied. An operator can act on the suggestion via `devteam patterns demote`/`promote` as today.",
+      "items": {
+        "type": "object",
+        "required": ["pattern_id", "field", "delta", "reason"],
+        "properties": {
+          "pattern_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "id of an entry in the currently-promoted set (embedded in the dispatch prompt)."
+          },
+          "field": {
+            "type": "string",
+            "enum": ["injected", "recurrence_after_injection", "noise_reports"],
+            "description": "Which stats counter this suggestion concerns (core/patterns.js stats shape)."
+          },
+          "delta": {
+            "type": "integer",
+            "description": "Suggested signed adjustment, e.g. -1."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why the run's evidence suggests this counter is wrong."
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "dedup_merges": {
+      "type": "array",
+      "description": "Suggested merges of two or more promoted patterns that describe the same underlying behavior. Advisory only, same audit-not-applied treatment as counter_adjustments.",
+      "items": {
+        "type": "object",
+        "required": ["keep_id", "merge_ids", "reason"],
+        "properties": {
+          "keep_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "id of the promoted pattern to keep."
+          },
+          "merge_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "ids of promoted pattern(s) proposed to fold into keep_id."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why these describe the same underlying behavior."
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}
