@@ -131,6 +131,52 @@ describe("devteam init --adapter", () => {
   });
 });
 
+// 30.5: devteam init offers (never auto-installs) the SKILL.md export path.
+describe("devteam init: SKILL.md export offer", () => {
+  function seedPromotedPattern(cwd) {
+    fs.mkdirSync(path.join(cwd, ".devteam", "patterns"), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, ".devteam", "patterns", "promoted.json"),
+      JSON.stringify({
+        schema_version: "1.0",
+        patterns: [{
+          id: "some-pattern",
+          status: "promoted",
+          tier: "warning",
+          domain: "docs",
+          prompt_text: "Document user-visible HTTP endpoints during implementation.",
+          evidence: { observations: 1, last_reinforced: "2026-07-01" },
+          stats: { injected: 0, recurrence_after_injection: 0, noise_reports: 0 },
+        }],
+      }, null, 2),
+    );
+  }
+
+  it("mentions the export tip when promoted patterns exist and the host has a skills directory", () => {
+    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
+    seedPromotedPattern(cwd);
+    const r = runCLI(["init", "--host", "claude-code", "--cwd", cwd]);
+    assert.equal(r.status, 0, `init failed: ${r.stderr}`);
+    assert.match(r.stdout, /devteam patterns export --skill/);
+    assert.match(r.stdout, /\.claude\/skills/);
+  });
+
+  it("does not mention the export tip when no patterns are promoted", () => {
+    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
+    const r = runCLI(["init", "--host", "claude-code", "--cwd", cwd]);
+    assert.equal(r.status, 0, `init failed: ${r.stderr}`);
+    assert.doesNotMatch(r.stdout, /patterns export/);
+  });
+
+  it("does not mention the export tip for a host without a skills directory", () => {
+    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
+    seedPromotedPattern(cwd);
+    const r = runCLI(["init", "--host", "generic", "--cwd", cwd]);
+    assert.equal(r.status, 0, `init failed: ${r.stderr}`);
+    assert.doesNotMatch(r.stdout, /patterns export/);
+  });
+});
+
 describe("devteam init --profile dogfood", () => {
   it("writeDogfoodGitignoreBlock appends the dogfood block to .gitignore", () => {
     const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
