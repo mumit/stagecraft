@@ -15,6 +15,8 @@ const flags = {
   text: { type: "string", description: "Prompt text for promote" },
   reason: { type: "string", description: "Retirement or demotion reason" },
   operator: { type: "string", description: "Override the recorded demote operator (default: OS user)" },
+  skill: { type: "boolean", description: "Export format for `export`: Agent Skills SKILL.md (currently the only supported format)" },
+  out: { type: "string", description: "Parent directory for `export --skill` (default: .devteam/); the skill itself is written to <out>/learned-patterns/" },
   help: { type: "boolean", description: "Show this help" },
 };
 
@@ -76,7 +78,7 @@ function renderDemoted(pattern) {
 
 function run(positional, commandFlags) {
   if (commandFlags.help) {
-    console.log(generateHelp("devteam patterns <collect|list|review|promote|retire|demote|stats> [options]", flags));
+    console.log(generateHelp("devteam patterns <collect|list|review|promote|retire|demote|export|stats> [options]", flags));
     process.exit(0);
   }
   const sub = positional[0];
@@ -167,6 +169,25 @@ function run(positional, commandFlags) {
     return;
   }
 
+  if (sub === "export") {
+    if (!commandFlags.skill) {
+      console.error("devteam patterns export requires --skill (the only supported export format)");
+      console.error("Usage: devteam patterns export --skill [--out <dir>]");
+      process.exit(2);
+      return;
+    }
+    try {
+      const result = patterns.exportSkill({ cwd, outDir: commandFlags.out });
+      if (commandFlags.json) { console.log(JSON.stringify(result, null, 2)); return; }
+      console.log(`Exported ${result.patternCount} promoted pattern(s) across ${result.domains.length} domain(s) to ${path.relative(cwd, result.file)}`);
+      console.log(`Install by copying into a host's skills directory, e.g. cp -r ${path.relative(cwd, result.dir)} .claude/skills/${patterns.DEFAULT_SKILL_NAME}`);
+    } catch (err) {
+      console.error(`devteam patterns export: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (sub === "stats") {
     const result = patterns.stats({ cwd });
     if (commandFlags.json) { console.log(JSON.stringify(result, null, 2)); return; }
@@ -182,7 +203,7 @@ function run(positional, commandFlags) {
   }
 
   console.error(`Unknown patterns subcommand: ${sub || "(none)"}`);
-  console.error("Usage: devteam patterns <collect|list|review|promote|retire|demote|stats>");
+  console.error("Usage: devteam patterns <collect|list|review|promote|retire|demote|export|stats>");
   process.exit(2);
 }
 

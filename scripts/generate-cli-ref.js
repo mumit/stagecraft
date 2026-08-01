@@ -151,8 +151,8 @@ const COMMANDS = [
   },
   {
     name:        "patterns",
-    synopsis:    "devteam patterns <collect|list|review|promote|retire|demote|stats> [options]",
-    description: "Project-local pattern learning. Collect sanitized observations, review candidates (flagging recurrence-heavy patterns for demotion), promote advisory guidance, retire or demote patterns, and inspect stats.",
+    synopsis:    "devteam patterns <collect|list|review|promote|retire|demote|export|stats> [options]",
+    description: "Project-local pattern learning. Collect sanitized observations, review candidates (flagging recurrence-heavy patterns for demotion), promote advisory guidance, retire or demote patterns, export promoted patterns as an Agent Skills SKILL.md, and inspect stats.",
   },
   {
     name:        "corpus",

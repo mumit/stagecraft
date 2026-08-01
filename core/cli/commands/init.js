@@ -6,6 +6,7 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { listHosts, loadAdapter } = require(path.join(__dirname, "..", "..", "router"));
 const { writeConfigIfAbsent, configPath, KNOWN_DEPLOY_ADAPTERS, DEPLOY_ADAPTER_ARTIFACTS } = require(path.join(__dirname, "..", "..", "config"));
 const { writeGitignoreBlock } = require(path.join(__dirname, "..", "..", "gitignore"));
+const patternsLib = require(path.join(__dirname, "..", "..", "patterns"));
 
 const DEPLOY_SRC_DIR = path.join(__dirname, "..", "..", "deploy");
 
@@ -114,12 +115,32 @@ function run(positional, _flags) {
     console.log(`  - exists  AGENTS.md`);
   }
 
+  const installedAdapters = [];
   for (const hostName of hosts) {
     console.log(`\nInstalling host adapter: ${hostName}`);
     const adapter = loadAdapter(hostName);
+    installedAdapters.push({ hostName, adapter });
     const r = adapter.install(cwd, { force: !!_flags.force });
     console.log(`  written: ${r.written.length}, skipped: ${r.skipped.length}`);
     for (const f of r.warnings) console.log(`  ⚠️  ${f}`);
+  }
+
+  // 30.5: offer (never auto-install) the SKILL.md export path when there's
+  // both something to export and somewhere for it to go. Reads each
+  // installed adapter's own capabilities.skillsDir rather than hardcoding
+  // host names, so a new host adapter picks this up for free.
+  const hostSkillsDirs = installedAdapters
+    .map(({ hostName, adapter }) => ({ hostName, skillsDir: adapter.capabilities && adapter.capabilities.skillsDir }))
+    .filter((entry) => entry.skillsDir);
+  if (hostSkillsDirs.length > 0) {
+    const promotedCount = patternsLib.loadPromoted(cwd).filter((p) => p.status === "promoted").length;
+    if (promotedCount > 0) {
+      console.log(`\n${promotedCount} promoted pattern(s) found in .devteam/patterns/promoted.json.`);
+      console.log("  Tip: export them as a portable Agent Skill: devteam patterns export --skill");
+      for (const { hostName, skillsDir } of hostSkillsDirs) {
+        console.log(`       then copy the result into ${hostName}'s skills directory: ${skillsDir}/${patternsLib.DEFAULT_SKILL_NAME}/`);
+      }
+    }
   }
 
   const deployAdapterToInstall = adapter || "local";
