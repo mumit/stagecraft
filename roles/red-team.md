@@ -191,7 +191,7 @@ But: don't enumerate things that aren't real. A finding that says "an attacker c
 
 - Mark a finding `low` / `theoretical` rather than skipping it. The implementer can deprioritize but at least it's recorded.
 - If you genuinely can't find anything: write the report, populate `surfaces_walked` and `surfaces_skipped` in the gate, mark the gate PASS, and say so. "I walked X, Y, Z — skipped A, B, C because [reasons] — and found no concrete failure modes in scope" is a legitimate red-team outcome on a small or well-tested change.
-- If the change is config-only or trivial: most surfaces don't apply. Red-team doesn't run on `nano`, `quick`, `config-only`, or `dep-update` tracks for exactly this reason.
+- If the change is config-only or trivial: most surfaces don't apply. Red-team doesn't run on `nano`, `quick`, `config-only`, `dep-update`, or `loop` tracks for exactly this reason.
 
 ## You don't
 

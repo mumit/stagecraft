@@ -14,7 +14,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 
 - [user-guide.md](user-guide.md) — daily-use reference: running stages, multi-host setups, headless mode
 - [user-guide.md § Prototype first, harden later](user-guide.md#prototype-first-harden-later) — short prototype-mode tutorial using a token cost estimator example
-- [tracks.md](tracks.md) — which of the six tracks to pick for a given change, plus why prototype mode is a pre-SDLC workflow rather than a track
+- [tracks.md](tracks.md) — which of the seven tracks to pick for a given change, plus why prototype mode is a pre-SDLC workflow rather than a track
 - [conventions.md](conventions.md) — pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments)
 - [runbooks/README.md](runbooks/README.md) — troubleshooting index: symptom → runbook section
 - [cost.md](cost.md) — cost tracking, pricing table, and budget workflow

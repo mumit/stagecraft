@@ -77,7 +77,7 @@ function writeStageGates(cwd, stageName, opts = {}) {
   const { rolesForStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
   const roles = rolesForStage(stageDef, trackName);
   if (roles.length === 1) {
-    writeGate(cwd, stageDef.stage, { ...passGate(stageDef.stage, opts.extra || {}), track: trackName });
+    writeGate(cwd, stageDef.stage, { ...passGate(stageDef.stage, opts.extra || {}), workstream: roles[0], track: trackName });
   } else {
     for (const role of roles) {
       writeGate(cwd, `${stageDef.stage}.${role}`, {
@@ -174,6 +174,60 @@ describe("e2e: nano track walks init → ... → pipeline-complete", () => {
       const g = JSON.parse(fs.readFileSync(p, "utf8"));
       assert.equal(g.status, "PASS", `${stageId}.json must be PASS for nano to complete`);
     }
+  });
+});
+
+describe("e2e: loop track — exactly 4 dispatches to pipeline-complete (29.1)", () => {
+  it("walks requirements -> build -> qa -> peer-review with no merges", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: loop\n",
+    }));
+
+    const trace = walkPipeline(cwd, { track: "loop" });
+    const stageActions = trace.filter((t) => t.action !== "pipeline-complete");
+
+    // Exactly 4 dispatches: one action per stage, no merge (single-role
+    // build/peer-review on this track — see loopBuildRole in stages.js).
+    assert.equal(stageActions.length, 4, `expected exactly 4 dispatches, got: ${JSON.stringify(stageActions)}`);
+    assert.deepEqual(
+      stageActions.map((t) => t.name),
+      ["requirements", "build", "qa", "peer-review"],
+    );
+    assert.ok(stageActions.every((t) => t.action === "run-stage"), `every dispatch should be run-stage (no merges); got: ${JSON.stringify(stageActions.map((t) => t.action))}`);
+    assert.equal(trace[trace.length - 1].action, "pipeline-complete");
+  });
+
+  it("leaves a complete audit trail — one merged gate per stage, all PASS", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: loop\n",
+    }));
+    walkPipeline(cwd, { track: "loop" });
+
+    for (const stageId of ["stage-01", "stage-04", "stage-06", "stage-05"]) {
+      const p = path.join(cwd, "pipeline", "gates", `${stageId}.json`);
+      assert.ok(fs.existsSync(p), `missing audit trail: ${stageId}.json`);
+      const g = JSON.parse(fs.readFileSync(p, "utf8"));
+      assert.equal(g.status, "PASS", `${stageId}.json must be PASS for loop to complete`);
+    }
+    // Build/peer-review must NOT have written per-workstream files — the
+    // dynamic single-role dispatch writes straight to the merged gate name.
+    for (const stageId of ["stage-04", "stage-05"]) {
+      for (const role of ["backend", "frontend", "platform", "qa"]) {
+        const p = path.join(cwd, "pipeline", "gates", `${stageId}.${role}.json`);
+        assert.ok(!fs.existsSync(p), `unexpected per-workstream gate on loop: ${stageId}.${role}.json`);
+      }
+    }
+  });
+
+  it("build and peer-review both dispatch the backend workstream by default", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: loop\n",
+    }));
+    walkPipeline(cwd, { track: "loop" });
+    const build = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "gates", "stage-04.json"), "utf8"));
+    const review = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "gates", "stage-05.json"), "utf8"));
+    assert.equal(build.workstream, "backend");
+    assert.equal(review.workstream, "backend");
   });
 });
 

@@ -144,10 +144,12 @@ function explainMatches(matches) {
 // Tracks where the stoplist applies. Full and hotfix bypass the stoplist by
 // design: full runs the complete pipeline anyway (its own safety story); hotfix
 // has a tightly-scoped, manually-reviewed path. Lighter tracks must clear the
-// stoplist unless --force is passed.
+// stoplist unless --force is passed. `loop` (29.1) is the lightest track of
+// all — the consequence ceiling applies to it exactly like the other lighter
+// tracks, so it's guarded here too.
 // Single source of truth — imported by both bin/devteam (interactive path) and
 // core/driver.js (autonomous path) so both enforce the same set. (Phase 1 § 1.1)
-const STOPLIST_TRACKS = new Set(["quick", "nano", "config-only", "dep-update"]);
+const STOPLIST_TRACKS = new Set(["quick", "nano", "config-only", "dep-update", "loop"]);
 
 if (require.main === module) {
   const description = process.argv.slice(2).filter((a) => a !== "--force").join(" ");

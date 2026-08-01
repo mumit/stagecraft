@@ -65,6 +65,22 @@ describe("config: loadConfig", () => {
     }));
     assert.equal(loadConfig(cwd).pipeline.require_signed_gates, true);
   });
+
+  // 29.1: pipeline.loop_build_role — the single workstream the `loop` track's
+  // build + peer-review stages dispatch. See loopBuildRole() in
+  // core/pipeline/stages.js for the validation/fallback that consumes this.
+  it("defaults loop_build_role to backend when absent", () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: generic\n" }));
+    assert.equal(loadConfig(cwd).pipeline.loop_build_role, "backend");
+    assert.equal(DEFAULTS.pipeline.loop_build_role, "backend");
+  });
+
+  it("parses an explicit loop_build_role override", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  loop_build_role: frontend\n",
+    }));
+    assert.equal(loadConfig(cwd).pipeline.loop_build_role, "frontend");
+  });
 });
 
 describe("config: resolveHost precedence", () => {

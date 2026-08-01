@@ -68,8 +68,13 @@ function symbol(track, stageName) {
     return "✓⁺";
   }
 
-  // Nano peer-review is scoped (single reviewer)
-  if (stageName === "peer-review" && track === "nano") {
+  // Nano peer-review is scoped (single reviewer). Loop's build and
+  // peer-review are both scoped to a single config-overridable workstream
+  // (29.1).
+  if (stageName === "peer-review" && (track === "nano" || track === "loop")) {
+    return "✓ˢ";
+  }
+  if (stageName === "build" && track === "loop") {
     return "✓ˢ";
   }
 
@@ -107,8 +112,10 @@ function renderMatrix() {
   lines.push("   Legend:");
   lines.push("   ✓⁺ = conditional stage — only runs when stage-04a triggers it");
   lines.push("       (security-review: security_review_required; migration-safety: migration_safety_required)");
-  lines.push("   ✓ˢ = scoped peer-review on nano (single reviewer, required_approvals=1).");
-  lines.push("       See PEER_REVIEW_SIZING in core/pipeline/stages.js.");
+  lines.push("   ✓ˢ = scoped to a single workstream — nano peer-review (single reviewer,");
+  lines.push("       required_approvals=1); loop build + peer-review (single config-overridable");
+  lines.push("       role, default backend). See PEER_REVIEW_SIZING / loopBuildRole in");
+  lines.push("       core/pipeline/stages.js.");
   lines.push("   ✓ᵐ = mechanical script (preflight/stage-04e), not an LLM dispatch.");
   lines.push("   3b = executable-spec (Gherkin scenarios from acceptance criteria)");
   lines.push("   4a = pre-review (lint + dep review + SCA + trigger heuristics)");

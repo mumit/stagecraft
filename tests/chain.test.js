@@ -205,3 +205,48 @@ describe("gate chain: verify", () => {
     assert.equal(fs.readFileSync(path.join(gatesDirOf(cwd), "stage-01.json"), "utf8"), before);
   });
 });
+
+// 29.1: the `loop` track lists stages in a NON-numeric order — qa (stage-06)
+// runs before peer-review (stage-05), the reverse of every other track.
+// predecessorGate() walks STAGES_BY_TRACK in declared order, not by stage
+// number, so the chain must still link correctly on this track.
+describe("gate chain: loop track (non-numeric stage order)", () => {
+  it("stamps and verifies the inverted stage-06 -> stage-05 predecessor link", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-04", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-06", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-05", { status: "PASS", track: "loop" });
+    stampAll(gatesDirOf(cwd), "loop", { secret: null });
+
+    const g06 = JSON.parse(fs.readFileSync(path.join(gatesDirOf(cwd), "stage-06.json"), "utf8"));
+    const g05 = JSON.parse(fs.readFileSync(path.join(gatesDirOf(cwd), "stage-05.json"), "utf8"));
+    assert.equal(g06.chain.prev_stage, "stage-04", "stage-06's predecessor on loop is stage-04");
+    assert.equal(g05.chain.prev_stage, "stage-06", "stage-05's predecessor on loop is stage-06, not stage-04");
+    assert.equal(g05.chain.prev_hash, canonicalGateHash(g06));
+
+    const r = verifyChain(gatesDirOf(cwd), "loop");
+    assert.equal(r.ok, true);
+    assert.equal(r.checked, 4);
+    assert.deepEqual(r.breaks, []);
+    assert.deepEqual(r.unstamped, []);
+  });
+
+  it("tampering with stage-06 breaks stage-05's recorded hash on loop", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-04", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-06", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-05", { status: "PASS", track: "loop" });
+    stampAll(gatesDirOf(cwd), "loop", { secret: null });
+
+    const p06 = path.join(gatesDirOf(cwd), "stage-06.json");
+    const g06 = JSON.parse(fs.readFileSync(p06, "utf8"));
+    g06.status = "FAIL";
+    fs.writeFileSync(p06, JSON.stringify(g06, null, 2) + "\n");
+
+    const r = verifyChain(gatesDirOf(cwd), "loop");
+    assert.equal(r.ok, false);
+    assert.ok(r.breaks.some((b) => b.stage === "stage-05" && b.prev_stage === "stage-06"));
+  });
+});

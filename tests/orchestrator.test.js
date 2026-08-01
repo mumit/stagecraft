@@ -57,6 +57,31 @@ describe("orchestrator: runStage decomposition", () => {
     const cwd = track(makeTargetProject());
     assert.throws(() => runStage("bogus", { cwd }), /Unknown stage/);
   });
+
+  // 29.1: runStage must thread ctx.track through to buildDescriptor so the
+  // loop-track template swap actually reaches the rendered prompt, not just
+  // the unit-level buildDescriptor() call.
+  it("runStage on the loop track renders the loop brief template in the prompt", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: loop\n",
+    }));
+    const r = runStage("requirements", { cwd, track: "loop" });
+    assert.equal(r.workstreams.length, 1);
+    assert.equal(r.workstreams[0].descriptor.template, "loop-brief-template.md");
+    assert.match(r.workstreams[0].prompt, /loop-brief-template\.md/);
+  });
+
+  it("runStage on build/peer-review dispatches a single backend workstream on the loop track", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: loop\n",
+    }));
+    const build = runStage("build", { cwd, track: "loop" });
+    assert.equal(build.workstreams.length, 1);
+    assert.equal(build.workstreams[0].role, "backend");
+    const review = runStage("peer-review", { cwd, track: "loop" });
+    assert.equal(review.workstreams.length, 1);
+    assert.equal(review.workstreams[0].role, "backend");
+  });
 });
 
 describe("orchestrator: buildDescriptor honors overrides", () => {
@@ -84,6 +109,30 @@ describe("orchestrator: buildDescriptor honors overrides", () => {
     const req = getStage("requirements");
     const pm = buildDescriptor(req, "pm");
     assert.deepEqual(pm.allowedWrites, req.allowedWrites);
+  });
+
+  // 29.1: requirements.trackOverrides.loop swaps the template for the
+  // one-screen loop brief. Same stage id, same gate, only the template changes.
+  it("uses the loop-track brief template when track is 'loop'", () => {
+    const req = getStage("requirements");
+    const d = buildDescriptor(req, "pm", { track: "loop" });
+    assert.equal(d.template, "loop-brief-template.md");
+    assert.equal(d.artifact, req.artifact, "artifact path is unchanged — only the template swaps");
+    assert.equal(d.expectedGate, req.gate, "gate shape is unchanged on loop");
+  });
+
+  it("uses the standard brief template on every other track", () => {
+    const req = getStage("requirements");
+    for (const t of ["full", "quick", "nano", "config-only", "dep-update", "hotfix", undefined]) {
+      const d = buildDescriptor(req, "pm", { track: t });
+      assert.equal(d.template, "brief-template.md", `expected standard template for track ${t}`);
+    }
+  });
+
+  it("repair intent takes precedence over the loop track override", () => {
+    const req = getStage("requirements");
+    const d = buildDescriptor(req, "pm", { track: "loop", intent: "repair" });
+    assert.equal(d.template, req.repairOverride.template, "repair diagnosis template wins over the loop track template");
   });
 
   it("passes through stage.subagent override to descriptor", () => {

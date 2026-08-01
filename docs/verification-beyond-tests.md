@@ -64,7 +64,7 @@ Tooling not installed is recorded as `attempted_but_blocked:<method>` — a WARN
 
 ## Track inclusion
 
-`full` only. The `quick`, `nano`, `hotfix`, `config-only`, and `dep-update` tracks rely on stage-06 example tests as their verification ceiling, trading rigour for speed. The `full` track runs this stage in addition to those tests.
+`full` only. The `quick`, `nano`, `hotfix`, `config-only`, `dep-update`, and `loop` tracks rely on stage-06 example tests as their verification ceiling, trading rigour for speed. The `full` track runs this stage in addition to those tests.
 
 ---
 
