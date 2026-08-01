@@ -79,6 +79,9 @@ Project-local storage is the default:
   observations.jsonl
   promoted.json
   retired.json
+  demoted.json           # patterns an operator sent back to candidate (30.2)
+  recurrence-checked.json  # internal: (gate file, pattern id) pairs already
+                           # counted toward recurrence_after_injection
   pending-review.json
 ```
 
@@ -148,6 +151,12 @@ Promoted patterns are human-reviewed and eligible for prompt injection.
 }
 ```
 
+A demoted pattern (`devteam patterns demote <id>`) carries this same shape into
+`demoted.json` with `status: "candidate"` and a `demotion_history` array — one entry
+per demotion, each `{ demoted_at, demoted_by, reason, counters_at_demotion }` — so a
+later `devteam patterns promote <id>` restores the pattern without losing the audit
+trail.
+
 `prompt_text` is the only text that coding agents see. It must be operator-reviewed,
 short, and written as prevention guidance rather than a command to edit a specific
 file.
@@ -211,6 +220,7 @@ devteam patterns collect   # optional — the driver already does this at run en
 devteam patterns review
 devteam patterns promote <candidate-id>
 devteam patterns retire <pattern-id>
+devteam patterns demote <pattern-id>
 devteam patterns stats
 ```
 
@@ -226,6 +236,37 @@ devteam patterns stats
 Promotion is an explicit operator decision that writes to `promoted.json`. A future
 automation may recommend promotion after recurrence thresholds, but it should still
 require a review step unless the project has explicitly enabled auto-promotion.
+
+## Outcome-Feedback Counters
+
+Every promoted pattern carries `stats.injected`, `stats.recurrence_after_injection`,
+and `stats.noise_reports` (see [Promoted Pattern Shape](#promoted-pattern-shape)).
+These are wired, not aspirational:
+
+- **`injected`** increments once per real dispatch that included the pattern in a
+  rendered prompt — a headless invoke, or the interactive `devteam stage` path where
+  the operator is about to paste the prompt into a host. A preview/render-only call
+  (`devteam reproduce`, `devteam replay --dry-run`) never increments it, because no
+  model ever sees that rendering.
+- **`recurrence_after_injection`** increments at collection time: when a blocker in a
+  gate maps to a `pattern_key` that was injected into that same stage's dispatch this
+  run, the injected prevention text evidently didn't prevent the recurrence. Detection
+  is keyed by gate file identity (the live gate, or each archived
+  `stage-*.attempt-N.json`), not by observation fingerprint — a recurring blocker has
+  the same semantic fingerprint as the observation that got it promoted in the first
+  place, so fingerprint-based dedup can't be the recurrence signal. Re-running
+  `devteam patterns collect` over an unchanged `gates/` directory never double-counts.
+- **`noise_reports`** remains reserved for a future operator-facing "this pattern is
+  wrong for us" report; nothing increments it yet.
+
+`devteam patterns review` flags a promoted pattern as a **demotion candidate** once
+`recurrence_after_injection` reaches `patterns.demotion_recurrence_threshold` in
+`.devteam/config.yml` (default `3`). This is a flag only — nothing demotes or retires
+automatically. `devteam patterns demote <pattern-id>` is the explicit operator action
+that sends a promoted pattern back to candidate status, recording an audit line (who,
+when, reason, and the counters at the moment of demotion) that survives a later
+`devteam patterns promote <pattern-id>` re-promotion. Demotion is reversible; retirement
+(`devteam patterns retire`) is not.
 
 ## Prompt Injection
 
@@ -322,11 +363,21 @@ because it would create or select executable repair behavior.
    rendering, retired-pattern suppression, archived retry collection, and secret-shaped
    text rejection.
 
+Phase 30.2 closed the outcome-feedback half of the design: `stats.injected` and
+`stats.recurrence_after_injection` are now wired end to end (see
+[Outcome-Feedback Counters](#outcome-feedback-counters)), and `devteam patterns demote`
+gives operators a reversible response to a pattern that keeps recurring after
+injection. `stats.noise_reports` remains unwired — no command produces one yet.
+
 ## Open Decisions
 
 - Whether auto-promotion should exist at all, or remain permanently human-reviewed.
+  Demotion follows the same rule: `devteam patterns review` flags a recurrence-heavy
+  pattern, but only `devteam patterns demote <id>` moves it — never automatically.
 - Whether imported promoted patterns should default to disabled until locally reviewed.
 - How much local raw example text is acceptable in `pending-review.json`.
 - Whether pattern matching should start rule-based only or use the existing memory
   embeddings as an optional scorer.
 - Which first deterministic gate should be used to prove the graduation path.
+- Whether a noise-report command should exist, and if so what an operator-facing
+  "this pattern is wrong for us" report should look like.

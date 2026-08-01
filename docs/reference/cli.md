@@ -312,17 +312,18 @@ Persistent project memory. Subcommands: ingest, query, stats, clear, reindex, pr
 | --org   | bool   | Target org-shared store  |
 | --json  | bool   | JSON output              |
 
-### `devteam patterns <collect|list|review|promote|retire|stats> [options]`
+### `devteam patterns <collect|list|review|promote|retire|demote|stats> [options]`
 
-Project-local pattern learning. Collect sanitized observations, review candidates, promote advisory guidance, retire stale patterns, and inspect stats.
+Project-local pattern learning. Collect sanitized observations, review candidates (flagging recurrence-heavy patterns for demotion), promote advisory guidance, retire or demote patterns, and inspect stats.
 
-| Flag      | Type   | Description                        |
-| --------- | ------ | ---------------------------------- |
-| --cwd     | string | Target project directory           |
-| --feature | string | Feature name for bounded isolation |
-| --json    | bool   | Emit JSON output                   |
-| --text    | string | Prompt text for promote            |
-| --reason  | string | Retirement reason                  |
+| Flag       | Type   | Description                                              |
+| ---------- | ------ | -------------------------------------------------------- |
+| --cwd      | string | Target project directory                                 |
+| --feature  | string | Feature name for bounded isolation                       |
+| --json     | bool   | Emit JSON output                                         |
+| --text     | string | Prompt text for promote                                  |
+| --reason   | string | Retirement or demotion reason                            |
+| --operator | string | Override the recorded demote operator (default: OS user) |
 
 ### `devteam corpus stats [options]`
 

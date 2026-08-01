@@ -626,6 +626,18 @@ async function runStageHeadless(stageName, opts = {}) {
         });
       }
       process.stderr.write(`[devteam] experimental: dispatching ${plan.workstreams.length} workstreams → omnigent director (headless)\n`);
+      // 30.2(a): director mode still dispatches every workstream's rendered
+      // prompt (bundled into one call) — record each workstream's own
+      // Known Project Patterns as injected.
+      for (const ws of plan.workstreams) {
+        require("./patterns").recordInjection({
+          cwd: plan.ctx.cwd,
+          pipelineRoot: pipelineRoot(plan.ctx.cwd, plan.ctx.changeId),
+          stage: plan.stage,
+          workstreamId: ws.descriptor.workstreamId,
+          patterns: ws.descriptor.knownPatterns,
+        });
+      }
       let r;
       try {
         r = await directorAdapter.invoke(descriptor, plan.ctx, prompt);
@@ -776,6 +788,15 @@ async function runStageHeadless(stageName, opts = {}) {
       }
       const queueSuffix = queue.queueMs > 0 ? ` after ${queue.queueMs}ms queue` : "";
       process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)${queueSuffix}\n`);
+      // 30.2(a): this is a real dispatch (past --skip-completed), so any
+      // Known Project Patterns rendered into ws.descriptor count as injected.
+      require("./patterns").recordInjection({
+        cwd: plan.ctx.cwd,
+        pipelineRoot: pipelineRoot(plan.ctx.cwd, plan.ctx.changeId),
+        stage: plan.stage,
+        workstreamId: ws.descriptor.workstreamId,
+        patterns: ws.descriptor.knownPatterns,
+      });
       const invocationPrompt = ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
         ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
         : ws.prompt;
