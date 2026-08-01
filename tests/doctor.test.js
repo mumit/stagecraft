@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { cleanup, runCLI } = require("./_helpers");
+const { cleanup, runCLI, makeTargetProject } = require("./_helpers");
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -239,5 +239,45 @@ describe("devteam doctor — dogfood mode section", () => {
 
     assert.ok(r.stdout.includes("ℹ budget-usd reminder"), r.stdout);
     assert.ok(r.stdout.includes("always use --budget-usd"), r.stdout);
+  });
+});
+
+// Phase-28 item 28.6: Gemini CLI stopped serving free/Pro/Ultra requests
+// 2026-06-18 — devteam doctor must flag any routing that still resolves to
+// it and point at the antigravity replacement, without breaking gemini-cli
+// itself (retirement is a later item, 34.4).
+describe("devteam doctor — gemini-cli deprecation warning", () => {
+  it("warns when default_host routes to gemini-cli", () => {
+    const cwd = makeTargetProject({
+      config: "routing:\n  default_host: gemini-cli\npipeline:\n  default_track: full\n",
+    });
+    track(cwd);
+
+    const r = runCLI(["doctor", "--cwd", cwd]);
+
+    assert.ok(r.stdout.includes("gemini-cli is deprecated upstream"), r.stdout);
+    assert.ok(r.stdout.includes("--host antigravity"), r.stdout);
+  });
+
+  it("warns when a role/stage override routes to gemini-cli even if default_host differs", () => {
+    const cwd = makeTargetProject({
+      config: "routing:\n  default_host: generic\n  roles:\n    qa: gemini-cli\npipeline:\n  default_track: full\n",
+    });
+    track(cwd);
+
+    const r = runCLI(["doctor", "--cwd", cwd]);
+
+    assert.ok(r.stdout.includes("gemini-cli is deprecated upstream"), r.stdout);
+  });
+
+  it("does NOT warn when routing never resolves to gemini-cli", () => {
+    const cwd = makeTargetProject({
+      config: "routing:\n  default_host: antigravity\npipeline:\n  default_track: full\n",
+    });
+    track(cwd);
+
+    const r = runCLI(["doctor", "--cwd", cwd]);
+
+    assert.ok(!r.stdout.includes("gemini-cli is deprecated upstream"), r.stdout);
   });
 });

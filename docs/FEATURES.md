@@ -14,7 +14,7 @@ Stagecraft is an orchestrator that runs your AI coding tool through a structured
 
 ## Supported hosts
 
-Stagecraft is model-agnostic. It runs on whichever AI runtime you already have — Claude Code, Codex, Gemini CLI, Omnigent, any other tool that can accept a prompt and write files — or an OpenAI-compatible Chat Completions endpoint through the HTTP-native host.
+Stagecraft is model-agnostic. It runs on whichever AI runtime you already have — Claude Code, Codex, Antigravity, Gemini CLI (deprecated upstream — see `devteam doctor`), Omnigent, any other tool that can accept a prompt and write files — or an OpenAI-compatible Chat Completions endpoint through the HTTP-native host.
 
 Six adapters ship: `claude-code` (primary, with hooks and slash commands), `codex`, `gemini-cli`, `omnigent`, `generic`, and `openai-compat`. Each declares its capabilities — headless support, hooks, subagents, enforcement levels — in `hosts/<host>/capabilities.json`.
 
@@ -592,7 +592,7 @@ See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the laun
 For `build` (stage-04) and `qa` (stage-06) stages, hosts that declare `capabilities.goalLoop: true` (claude-code and codex) automatically receive `/goal "<condition>"` prepended to the headless prompt. The condition is a workstream-specific exit criterion from `stages.js`; the host loops internally until its stated objective is met rather than running a fixed number of turns.
 
 - Automatically active when: stage has a `goalCondition`, host declares `goalLoop: true`, and workstream runs headless
-- Gemini CLI, Omnigent, openai-compat, and the generic adapter do not declare `goalLoop: true` — unaffected; receive the prompt unchanged
+- Antigravity, Gemini CLI, Omnigent, openai-compat, and the generic adapter do not declare `goalLoop: true` — unaffected; receive the prompt unchanged
 - Interactive (non-headless) runs are also unaffected
 
 ### Multi-model peer review — diversity as a correctness strategy

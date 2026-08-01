@@ -1,0 +1,23 @@
+{
+  "name": "antigravity",
+  "displayName": "Antigravity CLI",
+  "version": "1",
+  "hooks": false,
+  "subagents": false,
+  "slashCommands": false,
+  "worktrees": true,
+  "headless": true,
+  "headlessCommand": "agy --print --dangerously-skip-permissions",
+  "telemetry": "estimated",
+  "goalLoop": false,
+  "skillFormat": "markdown",
+  "rolePromptsDir": ".agents/prompts/roles",
+  "skillsDir": ".agents/skills",
+  "enforces": {
+    "allowed_writes": "post-hoc-audit",
+    "stoplist": "prompt-only",
+    "shell": true,
+    "network": true,
+    "tool_budget": "prompt-only"
+  }
+}

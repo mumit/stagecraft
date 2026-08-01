@@ -231,7 +231,8 @@ The legacy `agent` field is removed. Adapters MUST write `host` and `orchestrato
 
 - `hosts/claude-code/` — full capabilities (hooks, subagents, slash commands, worktrees, headless via `claude --print`).
 - `hosts/codex/` — skills + prompts, no hooks, headless via `codex exec --sandbox workspace-write`.
-- `hosts/gemini-cli/` — skills + prompts, no hooks, headless via `gemini`.
+- `hosts/antigravity/` — skills + prompts, no hooks, headless via `agy --print --dangerously-skip-permissions`. Supported successor to `gemini-cli` (Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18).
+- `hosts/gemini-cli/` — skills + prompts, no hooks, headless via `gemini`. Deprecated upstream; `devteam doctor` warns when routing resolves to it.
 - `hosts/omnigent/` — skills + prompts + `.omnigent/stagecraft/agent/config.yaml`, no hooks, headless via `omnigent run ... --no-session --prompt <prompt>`.
 - `hosts/openai-compat/` — HTTP-native host; no CLI subprocess, talks to OpenAI-compatible Chat Completions APIs.
 - `hosts/generic/` — none of the above; only `renderStagePrompt` and a noop `install`. Proves the contract is genuinely host-agnostic.
