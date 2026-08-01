@@ -37,6 +37,10 @@ const ROLE_TOOLS = {
   "red-team": "Read, Glob, Grep, Bash, Write",
   migrations: "Read, Glob, Grep, Bash, Write",
   verifier:   "Read, Glob, Grep, Bash, Write",
+  // 30.3: the Reflector's dispatch prompt embeds everything it needs (gate
+  // summaries, run-log excerpt, promoted patterns) — no Write, it only ever
+  // emits JSON to stdout.
+  reflector:  "Read, Glob, Grep",
 };
 
 // Return the declared tool budget for a role as a string array, or null if

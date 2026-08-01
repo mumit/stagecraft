@@ -108,6 +108,12 @@ const ROLE_FRONTMATTER = {
     model: "opus",
     permissionMode: "acceptEdits",
   },
+  reflector: {
+    name: "reflector",
+    description: "Phase-30 opt-in run-end pass (learning.reflector: true). Read-only — reads the run's gates, run-log.jsonl, and the promoted-pattern set (embedded in the dispatch prompt, not read live) and emits itemized pattern-candidate delta proposals as JSON. Never edits code or gates, never promotes a pattern; promotion stays the human `devteam patterns promote` flow. Cheap-model-appropriate: route to a different (lower-cost) host than the build agents.",
+    model: "haiku",
+    permissionMode: "acceptEdits",
+  },
 };
 
 // toolBudgetFor is imported from core/roles.js (6.1: host-neutral source of
