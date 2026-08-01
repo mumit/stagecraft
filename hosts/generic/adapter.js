@@ -33,7 +33,7 @@ function renderStagePrompt(descriptor, ctx) {
   lines.push(`Workstream: ${descriptor.workstreamId}`);
   lines.push(`Track: ${ctx.track}`);
   if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
-  const { renderPatchBlock, renderContextManifest, renderKnownPatterns, toolBudgetSection } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, renderContextManifest, renderKnownPatterns, renderPriorKnowledge, toolBudgetSection } = require("../../core/adapters/render-helpers");
   renderPatchBlock(ctx, lines);
   lines.push("");
   lines.push(`## Objective`);
@@ -44,6 +44,7 @@ function renderStagePrompt(descriptor, ctx) {
   lines.push("");
   renderContextManifest(lines, descriptor);
   renderKnownPatterns(lines, descriptor);
+  renderPriorKnowledge(lines, descriptor);
   lines.push(`## Allowed writes (advisory — host: generic enforces this in prompt only)`);
   for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
   lines.push("");

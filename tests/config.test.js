@@ -81,6 +81,34 @@ describe("config: loadConfig", () => {
     }));
     assert.equal(loadConfig(cwd).pipeline.loop_build_role, "frontend");
   });
+
+  // Phase 30 item 30.4 — memory.inject / inject_top_k / inject_similarity_floor.
+  it("defaults memory.inject to true and inject_top_k to 3 when absent", () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: generic\n" }));
+    const c = loadConfig(cwd);
+    assert.equal(c.memory.inject, true);
+    assert.equal(c.memory.inject_top_k, 3);
+    assert.equal(c.memory.inject_similarity_floor, 0);
+    assert.equal(DEFAULTS.memory.inject, true);
+    assert.equal(DEFAULTS.memory.inject_top_k, 3);
+  });
+
+  it("parses memory.inject: false and custom top_k/floor", () => {
+    const cwd = track(makeTargetProject({
+      config: "memory:\n  inject: false\n  inject_top_k: 5\n  inject_similarity_floor: 0.4\n",
+    }));
+    const c = loadConfig(cwd);
+    assert.equal(c.memory.inject, false);
+    assert.equal(c.memory.inject_top_k, 5);
+    assert.equal(c.memory.inject_similarity_floor, 0.4);
+  });
+
+  it("falls back to default inject_top_k for a non-positive-integer override", () => {
+    const cwd = track(makeTargetProject({
+      config: "memory:\n  inject_top_k: 0\n",
+    }));
+    assert.equal(loadConfig(cwd).memory.inject_top_k, DEFAULTS.memory.inject_top_k);
+  });
 });
 
 describe("config: resolveHost precedence", () => {

@@ -12,6 +12,7 @@ This is the **D7** item from the BACKLOG (per-project memory). Cross-project sha
 - [Chunking](#chunking)
 - [Performance](#performance)
 - [When to ingest](#when-to-ingest)
+- [Prompt injection (30.4)](#prompt-injection-304)
 - [What's NOT in memory](#whats-not-in-memory)
 - [Troubleshooting](#troubleshooting)
 - [Org-shared memory (D3 + G8)](#org-shared-memory-d3--g8)
@@ -115,9 +116,17 @@ The JSON backend's ceiling is roughly 1k chunks per project before query latency
 Two trigger points:
 
 1. **Manual** — `devteam memory ingest` after any artifact-producing stage finishes. Safe to run repeatedly: re-ingesting an artifact replaces its old chunks (no duplicates).
-2. **End of pipeline** — typically after Stage 9 (retrospective). The retrospective is when the team's view of "what we built and learned" crystallizes; ingesting then captures the most-complete picture.
+2. **Automatic, at pipeline-complete** (phase-30 item 30.4) — `core/driver.js` re-ingests once a run finishes cleanly, so the store stays current without a manual step. Gated on `.devteam/memory/` already existing (i.e. you've run `devteam memory ingest` at least once) and `memory.inject` not being `false` — a project that has never opted in sees no behavior change: no embedder load, no model download attempt. Fire-and-forget: an ingest failure (including the optional `@huggingface/transformers` dependency being absent) is logged to `run-log.jsonl` and never fails the run.
 
-The explicit interface is manual `devteam memory ingest`.
+Manual `devteam memory ingest` remains the only way to *start* using memory in a project — auto-ingest only keeps an already-opted-in store current.
+
+## Prompt injection (30.4)
+
+Once `.devteam/memory/` exists and `memory.inject` isn't `false` (both true by default once you've ingested), every **headless** stage dispatch (`devteam run`, `devteam stage --headless`) queries the store for the top `memory.inject_top_k` (default 3) chunks similar to the stage's feature/brief text, above `memory.inject_similarity_floor` (default `0` — any positive cosine alignment), and renders them into a bounded (≤1,200 bytes) `## Prior Project Knowledge` section with kind + source attribution per entry — same budget discipline as `Known Project Patterns` (`core/patterns.js` `selectForDescriptor()`).
+
+Stage 2 (design) additionally queries the **org-shared** store for `kind: adr`, making the Principal's `devteam architecture lookup` step automatic instead of a role-brief suggestion (`roles/principal.md` still documents the manual queries — for deeper investigation, or when injection is off/no store exists).
+
+**Honest scope note:** retrieval only runs on the headless dispatch path. Interactive preview commands (`devteam stage` without `--headless`, `devteam reproduce`, `devteam replay`) render prompts synchronously and do not query memory — embedding is inherently async, and `buildDescriptor()`/`runStage()` (`core/orchestrator.js`) have dozens of existing synchronous call sites across tests and CLI commands that assume a plain return value. See `core/memory/inject.js`'s module header for the full reasoning.
 
 ## What's NOT in memory
 
@@ -170,7 +179,7 @@ devteam architecture lookup "pagination"
 devteam architecture lookup "auth" --kind lessons-learned
 ```
 
-`devteam architecture lookup` is a wrapper around `devteam memory query --org --kind adr`. It defaults to ADRs, and the principal role brief directs designers to run it before drafting any new spec.
+`devteam architecture lookup` is a wrapper around `devteam memory query --org --kind adr`. It defaults to ADRs. As of phase-30 item 30.4, the top org ADR hits for Stage 2's feature/brief text are injected automatically into the design dispatch's prompt (see "Prompt injection" above); the principal role brief still directs designers to run the manual command too, for a deeper or broader query than the top-k injected section covers.
 
 ### Architecture continuity (G8)
 
