@@ -325,8 +325,11 @@ Project-local coaching under `.devteam/patterns/`. Pattern learning turns repeat
 review feedback into short, reviewed guidance that appears in future prompts before
 the next agent repeats the same mistake.
 
-- `devteam patterns collect` harvests sanitized blockers, warnings, follow-ups,
-  archived auto-retry failures, and retry outcomes from local pipeline state
+- `devteam run` collects automatically at run end (clean completion, or a halt
+  that left a gate on disk); `devteam patterns collect` remains for manual/backfill
+  use. Either path harvests sanitized blockers, warnings, follow-ups, archived
+  auto-retry failures, and retry outcomes from local pipeline state, and drops
+  candidates matching an already-retired pattern
 - `devteam patterns review` groups candidate lessons by tier, domain, stage,
   workstream, language, and framework
 - `devteam patterns promote <candidate-id>` makes reviewed prevention text eligible

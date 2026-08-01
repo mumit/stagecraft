@@ -1216,20 +1216,24 @@ Use `devteam patterns` when the same review finding keeps coming back across
 features. It is different from `devteam memory`: memory retrieves project facts;
 patterns inject compact prevention guidance into future coding-agent prompts.
 
-The normal loop is:
+`devteam run` collects patterns automatically at the end of every run — on a clean
+completion, and on any halt that left a gate on disk — so the normal loop is just
+review and promotion:
 
 ```bash
-devteam patterns collect
 devteam patterns review
 devteam patterns promote <candidate-id> --text "When adding a user-visible HTTP endpoint, update README.md or docs/reference/* in the same implementation pass."
 devteam patterns stats
 ```
 
-Collection reads local pipeline state and stores sanitized observations under
-`.devteam/patterns/`: blockers, warnings, `noted_for_followup[]`, archived
-auto-retry failures, and retry outcomes. It does not store raw prompts,
-transcripts, full source snippets, repository remotes, or raw blocker text.
-Promoted guidance is the only text shown to agents.
+`devteam patterns collect` still exists for manual runs and backfilling pipeline
+directories from before this ran automatically. Either way, collection reads local
+pipeline state and stores sanitized observations under `.devteam/patterns/`: blockers,
+warnings, `noted_for_followup[]`, archived auto-retry failures, and retry outcomes. It
+does not store raw prompts, transcripts, full source snippets, repository remotes, or
+raw blocker text. Promoted guidance is the only text shown to agents. A pattern that
+has been retired stays retired — collection drops any candidate matching a retired
+pattern's identity instead of re-surfacing it from the same observations.
 
 The taxonomy is intentionally small:
 

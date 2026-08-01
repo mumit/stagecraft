@@ -154,8 +154,16 @@ file.
 
 ## Collection
 
-`devteam patterns collect` reads local pipeline state and appends sanitized
-observations. Inputs include:
+The driver calls collection automatically, fire-and-forget, at the end of every
+`devteam run`: on a clean `pipeline-complete`, and on any halt where this run left at
+least one gate on disk (a halt before any stage ever dispatched, such as
+`--repair`/`--feature` mutual exclusion, has nothing to collect). A collection failure
+is logged as a `pattern-collect-failed` run-log event and never affects the run's exit
+code. `devteam patterns collect` still exists for manual runs and backfilling older
+pipeline directories.
+
+Whichever path triggers it, collection reads local pipeline state and appends
+sanitized observations. Inputs include:
 
 - failed gate `stage`, `status`, `failure_class`, `workstream`, and typed blocker
   metadata such as `assigned_to`, `signal`, or detector category;
@@ -169,6 +177,12 @@ observations. Inputs include:
 
 Collection should be idempotent by fingerprint. Running it twice after the same run
 must not duplicate observations.
+
+Collection also consults `retired.json`: a candidate whose `pattern_key` identity (the
+same `id` a promoted/retired record carries) matches a retired pattern is dropped
+before `pending-review.json` is written, and counted as `suppressed` in the collection
+summary. Retirement is a one-way decision — the same observations that got a pattern
+retired must not silently re-promote it into the candidate pool on the next collection.
 
 ## Auto-Retry Semantics
 
@@ -193,7 +207,7 @@ saw both the mistake and a recovery path.
 Patterns should not silently become prompt memory.
 
 ```bash
-devteam patterns collect
+devteam patterns collect   # optional — the driver already does this at run end
 devteam patterns review
 devteam patterns promote <candidate-id>
 devteam patterns retire <pattern-id>

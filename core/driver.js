@@ -20,6 +20,7 @@ const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
 const { next, runStageHeadless, mergeWorkstreamGates } = require("./orchestrator");
+const { collect: collectPatterns } = require("./patterns");
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom } = require("./config");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
@@ -895,6 +896,7 @@ async function run(opts = {}) {
   const _next = opts.next || next;
   const _runStageHeadless = opts.runStageHeadless || runStageHeadless;
   const _merge = opts.mergeWorkstreamGates || mergeWorkstreamGates;
+  const _collectPatterns = opts.collectPatterns || collectPatterns;
   const maxIterations = Number.isInteger(opts.maxIterations) ? opts.maxIterations : DEFAULT_MAX_ITERATIONS;
   const budgetUsd = typeof opts.budgetUsd === "number" ? opts.budgetUsd : null;
   if (budgetUsd === null) {
@@ -1892,6 +1894,29 @@ async function run(opts = {}) {
     }
     saveRunState(cwd, changeId, state);
     releaseLock(cwd, changeId);
+  }
+
+  // Phase 30 item 30.1: fire-and-forget pattern auto-collection at run end —
+  // closes the loop that previously required a manual `devteam patterns
+  // collect`. Runs on a clean completion, and on any halt where this run's
+  // gates directory holds at least one gate (a halt before any stage ever
+  // wrote a gate, e.g. --repair/--feature mutual exclusion or a pre-flight
+  // stoplist match, has nothing to collect). Never affects summary or exit
+  // code — a collection failure is logged, not thrown.
+  const gateOnDisk = (() => {
+    try {
+      return fs.readdirSync(gatesDir(cwd, changeId))
+        .some((name) => name.endsWith(".json") && !name.includes(".attempt-"));
+    } catch {
+      return false;
+    }
+  })();
+  if (summary.completed || (summary.halted && gateOnDisk)) {
+    try {
+      _collectPatterns({ cwd, pipelineRoot: pipelineRoot(cwd, changeId) });
+    } catch (err) {
+      logEvent(cwd, changeId, { outcome: "pattern-collect-failed", error: String((err && err.message) || err) });
+    }
   }
 
   return summary;
