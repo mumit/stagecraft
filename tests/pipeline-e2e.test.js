@@ -42,6 +42,15 @@ const STAGE_GATE_EXTRAS = {
     criterion_to_test_mapping_is_one_to_one: true,
     tests_total: 2, tests_passed: 2, tests_failed: 0, failing_tests: [],
   },
+  // 29.4: quick's folded verification-sweep dispatch — on quick only
+  // accessibility + performance apply (see rules/stage-06x.md).
+  "stage-06x": {
+    sections_included: ["accessibility", "performance"],
+    accessibility: { audit_method: "axe-core", wcag_level: "AA", violations: { critical: 0, serious: 0, moderate: 0, minor: 0 }, components_audited: [] },
+    observability: null,
+    verification_beyond_tests: null,
+    performance: { checks_performed: ["lighthouse"], lighthouse: { score: 0.9 }, bundle: null, load_test: null, budget_exceeded: false },
+  },
 };
 
 function passGate(stageId, extra = {}) {
@@ -228,6 +237,61 @@ describe("e2e: loop track — exactly 4 dispatches to pipeline-complete (29.1)",
     const review = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "gates", "stage-05.json"), "utf8"));
     assert.equal(build.workstream, "backend");
     assert.equal(review.workstream, "backend");
+  });
+});
+
+describe("e2e: quick track — compact_qa fold collapses 06b/06e to one dispatch (29.4)", () => {
+  it("dispatches verification-sweep once instead of accessibility-audit + performance-budget", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: quick\n  right_sizing: false\n",
+    }));
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, "pipeline", "brief.md"),
+      "# Brief\n## Acceptance Criteria\n- AC-1: feature does X.\n",
+    );
+
+    const trace = walkPipeline(cwd, { track: "quick" });
+    const stageActions = trace.filter((t) => t.action !== "pipeline-complete");
+    const dispatchedNames = stageActions.map((t) => t.name);
+
+    // The two standalone stages are gone; the combined stage dispatches
+    // exactly once — this is the "1 dispatch where it made 2" contract for
+    // quick (STAGES_BY_TRACK.quick only ever included 2 of the 4 specialty-QA
+    // stages, not all 4 — see stages.js).
+    assert.ok(!dispatchedNames.includes("accessibility-audit"), "accessibility-audit should not dispatch standalone on quick");
+    assert.ok(!dispatchedNames.includes("performance-budget"), "performance-budget should not dispatch standalone on quick");
+    const sweepDispatches = stageActions.filter((t) => t.name === "verification-sweep");
+    assert.equal(sweepDispatches.length, 1, `expected exactly 1 verification-sweep dispatch, got: ${JSON.stringify(sweepDispatches)}`);
+
+    assert.equal(trace[trace.length - 1].action, "pipeline-complete");
+  });
+
+  it("leaves a single stage-06x.json gate on disk, PASS, carrying both folded sections", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: quick\n  right_sizing: false\n",
+    }));
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, "pipeline", "brief.md"),
+      "# Brief\n## Acceptance Criteria\n- AC-1: feature does X.\n",
+    );
+    walkPipeline(cwd, { track: "quick" });
+
+    const gatePath = path.join(cwd, "pipeline", "gates", "stage-06x.json");
+    assert.ok(fs.existsSync(gatePath), "missing pipeline/gates/stage-06x.json");
+    const gate = JSON.parse(fs.readFileSync(gatePath, "utf8"));
+    assert.equal(gate.status, "PASS");
+    assert.deepEqual(gate.sections_included.sort(), ["accessibility", "performance"]);
+    assert.ok(gate.accessibility, "accessibility section should be populated");
+    assert.ok(gate.performance, "performance section should be populated");
+    assert.equal(gate.observability, null);
+    assert.equal(gate.verification_beyond_tests, null);
+
+    // Standalone gates for the folded stages must NOT exist.
+    for (const stageId of ["stage-06b", "stage-06e"]) {
+      assert.ok(!fs.existsSync(path.join(cwd, "pipeline", "gates", `${stageId}.json`)), `unexpected standalone gate on quick: ${stageId}.json`);
+    }
   });
 });
 

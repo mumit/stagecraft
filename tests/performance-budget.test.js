@@ -18,6 +18,7 @@ const { REPO_ROOT, makeTargetProject, cleanup, seedGate } = require("./_helpers"
 
 const {
   STAGES,
+  STAGES_BY_TRACK,
   orderedStageNamesForTrack,
   isStageInTrack,
   getStage,
@@ -134,10 +135,21 @@ describe("stage-06e gate schema", () => {
 // ─── 3. Track inclusion ───────────────────────────────────────────────────────
 
 describe("performance-budget track inclusion", () => {
-  it("included in full, quick, hotfix", () => {
-    for (const t of ["full", "quick", "hotfix"]) {
+  it("included in full, hotfix", () => {
+    for (const t of ["full", "hotfix"]) {
       assert.ok(isStageInTrack("performance-budget", t), `performance-budget should be in ${t}`);
     }
+  });
+
+  // 29.4: quick is flagged compact_qa, so performance-budget no longer
+  // dispatches standalone there — it's folded into "verification-sweep"
+  // alongside accessibility-audit. STAGES_BY_TRACK still lists it (that's
+  // the declarative "quick needs this coverage" answer, unchanged); only
+  // the dispatch-time ordering (orderedStageNamesForTrack) folds it.
+  it("folded into verification-sweep on quick (29.4 compact_qa)", () => {
+    assert.ok(STAGES_BY_TRACK.quick.includes("performance-budget"), "quick's declarative stage list should still include performance-budget");
+    assert.ok(!isStageInTrack("performance-budget", "quick"), "performance-budget should not dispatch standalone on quick post-fold");
+    assert.ok(isStageInTrack("verification-sweep", "quick"), "verification-sweep should dispatch on quick");
   });
 
   it("excluded from nano, config-only, dep-update", () => {
@@ -166,13 +178,16 @@ describe("performance-budget stage ordering", () => {
     assert.ok(pb < so, `performance-budget(${pb}) should come before sign-off(${so})`);
   });
 
-  it("performance-budget sits after qa and before sign-off in quick", () => {
+  // 29.4: performance-budget's slot on quick is now the folded
+  // "verification-sweep" stage (see "folded into verification-sweep on
+  // quick" above) — check its position instead of the standalone stage.
+  it("verification-sweep (folded performance-budget slot) sits after qa and before sign-off in quick", () => {
     const quick = orderedStageNamesForTrack("quick");
     const qa = quick.indexOf("qa");
-    const pb = quick.indexOf("performance-budget");
+    const vs = quick.indexOf("verification-sweep");
     const so = quick.indexOf("sign-off");
-    assert.ok(qa < pb, `qa(${qa}) should come before performance-budget(${pb})`);
-    assert.ok(pb < so, `performance-budget(${pb}) should come before sign-off(${so})`);
+    assert.ok(qa < vs, `qa(${qa}) should come before verification-sweep(${vs})`);
+    assert.ok(vs < so, `verification-sweep(${vs}) should come before sign-off(${so})`);
   });
 
   it("performance-budget sits after observability-gate and before sign-off in hotfix", () => {

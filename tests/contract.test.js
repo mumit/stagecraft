@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
 
-const { STAGES, TRACKS, STAGES_BY_TRACK, ORDERED_STAGE_NAMES, stageNames } =
+const { STAGES, TRACKS, STAGES_BY_TRACK, ORDERED_STAGE_NAMES, stageNames, FOLD_ONLY_STAGES } =
   require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 
 function read(rel) {
@@ -124,9 +124,15 @@ describe("contract: ORDERED_STAGE_NAMES ↔ STAGES_BY_TRACK", () => {
         .filter(([, def]) => def && Array.isArray(def.roles) && def.roles.length === 0)
         .map(([name]) => name)
     );
-    const stageSet = new Set([...stageNames()].filter((n) => !mechanicalStages.has(n)));
+    // 29.4: fold-only stages (e.g. "verification-sweep") exist solely as the
+    // combined output of a compact_qa track's fold — they never appear on
+    // "full", so they're excluded here the same way mechanical stages are.
+    const foldOnlyStages = new Set(FOLD_ONLY_STAGES);
+    const stageSet = new Set(
+      [...stageNames()].filter((n) => !mechanicalStages.has(n) && !foldOnlyStages.has(n)),
+    );
     const orderedSet = new Set(ORDERED_STAGE_NAMES);
-    assert.deepEqual(orderedSet, stageSet, "ORDERED_STAGE_NAMES is out of sync with STAGES keys (excluding mechanical stages)");
+    assert.deepEqual(orderedSet, stageSet, "ORDERED_STAGE_NAMES is out of sync with STAGES keys (excluding mechanical and fold-only stages)");
   });
 
   it("STAGES_BY_TRACK has an entry per track", () => {

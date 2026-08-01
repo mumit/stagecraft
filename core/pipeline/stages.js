@@ -426,6 +426,31 @@ const STAGES = {
       skipped_reason: null,
     },
   },
+  // 29.4 — combined specialty-QA dispatch for compact_qa tracks (currently
+  // just "quick"). Folds whichever of accessibility-audit/observability-gate/
+  // verification-beyond-tests/performance-budget the track includes into one
+  // dispatch — same PASS/FAIL bar per section, one gate instead of N. Full
+  // and hotfix are untouched: they keep the four stages separate because
+  // they aren't flagged compact_qa (see isCompactQaTrack()/foldQaSweep()
+  // below). Not part of ORDERED_STAGE_NAMES/any STAGES_BY_TRACK list — it
+  // only ever appears via the fold applied in orderedStageNamesForTrack().
+  "verification-sweep": {
+    stage: "stage-06x",
+    roles: ["qa"],
+    objective: "Combined verification sweep for compact-ceremony tracks (29.4). Run exactly the specialty QA checks this track folds into one dispatch — on quick that's accessibility (WCAG audit) and performance budget (Lighthouse/bundle/load-test), the same PASS/FAIL bar as the standalone stage-06b/stage-06e dispatches, just reported as sections of one gate. Populate sections_included with exactly the sections this track requires and leave every other section null.",
+    readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
+    allowedWrites: ["pipeline/verification-sweep-report.md", "pipeline/axe-report.json", "pipeline/lhci-result.json", "pipeline/gates/stage-06x.json"],
+    artifact: "pipeline/verification-sweep-report.md",
+    template: "verification-sweep-template.md",
+    requiredCapabilities: { shell: true },
+    gate: {
+      sections_included: [],
+      accessibility: null,
+      observability: null,
+      verification_beyond_tests: null,
+      performance: null,
+    },
+  },
   "sign-off": {
     stage: "stage-07",
     roles: ["pm", "platform"],
@@ -571,6 +596,50 @@ const STAGES_BY_TRACK = {
   loop:          ["requirements", "build", "qa", "peer-review"],
 };
 
+// 29.4: tracks flagged compact_qa fold whichever of QA_SWEEP_STAGES they
+// list in STAGES_BY_TRACK into a single "verification-sweep" dispatch at
+// orderedStageNamesForTrack() time. STAGES_BY_TRACK itself is left alone —
+// it stays the declarative "which specialty QA does this track need"
+// answer; folding is a presentation-layer transform so every consumer
+// (driver dispatch, verifyChain predecessor derivation, right-sizing,
+// ceremony-preview) gets the folded shape for free from one call site.
+// Only "quick" opts in today; full/hotfix keep the four stages separate.
+const COMPACT_QA_TRACKS = new Set(["quick"]);
+
+function isCompactQaTrack(track) {
+  return COMPACT_QA_TRACKS.has(track);
+}
+
+// The four specialty-QA stages eligible for folding, in declared order.
+const QA_SWEEP_STAGES = ["accessibility-audit", "observability-gate", "verification-beyond-tests", "performance-budget"];
+
+// Stages that exist only as the folded output of a compact_qa track — they
+// never appear on "full" (full keeps the four stages separate), so they are
+// deliberately excluded from the ORDERED_STAGE_NAMES invariant the same way
+// mechanical (roles: []) stages already are.
+const FOLD_ONLY_STAGES = ["verification-sweep"];
+
+// Replace whichever QA_SWEEP_STAGES members are present in `list` with a
+// single "verification-sweep" entry at the position of the first member
+// found, preserving the order of everything else. Fewer than two members
+// present means there's nothing to combine — list passes through unchanged
+// (a track that only ever includes one of the four, e.g. a future
+// compact_qa track with just performance-budget, dispatches it standalone).
+function foldQaSweep(list) {
+  const present = list.filter((n) => QA_SWEEP_STAGES.includes(n));
+  if (present.length < 2) return list;
+  const out = [];
+  let inserted = false;
+  for (const name of list) {
+    if (QA_SWEEP_STAGES.includes(name)) {
+      if (!inserted) { out.push("verification-sweep"); inserted = true; }
+      continue;
+    }
+    out.push(name);
+  }
+  return out;
+}
+
 // Per-track sizing for peer-review (stage-05). For trivial changes
 // (nano), one reviewer is the right amount of review — four area
 // reviewers would be process-theatre for a typo fix. For everything
@@ -653,7 +722,8 @@ function orderedStageNamesForTrack(track = "full") {
   if (!list) {
     throw new Error(`Unknown track "${track}". Valid: ${TRACKS.join(", ")}, or a custom stage array.`);
   }
-  return list.filter((n) => STAGES[n]);
+  const effective = isCompactQaTrack(track) ? foldQaSweep(list) : list;
+  return effective.filter((n) => STAGES[n]);
 }
 
 function isStageInTrack(stageName, track) {
@@ -688,4 +758,8 @@ module.exports = {
   loopBuildRole,
   LOOP_BUILD_WORKSTREAMS,
   LOOP_DEFAULT_BUILD_ROLE,
+  isCompactQaTrack,
+  QA_SWEEP_STAGES,
+  FOLD_ONLY_STAGES,
+  foldQaSweep,
 };

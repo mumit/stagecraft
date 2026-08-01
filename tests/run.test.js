@@ -165,7 +165,10 @@ describe("driver: dispatch loop (injected deps)", () => {
     });
     const plan = events.find((event) => event.type === "run-plan");
     const order = orderedStageNamesForTrack("quick");
-    const expectedRightSized = ["accessibility-audit", "performance-budget"];
+    // 29.4: quick's accessibility-audit + performance-budget slots are folded
+    // into a single "verification-sweep" dispatch — one right-sizing skip
+    // instead of two when no changed files trigger either section.
+    const expectedRightSized = ["verification-sweep"];
     const expectedIncluded = order.filter((name) => name !== "qa" && !expectedRightSized.includes(name));
     const expectedWorkstreams = expectedIncluded.reduce((sum, name) => sum + STAGES[name].roles.length, 0);
     assert.ok(plan, "run-plan event emitted");

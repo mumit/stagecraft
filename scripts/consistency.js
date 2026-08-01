@@ -29,7 +29,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
-const { STAGES, TRACKS, STAGES_BY_TRACK, ORDERED_STAGE_NAMES, stageNames } =
+const { STAGES, TRACKS, STAGES_BY_TRACK, ORDERED_STAGE_NAMES, stageNames, FOLD_ONLY_STAGES } =
   require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 const { listHosts, loadAdapter } = require(path.join(REPO_ROOT, "core", "router"));
 
@@ -245,12 +245,19 @@ function checkOrderedStageNamesCoversAll() {
       .filter(([, def]) => def && Array.isArray(def.roles) && def.roles.length === 0)
       .map(([name]) => name)
   );
+  // 29.4: fold-only stages (e.g. "verification-sweep") exist solely as the
+  // combined output of a compact_qa track's fold — they never appear on
+  // "full", so they're excluded from this invariant the same way mechanical
+  // stages are.
+  const foldOnlyStages = new Set(FOLD_ONLY_STAGES);
 
   const stageSet = new Set(stageNames());
   const orderedSet = new Set(ORDERED_STAGE_NAMES);
   for (const n of stageSet) {
     if (mechanicalStages.has(n)) {
       pass(`ORDERED_STAGE_NAMES correctly omits mechanical stage "${n}"`);
+    } else if (foldOnlyStages.has(n)) {
+      pass(`ORDERED_STAGE_NAMES correctly omits fold-only stage "${n}"`);
     } else if (orderedSet.has(n)) {
       pass(`ORDERED_STAGE_NAMES contains "${n}"`);
     } else {

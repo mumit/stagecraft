@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stagecraft:schema:stage-06x",
+  "title": "Stage 06x — Verification Sweep (Compact-QA Fold, 29.4)",
+  "description": "Combined specialty-QA gate for compact_qa tracks (currently just \"quick\"). Folds whichever of accessibility-audit (06b), observability-gate (06c), verification-beyond-tests (06d), and performance-budget (06e) the track includes into one dispatch. sections_included records which of the four this run actually covers; every other section stays null. Each populated section's shape is identical to its standalone stage-06[b|c|d|e] schema — this is a track-shape change, not a new gate vocabulary.",
+  "type": "object",
+  "allOf": [{ "$ref": "urn:stagecraft:schema:gate" }],
+  "required": [
+    "stage",
+    "status",
+    "orchestrator",
+    "track",
+    "timestamp",
+    "blockers",
+    "warnings",
+    "sections_included"
+  ],
+  "properties": {
+    "sections_included": {
+      "type": "array",
+      "description": "Which of the four specialty-QA sections this dispatch covers, in folded order. Every entry here must have its corresponding section populated (non-null); every section NOT listed here must be null.",
+      "items": {
+        "type": "string",
+        "enum": ["accessibility", "observability", "verification_beyond_tests", "performance"]
+      }
+    },
+    "accessibility": {
+      "description": "Populated (matches stage-06b's shape) when \"accessibility\" is in sections_included. Null otherwise.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "urn:stagecraft:schema:stage-06b" }
+      ]
+    },
+    "observability": {
+      "description": "Populated (matches stage-06c's shape) when \"observability\" is in sections_included. Null otherwise.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "urn:stagecraft:schema:stage-06c" }
+      ]
+    },
+    "verification_beyond_tests": {
+      "description": "Populated (matches stage-06d's shape) when \"verification_beyond_tests\" is in sections_included. Null otherwise.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "urn:stagecraft:schema:stage-06d" }
+      ]
+    },
+    "performance": {
+      "description": "Populated (matches stage-06e's shape) when \"performance\" is in sections_included. Null otherwise.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "urn:stagecraft:schema:stage-06e" }
+      ]
+    }
+  },
+  "additionalProperties": true
+}
