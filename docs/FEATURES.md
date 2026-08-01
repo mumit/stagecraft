@@ -385,8 +385,9 @@ into a non-root container for unattended local orchestration.
 - **`--confirm`:** writes `pipeline/track.json` with `source: "human"` — use after verifying the recommendation; silences the unconfirmed-track guard in `devteam run`
 - **`--apply`:** writes `pipeline.custom_stages` to `.devteam/config.yml` (project-wide setting) so `devteam next`/`devteam summary`/`devteam stage` use the custom track; orthogonal to `pipeline/track.json` behavior
 - `--json` emits structured output including recommended track, rationale, and which heuristics fired
+- **Ceremony cost preview (phase-29 item 29.3):** both text and `--json` output include a `ceremony_preview` — stage slots, dispatch count, token range, and cost range for the recommended track, computed by `core/ceremony-preview.js`. Estimates are `"static"` (framework overhead from `scripts/prompt-budget.js` + on-disk `pipeline/*` artifact sampling) unless `.devteam/corpus/dispatches.jsonl` has ≥5 completed runs of that exact track, in which case `estimate_basis: "empirical"` reports the median observed tokens/cost instead. Cost is never shown unless every dispatch's model is resolvable from corpus history — otherwise the estimate reports tokens only.
 
-`devteam run` also uses this engine at startup when no `--track` is passed. It only auto-selects a lighter track at `high` confidence; medium/low confidence remain on the configured track unless the operator confirms or passes `--track`.
+`devteam run` also uses this engine at startup when no `--track` is passed, printing the same ceremony cost preview at the top of pre-flight output (before any dispatch) for every run, inferred or explicit `--track` alike.
 
 **`devteam standards discover [--cwd <dir>] [--json] [--dry-run] [--force]`** — static analysis of a project's conventions.
 

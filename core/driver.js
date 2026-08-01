@@ -30,6 +30,7 @@ const {
   gitChangedFiles,
 } = require("./pipeline/right-sizing");
 const { assess } = require("./stage-shopping/assess");
+const { ceremonyPreview } = require("./ceremony-preview");
 const { runAdvise } = require("./advise");
 const { MAX_RETRIES_DEFAULT, MAX_TRANSIENT_RETRIES_DEFAULT } = require("./gates/classify");
 const { loadPrincipalOutputs, runRuling, runFixEscalation } = require("./escalation");
@@ -1036,6 +1037,17 @@ async function run(opts = {}) {
       activeRoles: activeRoleCandidates.roles,
     }),
   });
+  // 29.3: ceremony cost preview for the pre-flight run-plan event. Scoped to
+  // the same right-sized stage list summarizeRunPlan just computed (not the
+  // raw track shape) so the estimate matches what will actually dispatch.
+  // Advisory only — a preview failure must never block a run.
+  const includedStageNames = order.filter((name) =>
+    !((config.pipeline && config.pipeline.skip_stages) || []).includes(name)
+    && !Object.prototype.hasOwnProperty.call(rightSizedSkips, name));
+  let ceremony = null;
+  try {
+    ceremony = ceremonyPreview(cwd, effectiveTrack, config, { stageNames: includedStageNames });
+  } catch { /* preview is advisory — the run proceeds without it */ }
   const applyTransition = (result) => applyTransitionResult(result, {
     summary,
     state,
@@ -1077,6 +1089,7 @@ async function run(opts = {}) {
       track_confidence: trackConfidence,
       assess_inline: assessInline || null,
       intent,
+      ceremony_preview: ceremony,
       ...runPlan,
     });
     onEvent({
@@ -1086,6 +1099,7 @@ async function run(opts = {}) {
       track_confidence: trackConfidence,
       assess_inline: assessInline || null,
       intent,
+      ceremony_preview: ceremony,
       ...runPlan,
     });
 

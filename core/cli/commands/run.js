@@ -4,6 +4,7 @@ const fs   = require("node:fs");
 const path = require("node:path");
 const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { applyFeatureFile } = require(path.join(__dirname, "..", "feature-file"));
+const { renderCeremonyPreviewText } = require(path.join(__dirname, "..", "..", "ceremony-preview"));
 
 // Version of the `devteam run --json` summary schema. Bump on breaking changes.
 // 1.1: adds advisory_blockers_count + advisory_breakdown (ADR-008 Phase 11.2).
@@ -112,14 +113,16 @@ function run(positional, _flags) {
           for (const reason of ev.assess_inline.reasons || []) {
             process.stderr.write(`  • ${reason}\n`);
           }
-          // 29.3 (ceremony cost preview) hasn't landed yet — print slot/dispatch
-          // counts only; replace with the token/cost estimate once it does.
-          process.stderr.write(`  ceremony: ${ev.stages_included} stage slot(s), ${ev.base_workstreams} dispatch(es) (TODO: cost estimate — plans/phase-29-scale-adaptive-ceremony.md 29.3)\n`);
           process.stderr.write(`  wrote pipeline/track.json (source: inferred); pass --track to override\n`);
         }
         const skipped = ev.stages_skipped_by_config ? `, ${ev.stages_skipped_by_config} skipped by config` : "";
         const conditional = ev.conditional_stages ? `, ${ev.conditional_stages} conditional` : "";
         process.stderr.write(`[devteam run] plan: ${ev.track} track, ${ev.stages_included}/${ev.stages_total} stages${skipped}${conditional}, ${ev.base_workstreams} base workstreams\n`);
+        // 29.3: ceremony cost preview, printed at the top of pre-flight output
+        // (right after the plan line) for every run, not just inferred tracks.
+        if (ev.ceremony_preview) {
+          for (const line of renderCeremonyPreviewText(ev.ceremony_preview)) process.stderr.write(`  ${line}\n`);
+        }
         break;
       }
       case "dispatch":     process.stderr.write(`▶️  ${ev.name} (${ev.stage}) — dispatching…\n`); break;

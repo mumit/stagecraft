@@ -90,11 +90,12 @@ run-time inference.
 
 Non-interactively, on stderr (identical in CI and interactive use — no prompt, no
 TTY-dependent branching): the recommended track, its confidence, the `assess()` reasons,
-and — until [29.3](../../plans/phase-29-scale-adaptive-ceremony.md) ships the token/cost
-ceremony estimate — the stage-slot and dispatch counts already computed for the run plan,
-with an explicit `TODO` pointing at 29.3. `--json` mode does not print this (stdout stays
-reserved for the machine-readable summary, unchanged contract); the `pipeline/track.json`
-file is the durable record regardless of output mode.
+and (since [29.3](../../plans/phase-29-scale-adaptive-ceremony.md)) the ceremony cost
+preview — stage slots, dispatch count, token range, and cost range (`core/ceremony-preview.js`)
+— printed right after the plan line for every run, inferred or explicit `--track` alike.
+`--json` mode does not print this (stdout stays reserved for the machine-readable summary,
+unchanged contract); the `pipeline/track.json` file is the durable record regardless of
+output mode.
 
 ## Consequences
 
