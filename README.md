@@ -23,6 +23,7 @@ devteam next                           # → "▶️ run-stage design (stage-02)
 - [What this gives you](#what-this-gives-you)
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
+- [Which track?](#which-track)
 - [What `devteam init` installs](#what-devteam-init-installs)
 - [CLI reference](#cli-reference)
 - [Auditing an existing codebase](#auditing-an-existing-codebase)
@@ -50,6 +51,8 @@ If you're evaluating Stagecraft, this is the fastest path to a working answer:
 
 If after 30 minutes you can see how this would help your team, run a 2-week pilot ([adoption-guide.md](docs/adoption-guide.md) has the script). If you can't, it may not be the right tool for your team.
 
+Step 4 above deliberately walks the full 18-stage track so you see every kind of stage in one sitting. Day to day, most teams drive the lighter `loop` track instead — see [Which track?](#which-track).
+
 ## Documentation map
 
 Four reader paths. Every doc belongs to exactly one. ([docs/README.md](docs/README.md) is the docs-only index.)
@@ -71,7 +74,7 @@ Evaluating further (long-form): [docs/presentation-notes.md](docs/presentation-n
 | Step | Doc | Purpose |
 |---|---|---|
 | 1 | [docs/user-guide.md](docs/user-guide.md) | Daily-use reference: running stages, multi-host setups, headless mode |
-| 2 | [docs/tracks.md](docs/tracks.md) | Which of the six tracks to pick for a given change |
+| 2 | [docs/tracks.md](docs/tracks.md) | Which of the seven tracks to pick for a given change — and what each one costs |
 | 3 | [docs/conventions.md](docs/conventions.md) | Pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments) |
 | 4 | [docs/runbooks/README.md](docs/runbooks/README.md) | Troubleshooting index: symptom → runbook section |
 | 5 | [docs/cost.md](docs/cost.md) | Cost tracking, pricing table, and budget workflow |
@@ -105,7 +108,7 @@ The vocabulary extends naturally: a *run* is one pipeline invocation, *dress reh
 A coordinated team of role-specific subagents running a structured software-development pipeline end-to-end:
 
 - **18-stage gated pipeline** — requirements (PM) → design (Principal) → build (specialist workstreams) → peer-review (Reviewer × 4) → QA → deploy → retrospective. Each stage writes a machine-readable gate; the next stage cannot start until the gate passes.
-- **6 tracks** — `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`. Pick by change size; `devteam assess` infers the right track from description keywords and file heuristics.
+- **7 tracks** — `loop`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `full`. `loop` is the day-to-day default for bounded iteration; `full` is the **audited** path chosen when stakes or compliance justify the ceremony. `devteam assess` infers the right track from description keywords and file heuristics, and prints a ceremony-cost estimate (`devteam assess --json`) before you commit to one.
 - **Prototype packets** — `devteam prototype` gives exploratory work a pre-SDLC lane: intent, build prompt, feedback notes, and an explicit promotion handoff into a normal track when the idea is ready to harden.
 - **Docker runner** — `hosts/docker/` packages `devteam` into a non-root container for unattended headless runs against a mounted project, with conservative lock reporting and runtime-only credentials.
 - **Per-workstream gate JSON** — every stage writes a gate to `pipeline/gates/`. Validator enforces shape; orchestrator merges multi-role stage gates.
@@ -142,8 +145,10 @@ Then drive the pipeline. There are two ways to run a stage:
 
 The orchestrator drives the host runtime for you (`claude --print`, `codex exec --sandbox workspace-write`, `agy --print`, `gemini`, or `omnigent run ...`). One command per stage; model output is captured in `pipeline/logs/<workstreamId>.log` by default. Best for first runs, CI, and scripted use.
 
+This walkthrough runs `loop` — the day-to-day default track (4 dispatches: brief → build → verify → review, no design/red-team/deploy):
+
 ```bash
-devteam stage requirements --feature "Add SMS notification opt-in" --headless
+devteam stage requirements --feature "Add SMS notification opt-in" --track loop --headless
 # [devteam] dispatching pm → claude-code (headless)
 # (model output is captured in pipeline/logs/stage-01.log)
 #   ✓ pm (claude-code): exit 0, 23000ms → pipeline/gates/stage-01.json
@@ -151,12 +156,12 @@ devteam stage requirements --feature "Add SMS notification opt-in" --headless
 cat pipeline/brief.md                    # the artifact the model wrote
 cat pipeline/gates/stage-01.json          # the gate JSON
 
-devteam next                              # → "▶️ run-stage design (stage-02)"
-devteam stage design --headless           # next stage
-# … keep going until "🎉 pipeline-complete"
+devteam next                              # → "▶️ run-stage build (stage-04)"
+devteam stage build --headless            # next stage
+# … keep going until "🎉 pipeline-complete" (4 dispatches total)
 ```
 
-One terminal. One command per stage. The gate file appears when the model is done. `devteam next` tells you the next command.
+One terminal. One command per stage. The gate file appears when the model is done. `devteam next` tells you the next command. Drop `--track loop` to fall through to the configured `default_track` (factory default `full`), or pass `--track full` yourself when the change touches auth, payments, PII, migrations, or otherwise needs the **audited** path — see [Which track?](#which-track).
 
 ### Path B — Interactive in Claude Code (two windows)
 
@@ -201,6 +206,22 @@ Repeat for each stage.
 **Recommendation for first-timers:** Path A. One terminal, one command per stage, results on disk. Switch to Path B when you want to observe a specific stage in detail.
 
 For a complete walked-through example with the actual output you'll see at each step, read **[EXAMPLE.md](EXAMPLE.md)**.
+
+## Which track?
+
+`loop` is the day-to-day default: 4 dispatches, no design/red-team/deploy. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not the default just because it feels safest. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes in between:
+
+| Change type | Track | Ceremony cost |
+|---|---|---|
+| Small bounded iteration, no deploy needed yet | `loop` | Lightest — 4 dispatches |
+| Mechanical change with obvious scope | `nano` | Minimal |
+| Bounded feature or fix, no cross-cutting design concerns | `quick` | Light |
+| Config/feature-flag values, no code | `config-only` | Light, conditional security review |
+| Dependency bump or library upgrade | `dep-update` | Light |
+| Urgent production incident | `hotfix` | Moderate — pre-review and peer-review mandatory |
+| Complex/cross-cutting, regulated or high-stakes | `full` | Heaviest — all 18 stages, audited |
+
+These are relative sizings, not bills — run `devteam assess --json` for the actual stage-slot count, dispatch range, token estimate, and cost range against your project's routed models (static estimate, or an empirical median once the run corpus has ≥5 comparable runs). Roadmap: Phase 34 aims to extend the `full` track's gate trail into exportable, regulator-shaped attestations — not yet built. Full decision tree and the generated stage-by-track matrix: [docs/tracks.md](docs/tracks.md).
 
 ## What `devteam init` installs
 

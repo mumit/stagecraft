@@ -64,6 +64,8 @@ One pipeline run looks like this:
   field has a specific value.
 ```
 
+This diagram walks the `full` track's 18 stages to show every kind of step. Day-to-day iteration typically runs the lighter `loop` track instead — brief → build → verify → review, 4 dispatches, no design/red-team/deploy. See [`docs/tracks.md`](tracks.md#pick-by-what-youre-shipping) for when to reach for which.
+
 You initiate and review each cycle; the framework handles bookkeeping: which stage is next, what to dispatch, where the gate goes, whether it's valid, and whether the pipeline can advance.
 
 ## Your three moments of control
@@ -72,8 +74,9 @@ Three points define how you interact with the pipeline:
 
 1. **At the start.** You pick the track and write the feature brief in one paragraph. Everything downstream flows from this.
    ```bash
-   devteam stage requirements --feature "Add SMS notification opt-in to user settings"
+   devteam stage requirements --feature "Add SMS notification opt-in to user settings" --track loop
    ```
+   `--track loop` is shown here because it's the day-to-day default for bounded iteration; reach for `--track full` instead when the change is regulated or high-stakes enough to need the audited path (design + red-team + sign-off). Omit `--track` to fall through to `pipeline.default_track` or an inferred assessment — see [`docs/tracks.md`](tracks.md).
 
 2. **At every gate.** You read the gate (or skim `devteam next`'s summary) and decide: advance, fix and retry, or stop.
    ```bash
@@ -129,6 +132,8 @@ devteam doctor
 A green result confirms the framework, adapter install, and (if applicable) the host CLI on PATH are all wired. Read `.devteam/config.yml` to view or edit the routing.
 
 ## Daily loop
+
+(This section is about the habitual `next` → `stage` cycle, not the `loop` track — see [`docs/tracks.md`](tracks.md) for the track of that name.)
 
 Most pipeline work uses two commands:
 

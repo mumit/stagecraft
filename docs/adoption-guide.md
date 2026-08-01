@@ -26,7 +26,7 @@ You're a good fit if **most** of these are true:
 
 - **You have engineers reviewing AI output, not blind-merging.** And you want their reviews structured (per-area, with verdicts the system tracks). Stagecraft formalizes review; if review is already a real practice on your team, this fits cleanly.
 
-- **Compliance or regulatory pressure means you need to show *how* a change was developed**, not just *what* changed. The pipeline produces an audit trail by construction: brief, design, code, reviews, tests, deploy log, and retrospective, all version-controlled.
+- **Compliance or regulatory pressure means you need to show *how* a change was developed**, not just *what* changed. This is what the `full` track is for: the **audited** path, chosen when stakes justify the ceremony, producing an audit trail by construction — brief, design, code, reviews, red-team, tests, deploy log, and retrospective, all version-controlled. (Roadmap: Phase 34 aims to extend this into exportable, regulator-shaped attestations — not yet built.)
 
 - **Multiple AI tools live on your team.** Some folks prefer Claude Code, others Codex, some Gemini CLI. Stagecraft is one pipeline that meets them where they are. If you've standardized on one tool and don't see that changing, you can still benefit, but the multi-host story is less of a draw.
 
@@ -68,7 +68,7 @@ Real costs to budget for:
 
 - **Learning curve: ~2 hours** for an experienced engineer to understand the pipeline, gates, hooks, tracks. Less if they've used `claude-dev-team` or `codex-dev-team` (Stagecraft's predecessors). Plan for a 30-minute team walkthrough using the [presentation deck](presentation-notes.md).
 
-- **Discipline:** the pipeline is opt-in per change. Engineers will sometimes skip it for quick changes. `nano` and `quick` tracks exist for that purpose. Consistent bypassing on non-trivial work eliminates the value. This is a culture question, not a tool question.
+- **Discipline:** the pipeline is opt-in per change. Engineers will sometimes skip it for quick changes. `nano`, `loop`, and `quick` tracks exist for that purpose — `loop` in particular is the day-to-day default, right-sized for bounded iteration. Consistent bypassing on non-trivial work eliminates the value. This is a culture question, not a tool question.
 
 - **LLM compliance is not guaranteed.** Role briefs are instructions, not enforcement (except where hooks enforce: allowedWrites on Claude Code, secret scanning, gate validation). You will occasionally need to correct an agent that drifted outside its scope. This is less common as role briefs mature and more common in the first weeks.
 
@@ -134,7 +134,7 @@ If you adopt:
 
 1. **Land the install in CI.** Add `devteam init --host <name>` to your project bootstrap script. New devs get the pipeline automatically. `devteam init --force` is idempotent, so running it on every CI bootstrap is safe.
 
-2. **Document the team's track choices.** Make it explicit in your contributing docs: "Use `nano` for typo fixes, `quick` for single-area changes, `full` for cross-area features, `hotfix` for production incidents." Without a written policy, track selection devolves to everyone picking `full` by default, which then becomes everyone picking `nano` because `full` is too heavy.
+2. **Document the team's track choices.** Make it explicit in your contributing docs: "Use `nano` for typo fixes, `loop` for day-to-day bounded iteration, `quick` for single-area changes needing a brief, `full` (the audited path) for cross-area, regulated, or high-stakes features, `hotfix` for production incidents." Without a written policy, track selection devolves to everyone picking `full` by default, which then becomes everyone picking `nano` because `full` is too heavy — `loop` exists precisely to break that pendulum with a right-sized day-to-day default.
 
 3. **Set up GitHub Actions to validate gates.** A simple PR check: if `pipeline/gates/` exists, validator must pass. Catches missing / malformed gates before merge. The `scripts/pr-publish.js` tool can push gate status as GitHub check runs on the PR head commit (PASS → success, FAIL → failure).
 
@@ -156,7 +156,7 @@ The relevant question is whether the structure produces better output for non-tr
 
 ### "Our team is too small for this much process."
 
-Pick a lighter track. `nano` is 3 stages (build + scoped peer-review with 1 reviewer + qa). `quick` is 9. The pipeline is opt-in; `full` is not required for every change. The track system exists to scale the process to the change.
+Pick a lighter track. `nano` is 3 stages (build + scoped peer-review with 1 reviewer + qa). `loop` is 4 dispatches (brief → build → verify → review) and is the day-to-day default for bounded iteration. `quick` is 9. The pipeline is opt-in; `full` — the audited path — is not required for every change. The track system exists to scale the process to the change.
 
 That said, there is an honest answer. If your team is 1–2 people doing fast-moving exploratory work, Stagecraft is probably the wrong shape. It pays off with multiple people, multiple changes in flight, and a non-trivial codebase. Below that scale, the structure exceeds the need.
 
