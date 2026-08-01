@@ -2101,7 +2101,7 @@ describe("run CLI: assess-inline recommendation output (Phase 29.2, ADR-016)", (
   // "Snapshot" of the printed recommendation block: seed every full-track gate
   // PASS (a superset of any lighter track's gates) so the real next() reaches
   // pipeline-complete immediately — no dispatch, deterministic stderr.
-  it("prints recommendation + rationale + ceremony slot/dispatch counts, and writes pipeline/track.json", () => {
+  it("prints recommendation + rationale + ceremony cost preview (29.3), and writes pipeline/track.json", () => {
     const cwd = track(makeTargetProject());
     seedAllPass(cwd);
     const r = runCLI(["run", "--cwd", cwd, "--feature", "fix a typo in the README", "--budget-usd", "10"]);
@@ -2109,9 +2109,12 @@ describe("run CLI: assess-inline recommendation output (Phase 29.2, ADR-016)", (
 
     assert.match(r.stderr, /\[devteam run\] no --track given — assessed inline: "nano" \(confidence: medium\)/);
     assert.match(r.stderr, /• description matches nano-change keywords/);
-    assert.match(r.stderr, /ceremony: \d+ stage slot\(s\), \d+ dispatch\(es\) \(TODO: cost estimate — plans\/phase-29-scale-adaptive-ceremony\.md 29\.3\)/);
     assert.match(r.stderr, /wrote pipeline\/track\.json \(source: inferred\); pass --track to override/);
     assert.match(r.stderr, /\[devteam run\] plan: nano track/);
+    // 29.3: ceremony cost preview line replaces the old TODO placeholder —
+    // no historical corpus data in this fixture, so the model is unknown and
+    // cost is correctly omitted rather than invented.
+    assert.match(r.stderr, /Ceremony estimate \(static\): \d+ stage slot\(s\), \d+ dispatch\(es\), ~[\d,]+ tokens, — \(unknown model\)/);
 
     const tj = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "track.json"), "utf8"));
     assert.equal(tj.track, "nano");

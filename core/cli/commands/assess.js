@@ -38,8 +38,19 @@ function run(positional, _flags) {
   const description = _flags.description || "";
   const result = assess(description, files, { scanContent: !_flags.noContent });
 
+  // 29.3: per-track ceremony cost preview — static (framework overhead +
+  // on-disk artifact sampling) or empirical (phase-28 corpus medians) once
+  // >= MIN_EMPIRICAL_RUNS same-track runs exist. Never blocks assess output
+  // on failure — a preview that can't be computed just doesn't show one.
+  const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
+  const { ceremonyPreview, renderCeremonyPreviewText } = require(path.join(__dirname, "..", "..", "ceremony-preview"));
+  let ceremony = null;
+  try {
+    ceremony = ceremonyPreview(cwd, result.recommendedTrack, loadConfig(cwd));
+  } catch { /* preview is advisory — assess's track recommendation stands without it */ }
+
   if (_flags.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...result, ceremony_preview: ceremony }, null, 2));
   } else {
     const conf = { high: "high ✓", medium: "medium", low: "low" }[result.confidence] || result.confidence;
     console.log(`Recommended track: ${result.recommendedTrack}  (confidence: ${conf})`);
@@ -50,6 +61,10 @@ function run(positional, _flags) {
     if (result.securityRequired) console.log("  ⚠  security review required");
     if (result.migrationRequired) console.log("  ⚠  migration safety required");
     console.log("");
+    if (ceremony) {
+      for (const line of renderCeremonyPreviewText(ceremony)) console.log(line);
+      console.log("");
+    }
     if (_flags.apply) {
       console.log(`Applying: writing pipeline.custom_stages to .devteam/config.yml…`);
     } else {
