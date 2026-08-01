@@ -253,12 +253,13 @@ function computeDispatchPlan(stageDef, config, track, opts = {}) {
     ? config.routing.review_fanout
     : [];
   const isPeerReview = stageDef.stage === "stage-05" && fanout.length > 0;
-  // Track-aware roles. Today only stage-05 (peer-review) varies — nano
-  // dispatches a single reviewer; every other track uses the standard
-  // four-area matrix. rolesForStage falls back to stageDef.roles for
-  // every other stage.
+  // Track-aware roles. stage-05 (peer-review) varies by track — nano and
+  // loop dispatch a single reviewer; every other track uses the standard
+  // four-area matrix. stage-04 (build) also varies on loop — a single
+  // config-overridable workstream (29.1) instead of the four-role matrix.
+  // rolesForStage falls back to stageDef.roles for every other stage.
   const effectiveTrack = track || (config && config.pipeline && config.pipeline.default_track) || "full";
-  let roles = rolesForStage(stageDef, effectiveTrack);
+  let roles = rolesForStage(stageDef, effectiveTrack, config);
 
   // Apply active_roles filter from stage-01 gate when gatesDir is available.
   // The filter covers all stages so peer-review areas match the build workstreams
@@ -295,7 +296,13 @@ function buildDescriptor(stageDef, role, opts = {}) {
   // This swaps stage-01's objective/artifact/template/gate to a diagnosis
   // shape — same stage id, same gate path, fix-aware artifact. No new stage.
   const override = (opts.intent === "repair" && stageDef.repairOverride) ? stageDef.repairOverride : null;
-  const effectiveDef = override ? { ...stageDef, ...override } : stageDef;
+  // 29.1: track-keyed override (e.g. stage-01's loop-track brief template).
+  // Repair mode takes precedence when both would apply — diagnosis-vs-feature
+  // is a more specific override than the track's ceremony-size template swap.
+  const trackOverride = (!override && typeof opts.track === "string" && stageDef.trackOverrides)
+    ? stageDef.trackOverrides[opts.track]
+    : null;
+  const effectiveDef = { ...stageDef, ...(override || trackOverride || {}) };
 
   const allowedWrites = effectiveDef.roleWrites?.[role] ?? effectiveDef.allowedWrites;
   const wsId = opts.workstreamId || workstreamId(stageDef.stage, role, stageDef.roles.length);
@@ -525,7 +532,7 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, contextManifest });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       const descriptor = { ...baseDescriptor, knownPatterns };
       const prompt = withSpan("adapter.renderStagePrompt", {

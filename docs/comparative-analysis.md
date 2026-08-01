@@ -70,7 +70,7 @@ parity drift and enables one run to route different workstreams through differen
 
 ## 4. Stagecraft in June 2026
 
-Stagecraft is v0.9.0: 18 ordered stages, 6 tracks, 6 first-party host adapters, 34 CLI
+Stagecraft is v0.9.0: 18 ordered stages, 7 tracks, 6 first-party host adapters, 34 CLI
 command modules, 104 test files, and 2,203 passing runtime tests. The project has
 moved substantially beyond the v0.5 snapshot in the prior comparison.
 

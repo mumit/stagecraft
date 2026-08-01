@@ -1,9 +1,10 @@
 # Tracks
 
-A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The six tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team`.
+A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The seven tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team` (plus `loop`, added in phase-29 for minimal-ceremony iteration).
 
 - [Pick by what you're shipping](#pick-by-what-youre-shipping)
 - [What each track runs](#what-each-track-runs)
+- [The `loop` track](#the-loop-track)
 - [Safety: the stoplist](#safety-the-stoplist)
 - [How `devteam next` honors the track](#how-devteam-next-honors-the-track)
 - [Conditional dispatch within a track](#conditional-dispatch-within-a-track)
@@ -32,6 +33,7 @@ Or override per-invocation: `devteam stage build --track quick`.
 | Tweaking config/feature-flag values, no code | `config-only` | Build + pre-review + (security if triggered) + qa + sign-off + deploy |
 | Dependency bump or library upgrade | `dep-update` | Build + peer-review + qa + sign-off + deploy |
 | Urgent production incident | `hotfix` | Build + pre-review + (security if triggered) + peer-review + qa + sign-off + deploy + retro |
+| Small bounded iteration, no deploy needed yet | `loop` | Minimal brief → single-workstream build → qa → scoped peer-review (1 reviewer, 1 approval); no design, no red-team, no sign-off/deploy. See [§ The `loop` track](#the-loop-track) |
 
 ## What each track runs
 
@@ -44,12 +46,15 @@ nano                          ✓                   ✓ˢ  ✓
 config-only                   ✓   ✓   ✓⁺      ✓⁺      ✓                   ✓   ✓       
 dep-update                    ✓                   ✓   ✓                   ✓   ✓       
 hotfix                        ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓   ✓       ✓   ✓   ✓   ✓   
+loop          ✓               ✓ˢ                  ✓ˢ  ✓                               
 
    Legend:
    ✓⁺ = conditional stage — only runs when stage-04a triggers it
        (security-review: security_review_required; migration-safety: migration_safety_required)
-   ✓ˢ = scoped peer-review on nano (single reviewer, required_approvals=1).
-       See PEER_REVIEW_SIZING in core/pipeline/stages.js.
+   ✓ˢ = scoped to a single workstream — nano peer-review (single reviewer,
+       required_approvals=1); loop build + peer-review (single config-overridable
+       role, default backend). See PEER_REVIEW_SIZING / loopBuildRole in
+       core/pipeline/stages.js.
    ✓ᵐ = mechanical script (preflight/stage-04e), not an LLM dispatch.
    3b = executable-spec (Gherkin scenarios from acceptance criteria)
    4a = pre-review (lint + dep review + SCA + trigger heuristics)
@@ -64,9 +69,34 @@ hotfix                        ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓ 
 ```
 <!-- /generated -->
 
+## The `loop` track
+
+`loop` is the 4-slot minimal-ceremony track: brief → build → verify → review
+(`requirements` → `build` → `qa` → `peer-review`). Note the order — `qa`
+(stage-06, "verify") runs **before** `peer-review` (stage-05, "review") on
+this track, the reverse of every other track. A full stubbed `loop` run is
+exactly 4 dispatches: one PM brief, one build workstream, one QA pass, one
+reviewer.
+
+Both `build` and `peer-review` dispatch a single workstream instead of the
+usual four-area matrix. The role defaults to `backend`; override it project-wide
+via `.devteam/config.yml`:
+
+```yaml
+pipeline:
+  loop_build_role: frontend   # backend (default) | frontend | platform | qa
+```
+
+`loop` has no design, no red-team, and no sign-off/deploy — `devteam run
+--track loop` ends at `peer-review`. Promoting a change to a deploy-capable
+track is a re-run with `--until` on a bigger track, or a `custom_stages`
+config, not a `loop` feature. Stage-01 on `loop` renders a one-screen brief
+(`templates/loop-brief-template.md`: intent, AC-N list, affected files)
+instead of the full requirements template.
+
 ## Safety: the stoplist
 
-Lighter tracks (`quick`, `nano`, `config-only`, `dep-update`) refuse to run when the change description matches the **stoplist**: a list of phrases that flag changes too consequential for an abbreviated pipeline. The list lives in `core/guards/stoplist.js` and triggers on:
+Lighter tracks (`quick`, `nano`, `config-only`, `dep-update`, `loop`) refuse to run when the change description matches the **stoplist**: a list of phrases that flag changes too consequential for an abbreviated pipeline. The list lives in `core/guards/stoplist.js` and triggers on:
 
 - `auth`, `authentication`, `authorization`, `session handling`
 - `cryptography`, `key management`, `secret rotation`

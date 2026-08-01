@@ -34,7 +34,7 @@ See **[`docs/reference/stages.md`](reference/stages.md)** for the full stage tab
 
 ### Tracks — right-size the pipeline to the change
 
-Six tracks control which stages run. `full` runs all 18 stages; lighter tracks skip phases not relevant to the change type. See **[`docs/tracks.md`](tracks.md)** for the per-track stage matrix.
+Seven tracks control which stages run. `full` runs all 18 stages; lighter tracks skip phases not relevant to the change type; `loop` is the lightest — a 4-slot brief/build/verify/review track with no design or deploy. See **[`docs/tracks.md`](tracks.md)** for the per-track stage matrix.
 
 Pick at `devteam stage requirements --feature "..." --track full`.
 

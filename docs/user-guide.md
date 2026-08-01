@@ -1452,7 +1452,7 @@ Reasons:
   - authentication: matched "auth" in: add auth middleware
 ```
 
-You ran a lighter track (`quick`, `nano`, `config-only`, `dep-update`) and the change description matched a stoplist phrase. Two options:
+You ran a lighter track (`quick`, `nano`, `config-only`, `dep-update`, `loop`) and the change description matched a stoplist phrase. Two options:
 
 - **Recommended:** switch to `full` or `hotfix`. The change is consequential enough to warrant the rigor.
 - **If false positive:** re-run with `--force` to bypass. Use sparingly.

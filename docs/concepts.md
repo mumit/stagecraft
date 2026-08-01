@@ -17,7 +17,7 @@ Six primitives make up Stagecraft. Every other doc assumes you know these terms.
 | **Workstream** | derived at dispatch time | The orchestrator | One dispatch of a stage to one role. Single-role stages have one workstream; multi-role stages (build, peer-review) have several. **The workstream is the unit of gate identity.** Stage 5 (peer-review) is a special case — see the §stage-05 vocabulary callout below. |
 | **Host** | `hosts/<host>/` | You choose at `devteam init` | The AI tool that actually runs the model: `claude-code`, `codex`, `gemini-cli`, or `generic` (no host). |
 | **Gate** | `pipeline/gates/<stage>*.json` | The model writes it; the validator enforces it | A JSON record of one workstream's (or stage's) outcome. **The stable contract between stages.** Required fields: `stage`, `status`, `orchestrator`, `track`, `timestamp`, `blockers`, `warnings`. |
-| **Track** | `core/pipeline/stages.js` | Your `.devteam/config.yml` (`pipeline.default_track`) | Which stages run for this kind of change. Six tracks: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`. Tracks shape *which* stages run; never *what* a stage does. |
+| **Track** | `core/pipeline/stages.js` | Your `.devteam/config.yml` (`pipeline.default_track`) | Which stages run for this kind of change. Seven tracks: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`. Tracks shape *which* stages run; never *what* a stage does. |
 
 The rest of this page builds on these six concepts.
 
@@ -105,7 +105,7 @@ These come up frequently but build on the primitives above:
 
 ## Tracks at a glance
 
-Six tracks control which stages run: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`. Each is a subset of the full 18-stage pipeline tuned to a change size and risk level. `full` runs everything; `nano` runs just build + a scoped peer-review + qa.
+Seven tracks control which stages run: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`. Each is a subset of the full 18-stage pipeline tuned to a change size and risk level. `full` runs everything; `nano` runs just build + a scoped peer-review + qa; `loop` is the smallest — one build workstream + qa + one reviewer, no design or deploy.
 
 For the complete per-track stage matrix see **[`docs/tracks.md`](tracks.md)**; for each stage's roles and gate files see **[`docs/reference/stages.md`](reference/stages.md)**.
 

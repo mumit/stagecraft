@@ -1090,6 +1090,27 @@ describe("driver: stoplist enforcement on autonomous path (Phase 1 § 1.1)", () 
     assert.equal(haltEvent.track, "quick");
   });
 
+  // 29.1: `loop` is the lightest track — the consequence ceiling still
+  // applies, so it must be guarded exactly like quick/nano/config-only/dep-update.
+  it("halts before dispatch on a loop track with a stoplist-matching description", async () => {
+    const cwd = track(makeTargetProject());
+    let dispatched = false;
+    const s = await run({
+      cwd,
+      track: "loop",
+      description: "add password storage for user credentials",
+      next: () => { dispatched = true; return { action: "pipeline-complete", reason: "done" }; },
+    });
+    assert.equal(s.halted, true, "run must be halted");
+    assert.equal(s.halt_action, "stoplist", "halt_action must be 'stoplist'");
+    assert.equal(dispatched, false, "next() must never be called — halt before loop");
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    const events = log.trim().split("\n").map((l) => JSON.parse(l));
+    const haltEvent = events.find((e) => e.outcome === "stoplist-halt");
+    assert.ok(haltEvent, "run-log.jsonl must contain a stoplist-halt event");
+    assert.equal(haltEvent.track, "loop");
+  });
+
   // Same brief with full track → no stoplist halt (full bypass is by design).
   it("does not halt on a full track even with a stoplist-matching description", async () => {
     const cwd = track(makeTargetProject());

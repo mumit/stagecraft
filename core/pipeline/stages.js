@@ -31,6 +31,16 @@ const STAGES = {
       // from both build (stage-04) and peer-review (stage-05) dispatch.
       active_roles: null,
     },
+    // 29.1: the `loop` track swaps in a one-screen brief (intent, AC-N list,
+    // affected files) instead of the full requirements template. Same stage,
+    // same gate shape — only the artifact template changes. Keyed by track
+    // name so buildDescriptor() can merge it the same way repairOverride merges
+    // on intent.
+    trackOverrides: {
+      loop: {
+        template: "loop-brief-template.md",
+      },
+    },
     // ADR-009 Phase 2: when intent === "repair", stage-01 produces a DIAGNOSIS
     // instead of a feature brief — same stage, same gate path, fix-aware artifact.
     // The gate is always ESCALATE (judgment gate) until approved via the typed
@@ -485,7 +495,7 @@ const STAGES = {
   },
 };
 
-const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix"];
+const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop"];
 
 const ORDERED_STAGE_NAMES = [
   "requirements",
@@ -541,6 +551,16 @@ const ORDERED_STAGE_NAMES = [
 // second pair of eyes. Nano now has peer-review as a single-reviewer,
 // single-approval stage to keep wall-clock low while preserving the
 // marquee review property.
+// Loop (29.1, phase-29-scale-adaptive-ceremony): the 4-slot minimal-ceremony
+// track — brief -> build -> verify -> review. Note the order: qa (stage-06,
+// "verify") runs BEFORE peer-review (stage-05, "review") here, the reverse of
+// every other track. verifyChain's predecessor rule walks this array in
+// declared order, not by numeric stage ID, so the chain still links correctly
+// (stage-05's predecessor is stage-06 on this track). Build and peer-review
+// are both scoped to a single workstream — see loopBuildRole() below — so a
+// full stubbed run is exactly 4 dispatches. No design, no red-team, no
+// sign-off/deploy: promotion to a deploy-capable track is a re-run with
+// --until on a bigger track or a config'd custom_stages, not a loop feature.
 const STAGES_BY_TRACK = {
   full:          ORDERED_STAGE_NAMES,
   quick:         ["requirements", "executable-spec", "build", "peer-review", "qa", "accessibility-audit", "performance-budget", "sign-off", "deploy", "retrospective"],
@@ -548,6 +568,7 @@ const STAGES_BY_TRACK = {
   "config-only": ["build", "pre-review", "security-review", "migration-safety", "qa", "sign-off", "deploy"],
   "dep-update":  ["build", "peer-review", "qa", "sign-off", "deploy"],
   hotfix:        ["build", "pre-review", "security-review", "red-team", "migration-safety", "peer-review", "qa", "accessibility-audit", "observability-gate", "performance-budget", "sign-off", "deploy", "retrospective"],
+  loop:          ["requirements", "build", "qa", "peer-review"],
 };
 
 // Per-track sizing for peer-review (stage-05). For trivial changes
@@ -565,12 +586,39 @@ const PEER_REVIEW_SIZING = {
   hotfix:        { roles: ["backend", "frontend", "platform", "qa"], required_approvals: 2 },
   "dep-update":  { roles: ["backend", "frontend", "platform", "qa"], required_approvals: 2 },
   "config-only": { roles: ["backend", "frontend", "platform", "qa"], required_approvals: 2 },
+  // loop's sizing is derived from loopBuildRole(config) instead of a static
+  // roles list — see rolesForStage()/requiredApprovalsFor() below — because
+  // the single reviewed area must always match the single role that build
+  // actually dispatched (config-overridable, default "backend").
 };
 
-// Track-aware roles list for a stage. Today only peer-review (stage-05)
-// varies; every other stage uses its base `roles` array unchanged.
-function rolesForStage(stageDef, track) {
+// 29.1: the build workstream slots. Also the valid values for the
+// config-overridable pipeline.loop_build_role knob.
+const LOOP_BUILD_WORKSTREAMS = ["backend", "frontend", "platform", "qa"];
+const LOOP_DEFAULT_BUILD_ROLE = "backend";
+
+// The single role the `loop` track's build (stage-04) and peer-review
+// (stage-05) stages dispatch. Default "backend"; override via
+// pipeline.loop_build_role in .devteam/config.yml. Falls back to the default
+// on an unrecognized value rather than throwing, so a typo'd config never
+// blocks a run — right-sizing callers that don't have `config` in scope
+// (e.g. right-sizing.js's workstream-count estimate) get the same default,
+// which is safe there because only the role's *identity* varies with config,
+// never the workstream *count* (always 1).
+function loopBuildRole(config) {
+  const configured = config && config.pipeline && config.pipeline.loop_build_role;
+  return LOOP_BUILD_WORKSTREAMS.includes(configured) ? configured : LOOP_DEFAULT_BUILD_ROLE;
+}
+
+// Track-aware roles list for a stage. stage-04 (build) and stage-05
+// (peer-review) vary by track; every other stage uses its base `roles`
+// array unchanged.
+function rolesForStage(stageDef, track, config) {
+  if (track === "loop" && stageDef.stage === "stage-04") {
+    return [loopBuildRole(config)];
+  }
   if (stageDef.stage === "stage-05") {
+    if (track === "loop") return [loopBuildRole(config)];
     const sizing = PEER_REVIEW_SIZING[track] || PEER_REVIEW_SIZING.full;
     return sizing.roles;
   }
@@ -581,6 +629,7 @@ function rolesForStage(stageDef, track) {
 // Returns undefined when the stage doesn't use the approval mechanism.
 function requiredApprovalsFor(stageDef, track) {
   if (stageDef.stage === "stage-05") {
+    if (track === "loop") return 1;
     const sizing = PEER_REVIEW_SIZING[track] || PEER_REVIEW_SIZING.full;
     return sizing.required_approvals;
   }
@@ -636,4 +685,7 @@ module.exports = {
   getStage,
   rolesForStage,
   requiredApprovalsFor,
+  loopBuildRole,
+  LOOP_BUILD_WORKSTREAMS,
+  LOOP_DEFAULT_BUILD_ROLE,
 };

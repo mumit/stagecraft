@@ -2,7 +2,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
-const { TRACKS, STAGES_BY_TRACK, orderedStageNames, orderedStageNamesForTrack, isStageInTrack } =
+const { TRACKS, STAGES_BY_TRACK, orderedStageNames, orderedStageNamesForTrack, isStageInTrack, rolesForStage, requiredApprovalsFor, getStage } =
   require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 
 describe("tracks: TRACKS ↔ STAGES_BY_TRACK", () => {
@@ -128,6 +128,58 @@ describe("tracks: TRACKS ↔ STAGES_BY_TRACK", () => {
 
   it("orderedStageNamesForTrack(unknown) throws with a helpful message", () => {
     assert.throws(() => orderedStageNamesForTrack("bogus"), /Unknown track/);
+  });
+
+  // 29.1: the `loop` track — brief -> build -> verify -> review. Note the
+  // declared order: qa (stage-06) before peer-review (stage-05), the
+  // reverse of every other track's numeric order.
+  it("loop is the 4-slot track: requirements, build, qa, peer-review (in that order)", () => {
+    assert.deepEqual(orderedStageNamesForTrack("loop"), ["requirements", "build", "qa", "peer-review"]);
+  });
+
+  it("loop omits design, clarification, executable-spec, pre-review, red-team, sign-off, deploy, retrospective", () => {
+    const stages = orderedStageNamesForTrack("loop");
+    for (const excluded of ["design", "clarification", "executable-spec", "pre-review", "red-team", "sign-off", "deploy", "retrospective"]) {
+      assert.ok(!stages.includes(excluded), `loop should NOT include ${excluded}`);
+    }
+  });
+});
+
+describe("tracks: loop build/peer-review sizing (29.1)", () => {
+  it("build (stage-04) on loop dispatches a single role, default backend", () => {
+    const buildDef = getStage("build");
+    assert.deepEqual(rolesForStage(buildDef, "loop"), ["backend"]);
+  });
+
+  it("build (stage-04) on loop honors pipeline.loop_build_role config override", () => {
+    const buildDef = getStage("build");
+    const config = { pipeline: { loop_build_role: "frontend" } };
+    assert.deepEqual(rolesForStage(buildDef, "loop", config), ["frontend"]);
+  });
+
+  it("build (stage-04) on loop falls back to backend for an unrecognized config value", () => {
+    const buildDef = getStage("build");
+    const config = { pipeline: { loop_build_role: "not-a-real-role" } };
+    assert.deepEqual(rolesForStage(buildDef, "loop", config), ["backend"]);
+  });
+
+  it("peer-review (stage-05) on loop dispatches a single reviewer matching loopBuildRole", () => {
+    const reviewDef = getStage("peer-review");
+    assert.deepEqual(rolesForStage(reviewDef, "loop"), ["backend"]);
+    const config = { pipeline: { loop_build_role: "platform" } };
+    assert.deepEqual(rolesForStage(reviewDef, "loop", config), ["platform"]);
+  });
+
+  it("peer-review (stage-05) on loop requires exactly 1 approval", () => {
+    const reviewDef = getStage("peer-review");
+    assert.equal(requiredApprovalsFor(reviewDef, "loop"), 1);
+  });
+
+  it("build (stage-04) on every OTHER track is unaffected (still the four-role matrix)", () => {
+    const buildDef = getStage("build");
+    for (const t of ["full", "quick", "nano", "config-only", "dep-update", "hotfix"]) {
+      assert.deepEqual(rolesForStage(buildDef, t), ["backend", "frontend", "platform", "qa"], `build roles changed for track ${t}`);
+    }
   });
 });
 

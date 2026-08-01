@@ -187,6 +187,20 @@ describe("contract: rules ↔ skills ↔ templates exist", () => {
     }
   });
 
+  // 29.1: trackOverrides (e.g. requirements.trackOverrides.loop swapping in
+  // the one-screen loop brief) follow the same existence contract as the
+  // stage-level template and repairOverride.template.
+  it("every stage's trackOverrides template exists in templates/", () => {
+    for (const def of Object.values(STAGES)) {
+      if (!def || !def.trackOverrides) continue;
+      for (const [track, override] of Object.entries(def.trackOverrides)) {
+        if (!override.template) continue;
+        const tpl = path.join(REPO_ROOT, "templates", override.template);
+        assert.ok(fs.existsSync(tpl), `trackOverrides.${track}.template ${override.template} missing in templates/`);
+      }
+    }
+  });
+
   // G3: production-feedback-template.md is not a stage-level template (it's
   // operator-curated post-deploy) so it's not wired into STAGES; verify it
   // exists as a standalone contract.
