@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { scanContent } = require("./hooks/secret-scan");
 
@@ -10,7 +11,9 @@ const PATTERNS_DIR = path.join(".devteam", "patterns");
 const OBSERVATIONS_FILE = "observations.jsonl";
 const PROMOTED_FILE = "promoted.json";
 const RETIRED_FILE = "retired.json";
+const DEMOTED_FILE = "demoted.json";
 const PENDING_FILE = "pending-review.json";
+const RECURRENCE_CHECKED_FILE = "recurrence-checked.json";
 
 const DEFAULT_BUDGET = Object.freeze({
   blocker: 3,
@@ -95,6 +98,42 @@ function loadRetired(cwd) {
 
 function saveRetired(cwd, patterns) {
   writeJson(patternsPath(cwd, RETIRED_FILE), { schema_version: SCHEMA_VERSION, patterns });
+}
+
+// 30.2: demoted patterns — a promoted pattern an operator sent back to
+// candidate status (e.g. because recurrence_after_injection kept climbing).
+// Kept in their own store (mirrors retired.json) so promoted.json stays
+// "only currently-promoted patterns" and demotion history survives a
+// later re-promotion instead of being lost with the rest of the record.
+function loadDemoted(cwd) {
+  const value = readJson(patternsPath(cwd, DEMOTED_FILE), { schema_version: SCHEMA_VERSION, patterns: [] });
+  return Array.isArray(value.patterns) ? value.patterns : [];
+}
+
+function saveDemoted(cwd, patterns) {
+  writeJson(patternsPath(cwd, DEMOTED_FILE), { schema_version: SCHEMA_VERSION, patterns });
+}
+
+// 30.2(b): (gate file, promoted-pattern id) pairs already counted toward
+// recurrence_after_injection — see collect()'s recurrence block for why this
+// can't reuse the observations-fingerprint dedup.
+function loadRecurrenceChecked(cwd) {
+  const value = readJson(patternsPath(cwd, RECURRENCE_CHECKED_FILE), { schema_version: SCHEMA_VERSION, checked: [] });
+  return new Set(Array.isArray(value.checked) ? value.checked : []);
+}
+
+function saveRecurrenceChecked(cwd, checkedSet) {
+  writeJson(patternsPath(cwd, RECURRENCE_CHECKED_FILE), { schema_version: SCHEMA_VERSION, checked: [...checkedSet].sort() });
+}
+
+// Best-effort operator identity for audit lines (demote()). Never throws —
+// falls back to "unknown" rather than blocking a CLI operator action.
+function defaultOperator() {
+  try {
+    const info = os.userInfo();
+    if (info && info.username) return info.username;
+  } catch { /* platform may not support userInfo() */ }
+  return process.env.USER || process.env.USERNAME || "unknown";
 }
 
 function listGateFiles(root) {
@@ -243,16 +282,109 @@ function runLogRetryKeys(root) {
   return keys;
 }
 
+// 30.2(b): which promoted-pattern ids were injected into which stage's
+// dispatch this run, per the "pattern-injected" run-log events recordInjection()
+// appends. Read back at collection time to detect recurrence-after-injection.
+function runLogInjectedPatternIds(root) {
+  const file = path.join(root, "run-log.jsonl");
+  const byStage = new Map();
+  if (!fs.existsSync(file)) return byStage;
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (ev && ev.outcome === "pattern-injected" && ev.stage && Array.isArray(ev.pattern_ids)) {
+        const set = byStage.get(String(ev.stage)) || new Set();
+        for (const id of ev.pattern_ids) set.add(String(id));
+        byStage.set(String(ev.stage), set);
+      }
+    } catch { /* ignore malformed run-log line */ }
+  }
+  return byStage;
+}
+
+// 30.2(a): called at DISPATCH time — headless invoke or the interactive
+// "print the prompt for a human to paste into a host" path — never at a
+// preview/render-only call to runStage() (devteam reproduce, `devteam replay
+// --dry-run`). Increments stats.injected on promoted.json (cross-run,
+// persistent) and appends a per-run "pattern-injected" run-log event so a
+// later collect() call in the same run can correlate a recurring blocker
+// with "this pattern was already injected into this stage's dispatch."
+// Fire-and-forget: injection bookkeeping must never fail a dispatch.
+function recordInjection({ cwd, pipelineRoot, stage, workstreamId, patterns: injected }) {
+  if (!Array.isArray(injected) || injected.length === 0) return;
+  try {
+    const ids = [...new Set(injected.map((item) => item && item.id).filter(Boolean))];
+    if (ids.length === 0) return;
+    const promoted = loadPromoted(cwd);
+    const byId = new Map(promoted.map((item) => [item.id, item]));
+    let changed = false;
+    for (const id of ids) {
+      const pattern = byId.get(id);
+      if (!pattern) continue;
+      pattern.stats = pattern.stats || { injected: 0, recurrence_after_injection: 0, noise_reports: 0 };
+      pattern.stats.injected = (pattern.stats.injected || 0) + 1;
+      changed = true;
+    }
+    if (changed) savePromoted(cwd, promoted.sort((a, b) => a.id.localeCompare(b.id)));
+
+    const root = pipelineRoot || path.join(cwd, "pipeline");
+    fs.mkdirSync(root, { recursive: true });
+    const event = {
+      ts: new Date().toISOString(),
+      outcome: "pattern-injected",
+      stage: stage || null,
+      workstream_id: workstreamId || null,
+      pattern_ids: ids,
+    };
+    fs.appendFileSync(path.join(root, "run-log.jsonl"), `${JSON.stringify(event)}\n`);
+  } catch { /* fire-and-forget: must never affect dispatch */ }
+}
+
 function collect({ cwd, pipelineRoot }) {
   const root = pipelineRoot || path.join(cwd, "pipeline");
   const retryStages = runLogRetryKeys(root);
+
+  // 30.2(b): recurrence-after-injection. A recurring blocker has the SAME
+  // semantic fingerprint as the observation that got its pattern promoted in
+  // the first place, so the observations-dedup-by-fingerprint below can't be
+  // the recurrence signal — it would just look "already seen" forever. What
+  // makes a recurrence distinct is which GATE FILE it comes from: every
+  // dispatch attempt (the live gate, or each archived stage-*.attempt-N.json)
+  // is a separate outcome. recurrence-checked.json remembers which (gate
+  // file, promoted-pattern id) pairs already counted, so re-running collect()
+  // over an unchanged gates/ directory stays idempotent while a genuinely new
+  // attempt still increments the counter.
+  const injectedByStage = runLogInjectedPatternIds(root);
+  const promoted = injectedByStage.size > 0 ? loadPromoted(cwd) : null;
+  const promotedById = promoted ? new Map(promoted.map((item) => [item.id, item])) : null;
+  const checked = loadRecurrenceChecked(cwd);
+  let checkedChanged = false;
+  let recurrenceFlagged = 0;
+
   const observations = [];
   for (const file of listGateFiles(root)) {
     const gate = readGate(file);
     if (!gate) continue;
     const resolvedByRetry = retryStages.has(String(gate.stage || ""));
     for (const blocker of Array.isArray(gate.blockers) ? gate.blockers : []) {
-      observations.push(observationFor({ cwd, gate, item: blocker, tier: "blocker", source: "gate-blocker", resolvedByRetry }));
+      const obs = observationFor({ cwd, gate, item: blocker, tier: "blocker", source: "gate-blocker", resolvedByRetry });
+      observations.push(obs);
+      if (promotedById) {
+        const injectedIds = injectedByStage.get(String(obs.stage));
+        const id = injectedIds ? slugify(obs.pattern_key) : null;
+        if (id && injectedIds.has(id) && promotedById.has(id)) {
+          const checkKey = `${path.relative(cwd, file)}::${id}`;
+          if (!checked.has(checkKey)) {
+            checked.add(checkKey);
+            checkedChanged = true;
+            const pattern = promotedById.get(id);
+            pattern.stats = pattern.stats || { injected: 0, recurrence_after_injection: 0, noise_reports: 0 };
+            pattern.stats.recurrence_after_injection = (pattern.stats.recurrence_after_injection || 0) + 1;
+            recurrenceFlagged += 1;
+          }
+        }
+      }
     }
     for (const warning of Array.isArray(gate.warnings) ? gate.warnings : []) {
       observations.push(observationFor({ cwd, gate, item: warning, tier: "warning", source: "gate-warning", resolvedByRetry }));
@@ -261,6 +393,10 @@ function collect({ cwd, pipelineRoot }) {
       const tier = followup && followup.track_for === "lessons-learned" ? "nudge" : "warning";
       observations.push(observationFor({ cwd, gate, item: followup, tier, source: "noted-for-followup", resolvedByRetry }));
     }
+  }
+  if (checkedChanged) {
+    savePromoted(cwd, promoted.sort((a, b) => a.id.localeCompare(b.id)));
+    saveRecurrenceChecked(cwd, checked);
   }
 
   const existing = readObservations(cwd);
@@ -274,6 +410,7 @@ function collect({ cwd, pipelineRoot }) {
   }
   const all = [...byFingerprint.values()];
   writeObservations(cwd, all);
+
   const rawCandidates = candidatesFromObservations(all);
   // 30.1: a retired pattern's identity (id, derived from pattern_key the same
   // way promote()/retire() do) must not re-enter the candidate pool from the
@@ -283,7 +420,7 @@ function collect({ cwd, pipelineRoot }) {
   const candidates = rawCandidates.filter((item) => !retiredIds.has(item.id));
   const suppressed = rawCandidates.length - candidates.length;
   writeJson(patternsPath(cwd, PENDING_FILE), { schema_version: SCHEMA_VERSION, candidates });
-  return { added, total: all.length, candidates: candidates.length, suppressed, dir: patternsDir(cwd) };
+  return { added, total: all.length, candidates: candidates.length, suppressed, recurrenceFlagged, dir: patternsDir(cwd) };
 }
 
 function candidatesFromObservations(observations) {
@@ -352,11 +489,37 @@ function list({ cwd }) {
     candidates: candidatesFromObservations(readObservations(cwd)),
     promoted: loadPromoted(cwd),
     retired: loadRetired(cwd),
+    demoted: loadDemoted(cwd),
   };
 }
 
 function promote({ cwd, candidateId, text }) {
   if (!candidateId) throw new Error("patterns promote requires a candidate id");
+
+  // 30.2(d): re-promoting a demoted pattern restores its own prompt_text/
+  // applies_to/stats and preserves demotion_history — a demote → promote
+  // round-trip must not lose the audit trail.
+  const demoted = loadDemoted(cwd);
+  const demotedIdx = demoted.findIndex((item) => item.id === candidateId || item.pattern_key === candidateId);
+  if (demotedIdx !== -1) {
+    const [record] = demoted.splice(demotedIdx, 1);
+    const promptText = String(text || record.prompt_text || "").trim();
+    if (!promptText) throw new Error("promoted pattern prompt text cannot be empty");
+    const findings = scanContent(promptText);
+    if (findings.length > 0) {
+      throw new Error(`promoted pattern text looks secret-shaped: ${findings.map((f) => f.name).join(", ")}`);
+    }
+    record.status = "promoted";
+    record.prompt_text = promptText;
+    record.promoted_at = new Date().toISOString();
+    record.stats = record.stats || { injected: 0, recurrence_after_injection: 0, noise_reports: 0 };
+    const promoted = loadPromoted(cwd).filter((item) => item.id !== record.id);
+    promoted.push(record);
+    savePromoted(cwd, promoted.sort((a, b) => a.id.localeCompare(b.id)));
+    saveDemoted(cwd, demoted);
+    return record;
+  }
+
   const candidates = candidatesFromObservations(readObservations(cwd));
   const candidate = candidates.find((item) => item.id === candidateId || item.pattern_key === candidateId);
   if (!candidate) throw new Error(`unknown pattern candidate: ${candidateId}`);
@@ -425,6 +588,36 @@ function retire({ cwd, patternId, reason = "retired by operator" }) {
   return record;
 }
 
+// 30.2(d): demotion is the reversible sibling of retire() — an explicit
+// operator decision (never automatic; see docs/pattern-learning.md's open
+// question on auto-promotion/auto-retirement) that sends a promoted pattern
+// back to candidate status instead of retiring it outright. The audit line
+// (who/when/reason/counters-at-demotion) travels with the record into
+// demoted.json so a later `patterns promote <id>` can restore it without
+// losing the history.
+function demote({ cwd, patternId, operator, reason = "demoted by operator" }) {
+  if (!patternId) throw new Error("patterns demote requires a pattern id");
+  const promoted = loadPromoted(cwd);
+  const idx = promoted.findIndex((item) => item.id === patternId);
+  if (idx === -1) throw new Error(`unknown promoted pattern: ${patternId}`);
+  const [record] = promoted.splice(idx, 1);
+  const demotionEntry = {
+    demoted_at: new Date().toISOString(),
+    demoted_by: operator || defaultOperator(),
+    reason,
+    counters_at_demotion: { ...(record.stats || { injected: 0, recurrence_after_injection: 0, noise_reports: 0 }) },
+  };
+  record.status = "candidate";
+  record.demotion_history = Array.isArray(record.demotion_history)
+    ? [...record.demotion_history, demotionEntry]
+    : [demotionEntry];
+  const demoted = loadDemoted(cwd).filter((item) => item.id !== patternId);
+  demoted.push(record);
+  savePromoted(cwd, promoted);
+  saveDemoted(cwd, demoted.sort((a, b) => a.id.localeCompare(b.id)));
+  return record;
+}
+
 function scorePattern(pattern, descriptor, ctx, detected) {
   const applies = pattern.applies_to || {};
   let score = 0;
@@ -469,19 +662,29 @@ function selectForDescriptor({ cwd, descriptor, ctx = {}, budget = DEFAULT_BUDGE
   return out;
 }
 
+function statSum(patterns, field) {
+  return patterns.reduce((sum, item) => sum + ((item.stats && item.stats[field]) || 0), 0);
+}
+
 function stats({ cwd }) {
   const observations = readObservations(cwd);
   const promoted = loadPromoted(cwd);
   const retired = loadRetired(cwd);
+  const demoted = loadDemoted(cwd);
+  // Historical injected/recurrence/noise counts survive a demotion (they
+  // live on in demoted.json), so the aggregate sums include both stores —
+  // only the promoted/demoted counts themselves are reported separately.
+  const withHistory = [...promoted, ...demoted];
   return {
     schema_version: SCHEMA_VERSION,
     observations: observations.length,
     candidates: candidatesFromObservations(observations).length,
     promoted: promoted.length,
     retired: retired.length,
-    injected: promoted.reduce((sum, item) => sum + ((item.stats && item.stats.injected) || 0), 0),
-    recurrence_after_injection: promoted.reduce((sum, item) => sum + ((item.stats && item.stats.recurrence_after_injection) || 0), 0),
-    noise_reports: promoted.reduce((sum, item) => sum + ((item.stats && item.stats.noise_reports) || 0), 0),
+    demoted: demoted.length,
+    injected: statSum(withHistory, "injected"),
+    recurrence_after_injection: statSum(withHistory, "recurrence_after_injection"),
+    noise_reports: statSum(withHistory, "noise_reports"),
   };
 }
 
@@ -491,17 +694,22 @@ module.exports = {
   OBSERVATIONS_FILE,
   PROMOTED_FILE,
   RETIRED_FILE,
+  DEMOTED_FILE,
   PENDING_FILE,
+  RECURRENCE_CHECKED_FILE,
   DEFAULT_BUDGET,
   patternsDir,
   collect,
   list,
   promote,
   retire,
+  demote,
+  recordInjection,
   selectForDescriptor,
   stats,
   readObservations,
   loadPromoted,
+  loadDemoted,
   candidatesFromObservations,
   detectLanguage,
   detectFramework,

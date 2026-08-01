@@ -57,6 +57,13 @@ const DEFAULTS = {
     require_confirmed_track: false,
   },
   deploy: null,
+  patterns: {
+    // 30.2(c): `devteam patterns review` flags a promoted pattern as a
+    // demotion candidate once stats.recurrence_after_injection reaches this
+    // many blockers recurring after injection. Flagging only — demotion
+    // stays an explicit `devteam patterns demote <id>` operator action.
+    demotion_recurrence_threshold: 3,
+  },
 };
 
 function configPath(cwd) {
@@ -111,6 +118,12 @@ function loadConfig(cwd = process.cwd()) {
         require_confirmed_track: parsed.autonomy?.require_confirmed_track === true,
       },
       deploy: (parsed.deploy && typeof parsed.deploy === "object") ? parsed.deploy : null,
+      patterns: {
+        demotion_recurrence_threshold: Number.isInteger(parsed.patterns?.demotion_recurrence_threshold)
+          && parsed.patterns.demotion_recurrence_threshold > 0
+          ? parsed.patterns.demotion_recurrence_threshold
+          : DEFAULTS.patterns.demotion_recurrence_threshold,
+      },
       _source: "file",
       _path: p,
       _raw: parsed,

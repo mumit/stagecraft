@@ -1,11 +1,12 @@
 const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup, runCLI } = require("./_helpers");
 
 const patterns = require(path.join(REPO_ROOT, "core", "patterns"));
-const { buildDescriptor } = require(path.join(REPO_ROOT, "core", "orchestrator"));
+const { buildDescriptor, runStage, runStageHeadless } = require(path.join(REPO_ROOT, "core", "orchestrator"));
 const { getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 const generic = require(path.join(REPO_ROOT, "hosts", "generic", "adapter"));
 
@@ -206,5 +207,162 @@ describe("patterns: CLI and prompt rendering", () => {
     const prompt = generic.renderStagePrompt(descriptor, { cwd, track: "full", orchestrator: "test", feature: "add HTTP endpoint" });
     assert.match(prompt, /Known Project Patterns/);
     assert.match(prompt, /structured backend error logs/);
+  });
+});
+
+// 30.2: wire the previously-inert stats.injected / recurrence_after_injection
+// counters and the operator-only demotion flow.
+describe("patterns: 30.2 outcome-feedback counters", () => {
+  function claudeCodeConfig() {
+    return "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n";
+  }
+
+  // Minimal claude-code stub: writes a PASS gate for the requested role and
+  // exits 0. Mirrors the pattern used in tests/orchestrator.test.js.
+  function makeHeadlessStub(role) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-patterns-stub-"));
+    dirs.push(dir);
+    const script = path.join(dir, "stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gatesDir = path.join(process.cwd(), "pipeline", "gates");
+fs.mkdirSync(gatesDir, { recursive: true });
+fs.writeFileSync(path.join(gatesDir, "stage-04.${role}.json"), JSON.stringify({
+  stage: "stage-04", workstream: "${role}", host: "claude-code", status: "PASS",
+  track: "full", blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-31T00:00:00.000Z"
+}, null, 2) + "\\n");
+`, "utf8");
+    return script;
+  }
+
+  function promoteBackendPattern(cwd, text) {
+    seedGate(cwd, "stage-06c", {
+      status: "FAIL",
+      blockers: [{ signal: "missing_log", assigned_to: "backend" }],
+    });
+    patterns.collect({ cwd });
+    const candidate = patterns.list({ cwd }).candidates[0];
+    return patterns.promote({ cwd, candidateId: candidate.id, text });
+  }
+
+  it("a real headless dispatch increments stats.injected exactly once; a preview-only runStage() call never does", async () => {
+    const cwd = track(makeTargetProject({ config: claudeCodeConfig() }));
+    const promoted = promoteBackendPattern(cwd, "Add structured backend error logs before the observability gate.");
+    assert.equal(promoted.stats.injected, 0);
+
+    // Preview/render-only path (what `devteam reproduce` / `devteam replay
+    // --dry-run` do): renders the prompt but never dispatches it anywhere.
+    const previewPlan = runStage("build", { cwd, feature: "add HTTP endpoint", workstream: ["backend"] });
+    assert.ok(previewPlan.workstreams[0].descriptor.knownPatterns.length > 0, "sanity: pattern was actually selected");
+    assert.equal(patterns.list({ cwd }).promoted[0].stats.injected, 0, "a preview render must NOT increment stats.injected");
+
+    const script = makeHeadlessStub("backend");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("build", { cwd, feature: "add HTTP endpoint", workstream: ["backend"] });
+      assert.equal(result.results.length, 1);
+      assert.equal(result.results[0].exitCode, 0);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+
+    assert.equal(patterns.list({ cwd }).promoted[0].stats.injected, 1, "one real dispatch must increment stats.injected exactly once");
+
+    const runLog = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    const injectedEvents = runLog.split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.outcome === "pattern-injected");
+    assert.equal(injectedEvents.length, 1);
+    assert.equal(injectedEvents[0].stage, "stage-04");
+    assert.deepEqual(injectedEvents[0].pattern_ids, [promoted.id]);
+  });
+
+  it("a seeded recurrence scenario flags a promoted pattern as a demotion candidate in `devteam patterns review`", () => {
+    const cwd = track(makeTargetProject());
+    const promoted = promoteBackendPattern(cwd, "Add structured backend error logs before the observability gate.");
+
+    // Simulate three separate dispatch attempts where the pattern was
+    // injected and the same blocker recurred anyway: each archived attempt
+    // is a distinct gate file, so each counts once toward recurrence.
+    patterns.recordInjection({ cwd, stage: "stage-06c", workstreamId: "stage-06c.backend", patterns: [{ id: promoted.id }] });
+    const gatesDir = path.join(cwd, "pipeline", "gates");
+    const archiveDir = path.join(gatesDir, "archive");
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.copyFileSync(path.join(gatesDir, "stage-06c.json"), path.join(archiveDir, "stage-06c.attempt-1.json"));
+    fs.copyFileSync(path.join(gatesDir, "stage-06c.json"), path.join(archiveDir, "stage-06c.attempt-2.json"));
+
+    const result = patterns.collect({ cwd });
+    assert.equal(result.recurrenceFlagged, 3, "current gate + 2 archived attempts = 3 distinct recurrences");
+    assert.equal(patterns.list({ cwd }).promoted[0].stats.recurrence_after_injection, 3);
+
+    const review = runCLI(["patterns", "review"], { cwd });
+    assert.equal(review.status, 0, review.stderr);
+    assert.match(review.stdout, /demotion candidate/);
+    assert.match(review.stdout, new RegExp(`devteam patterns demote ${promoted.id}`));
+
+    // Re-running collect() over the same (unchanged) gate files must not
+    // double-count the recurrence.
+    const second = patterns.collect({ cwd });
+    assert.equal(second.recurrenceFlagged, 0);
+    assert.equal(patterns.list({ cwd }).promoted[0].stats.recurrence_after_injection, 3);
+  });
+
+  it("demote then re-promote round-trips: pattern returns to candidate, stops being injected, and history survives re-promotion", () => {
+    const cwd = track(makeTargetProject());
+    const promoted = promoteBackendPattern(cwd, "Add structured backend error logs before the observability gate.");
+    patterns.recordInjection({ cwd, stage: "stage-04", workstreamId: "stage-04.backend", patterns: [{ id: promoted.id }] });
+
+    const demoted = patterns.demote({ cwd, patternId: promoted.id, operator: "alice", reason: "too noisy" });
+    assert.equal(demoted.status, "candidate");
+    assert.equal(demoted.demotion_history.length, 1);
+    assert.equal(demoted.demotion_history[0].demoted_by, "alice");
+    assert.equal(demoted.demotion_history[0].reason, "too noisy");
+    assert.equal(demoted.demotion_history[0].counters_at_demotion.injected, 1);
+
+    // A demoted pattern must stop being selected for injection.
+    const descriptor = buildDescriptor(getStage("build"), "backend", { workstreamId: "stage-04.backend" });
+    const selected = patterns.selectForDescriptor({ cwd, descriptor, ctx: { cwd, feature: "add HTTP endpoint" } });
+    assert.equal(selected.length, 0);
+    assert.equal(patterns.list({ cwd }).promoted.length, 0);
+    assert.equal(patterns.list({ cwd }).demoted.length, 1);
+
+    const rePromoted = patterns.promote({ cwd, candidateId: promoted.id });
+    assert.equal(rePromoted.status, "promoted");
+    assert.equal(rePromoted.demotion_history.length, 1, "demotion audit history must survive re-promotion");
+    assert.equal(rePromoted.demotion_history[0].demoted_by, "alice");
+    assert.equal(patterns.list({ cwd }).demoted.length, 0);
+    assert.equal(patterns.list({ cwd }).promoted.length, 1);
+
+    const selectedAgain = patterns.selectForDescriptor({ cwd, descriptor, ctx: { cwd, feature: "add HTTP endpoint" } });
+    assert.equal(selectedAgain.length, 1, "re-promoted pattern is selectable again");
+  });
+
+  it("counters persist across collect/promote cycles without clobbering sibling patterns", () => {
+    const cwd = track(makeTargetProject());
+    const first = promoteBackendPattern(cwd, "Add structured backend error logs before the observability gate.");
+    patterns.recordInjection({ cwd, stage: "stage-04", workstreamId: "stage-04.backend", patterns: [{ id: first.id }] });
+    patterns.recordInjection({ cwd, stage: "stage-04", workstreamId: "stage-04.backend", patterns: [{ id: first.id }] });
+    assert.equal(patterns.list({ cwd }).promoted[0].stats.injected, 2);
+
+    // Promote an unrelated candidate — its own promote()/savePromoted() call
+    // must not reset or clobber the first pattern's already-accumulated stats.
+    seedGate(cwd, "stage-07", {
+      status: "FAIL",
+      blockers: ["GET /widgets endpoint has no README documentation."],
+    });
+    const collectResult = patterns.collect({ cwd });
+    assert.equal(collectResult.candidates, 2);
+    const secondCandidate = patterns.list({ cwd }).candidates.find((c) => c.domain === "docs");
+    patterns.promote({ cwd, candidateId: secondCandidate.id, text: "Document new HTTP endpoints during implementation." });
+
+    const afterSecondPromote = patterns.list({ cwd }).promoted;
+    assert.equal(afterSecondPromote.length, 2);
+    const firstAfter = afterSecondPromote.find((p) => p.id === first.id);
+    assert.equal(firstAfter.stats.injected, 2, "unrelated promote() must not reset sibling stats");
+
+    // collect() again (no new gates) must also leave stats untouched.
+    patterns.collect({ cwd });
+    assert.equal(patterns.list({ cwd }).promoted.find((p) => p.id === first.id).stats.injected, 2);
   });
 });

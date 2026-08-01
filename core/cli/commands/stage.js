@@ -262,9 +262,23 @@ function run(positional, _flags) {
   // rendering — result already contains only the requested workstreams.
   const result = runStage(stageName, _flags);
   printStagePreamble(result, _flags);
+  // 30.2(a): printing the prompt here IS the dispatch for the interactive
+  // path — the operator is about to paste it into a real host — unlike
+  // `devteam replay --dry-run` / `devteam reproduce`, which only call
+  // runStage() to preview a prompt and never reach this print loop.
+  const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
+  const { recordInjection } = require(path.join(__dirname, "..", "..", "patterns"));
+  const root = pipelineRoot(result.ctx.cwd, result.ctx.changeId);
   for (const ws of result.workstreams) {
     console.log(`\n────────  workstream: ${ws.role}  (host: ${ws.host})  ────────\n`);
     console.log(ws.prompt);
+    recordInjection({
+      cwd: result.ctx.cwd,
+      pipelineRoot: root,
+      stage: result.stage,
+      workstreamId: ws.descriptor.workstreamId,
+      patterns: ws.descriptor.knownPatterns,
+    });
   }
   console.log(`\n────────  end of ${result.stage} (${result.roles.length} workstream${result.roles.length === 1 ? "" : "s"})  ────────`);
   printStagePostamble(result, _flags);

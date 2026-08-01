@@ -1255,6 +1255,23 @@ Retire stale or noisy guidance:
 devteam patterns retire <pattern-id> --reason "covered by preflight check"
 ```
 
+Every promoted pattern also tracks how it's doing in practice: `stats.injected`
+increments on each real dispatch (headless run or the prompt printed for a human to
+paste into a host — never a preview like `devteam reproduce`), and
+`stats.recurrence_after_injection` increments when the same blocker shows up again in
+a later dispatch of that stage despite the injected guidance. `devteam patterns
+review` flags a pattern as a demotion candidate once recurrence reaches
+`patterns.demotion_recurrence_threshold` in `.devteam/config.yml` (default `3`) — a
+flag only, never automatic. If a pattern keeps recurring, send it back to candidate
+rather than deleting its history outright:
+
+```bash
+devteam patterns demote <pattern-id> --reason "recurring despite injection — needs a better prompt or a real gate"
+```
+
+Demotion is reversible: `devteam patterns promote <pattern-id>` restores it, keeping
+the demotion audit trail (who, when, why, and the counters at the time).
+
 For the full reference, including storage shape, edge cases, auto-retry semantics,
 and graduation to deterministic gates, see [`docs/pattern-learning.md`](pattern-learning.md).
 

@@ -339,6 +339,11 @@ the next agent repeats the same mistake.
 - Taxonomy: `blocker` for failed gates/retries, `warning` for senior-engineering
   concerns, `nudge` for local preference, and `positive` for practices worth
   reinforcing
+- Outcome feedback closes the loop: `stats.injected` counts real dispatches that
+  included the pattern; `stats.recurrence_after_injection` counts blockers that
+  recurred anyway. `devteam patterns review` flags recurrence-heavy patterns as
+  demotion candidates (configurable threshold, default 3); `devteam patterns demote
+  <id>` is the explicit, reversible operator action — never automatic
 
 See [`docs/pattern-learning.md`](pattern-learning.md) for the value model, storage
 shape, taxonomy, safety boundaries, and promotion workflow.
