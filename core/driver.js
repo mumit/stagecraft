@@ -1836,6 +1836,26 @@ async function run(opts = {}) {
         logEvent(cwd, changeId, { ...base, outcome: "merge-started" });
         const mergeStart = Date.now();
         const m = _merge(r.name, { cwd, track: effectiveTrack, changeId });
+        // 31.1: workspace-global orchestrator stamping, once, on the merged
+        // gate (stampWorkstream in core/orchestrator.js already stamped each
+        // role's own gate as it completed). Best-effort — a stamping failure
+        // must never fail the merge; m.gate is refreshed so mergeTransition
+        // below sees the post-stamp status, not the model's pre-stamp claim.
+        if (m.merged) {
+          try {
+            const { STAMPABLE_MERGE_STAGES, stampMerged } = require("./verify/stamp");
+            if (STAMPABLE_MERGE_STAGES.has(r.stage)) {
+              const stampResult = await stampMerged(cwd, r.stage, m.file);
+              if (stampResult.ok) {
+                m.gate = stampResult.gate;
+              } else {
+                process.stderr.write(`[devteam] orchestrator merged-stamp: ${stampResult.error}\n`);
+              }
+            }
+          } catch (err) {
+            process.stderr.write(`[devteam] orchestrator merged-stamp failed: ${err.message}\n`);
+          }
+        }
         const mergeDurationMs = Date.now() - mergeStart;
         logEvent(cwd, changeId, {
           ...base,

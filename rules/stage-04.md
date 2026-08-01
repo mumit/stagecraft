@@ -31,7 +31,9 @@ npm test       # not: node --test  — same command Stage 4a will run mechanical
 pipeline if they exit non-zero. Self-attesting `lint_passed: true` after running
 the binary directly (e.g. `npx eslint@8 src/`) while the npm script is broken or
 missing produces a false PASS here and a hard blocker at Stage 4a. Fix any broken
-or missing scripts before reporting the gate as PASS.
+or missing scripts before reporting the gate as PASS. The orchestrator also stamps
+your own `lint_passed`/`tests_passed` on this workstream's gate directly (before
+Stage 4a), so a false claim here is caught immediately, not two stages later.
 
 If no lint or test script is defined yet (e.g. `package.json` has not been
 created), create one as part of this workstream's deliverables — that is a

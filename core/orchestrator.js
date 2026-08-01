@@ -960,6 +960,38 @@ async function runStageHeadless(stageName, opts = {}) {
       } else if (ws.adapter.capabilities && ws.adapter.capabilities.telemetry !== "native") {
         patchGateForEstimatedUsage(r.gatePath || wsGatePathExpected, telemetry.promptBytes);
       }
+      // 31.1: per-role orchestrator stamping for multi-workstream stampable
+      // stages (stage-04 build) — stamps THIS workstream's own gate as it
+      // completes, mirroring the single-role stamp step below but scoped to
+      // the role (lint over ws.descriptor.allowedWrites; see core/verify/stamp.js).
+      // Same "only if this dispatch actually wrote the gate" guard as the
+      // tool-budget patch above.
+      if (opts.stamp !== false) {
+        const { STAMPABLE_WORKSTREAM_STAGES, stampWorkstream } = require("./verify/stamp");
+        if (STAMPABLE_WORKSTREAM_STAGES.has(plan.stage)) {
+          const wsGatePath = r.gatePath || wsGatePathExpected;
+          let wsPostMtime = null;
+          try { wsPostMtime = fs.statSync(wsGatePath).mtimeMs; } catch { wsPostMtime = null; }
+          const wsGateWasWrittenThisRun = wsPostMtime !== null && (preInvokeMtime === null || wsPostMtime > preInvokeMtime);
+          if (wsGateWasWrittenThisRun) {
+            try {
+              const stampResult = await stampWorkstream(plan.ctx.cwd, plan.stage, wsGatePath, {
+                role: ws.role,
+                allowedWrites: ws.descriptor.allowedWrites,
+              });
+              if (!stampResult.ok) {
+                process.stderr.write(`[devteam] orchestrator workstream-stamp (${ws.role}): ${stampResult.error}\n`);
+              } else if (stampResult.stamp.status_overridden) {
+                process.stderr.write(
+                  `[devteam] orchestrator workstream-stamp flipped ${ws.role}: ${stampResult.stamp.status_overridden.from} → ${stampResult.stamp.status_overridden.to}\n`,
+                );
+              }
+            } catch (err) {
+              process.stderr.write(`[devteam] orchestrator workstream-stamp failed (${ws.role}): ${err.message}\n`);
+            }
+          }
+        }
+      }
       const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, promptHash, ...r, ...telemetry };
       emitWorkstreamEvent({
         type: "workstream-finished",
@@ -998,7 +1030,9 @@ async function runStageHeadless(stageName, opts = {}) {
       // Single-role stages produce one gate at stage-XX.json (no role
       // suffix). Stamping applies to: stage-03b (spec drift), stage-04a
       // (lint+tests), stage-06 (tests + AC mapping). Multi-role stages
-      // would need per-role stamping, which isn't in scope here.
+      // (stage-04 build) get their own per-role + merged stamping — see
+      // STAMPABLE_WORKSTREAM_STAGES below and STAMPABLE_MERGE_STAGES in
+      // core/driver.js's merge handler (31.1).
       if (STAMPABLE_STAGES.has(plan.stage) && plan.workstreams.length === 1) {
         try {
           const stampResult = await stamp(plan.ctx.cwd, plan.stage);
@@ -1191,6 +1225,16 @@ function mergeWorkstreamGates(stageName, opts = {}) {
     if (anyTokens) { merged.tokens_in = totalTokensIn; merged.tokens_out = totalTokensOut; }
     if (anyCost) merged.cost_usd = totalCost;
     if (anyDuration) merged.duration_ms = totalDuration;
+
+    // 31.1: roll any per-role tests_passed self-report into the merged gate so
+    // stampStage04Merged (core/verify/stamp.js) — the workspace-global,
+    // post-merge authoritative check — has a model claim to compare its
+    // observed full-suite result against. true only if every role that made
+    // a claim claimed true; absent when no role claimed anything.
+    if (stageDef.stage === "stage-04") {
+      const testsClaims = wsGates.map((w) => w.gate.tests_passed).filter((v) => typeof v === "boolean");
+      if (testsClaims.length > 0) merged.tests_passed = testsClaims.every(Boolean);
+    }
 
     const outFile = path.join(gatesDir, `${stageDef.stage}.json`);
     fs.writeFileSync(outFile, JSON.stringify(merged, null, 2) + "\n", "utf8");

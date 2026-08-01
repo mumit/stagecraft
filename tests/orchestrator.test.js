@@ -298,6 +298,42 @@ describe("orchestrator: mergeWorkstreamGates aggregation", () => {
     assert.equal(r.merged, true);
     assert.equal(r.gate.track, "quick", `merged gate should carry resolved track; got: ${r.gate.track}`);
   });
+
+  // 31.1: per-role tests_passed self-report rolls up into the merged gate so
+  // stampStage04Merged (core/verify/stamp.js) has a model claim to compare its
+  // own observed full-suite result against.
+  describe("31.1: tests_passed roll-up", () => {
+    function seedFourWithTests(cwd, testsPassedByRole) {
+      const roles = ["backend", "frontend", "platform", "qa"];
+      roles.forEach((role, i) => {
+        seedGate(cwd, `stage-04.${role}`, {
+          stage: "stage-04", workstream: role, host: "claude-code", status: "PASS",
+          ...(testsPassedByRole[i] !== undefined ? { tests_passed: testsPassedByRole[i] } : {}),
+        });
+      });
+    }
+
+    it("rolls up to true when every role that claimed tests_passed claimed true", () => {
+      const cwd = track(makeTargetProject());
+      seedFourWithTests(cwd, [true, true, true, true]);
+      const r = mergeWorkstreamGates("build", { cwd });
+      assert.equal(r.gate.tests_passed, true);
+    });
+
+    it("rolls up to false when any role claimed tests_passed:false", () => {
+      const cwd = track(makeTargetProject());
+      seedFourWithTests(cwd, [true, false, true, true]);
+      const r = mergeWorkstreamGates("build", { cwd });
+      assert.equal(r.gate.tests_passed, false);
+    });
+
+    it("leaves tests_passed absent from the merged gate when no role claimed it", () => {
+      const cwd = track(makeTargetProject());
+      seedFourWithTests(cwd, [undefined, undefined, undefined, undefined]);
+      const r = mergeWorkstreamGates("build", { cwd });
+      assert.equal("tests_passed" in r.gate, false);
+    });
+  });
 });
 
 describe("orchestrator: runStageHeadless --skip-completed", () => {
@@ -369,6 +405,76 @@ describe("orchestrator: runStageHeadless --skip-completed", () => {
     assert.equal(events.filter((event) => event.type === "workstream-finished").length, 4);
     assert.ok(events.some((event) => event.queue_limit === 1));
     assert.ok(result.results.every((item) => typeof item.queueMs === "number"));
+  });
+});
+
+// ─── 31.1: per-role orchestrator stamping wired into the real headless dispatch ──
+// Mirrors the stub pattern in tests/patterns.test.js (makeHeadlessStub): filter to a
+// single --workstream so a single global DEVTEAM_HEADLESS_COMMAND stub unambiguously
+// knows which role's gate to write.
+describe("orchestrator: runStageHeadless stamps a stage-04 workstream gate as it completes (31.1)", () => {
+  function makeBackendStub(cwd) {
+    const script = path.join(cwd, "backend-stub.js");
+    fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gatesDir = path.join(process.cwd(), "pipeline", "gates");
+fs.mkdirSync(gatesDir, { recursive: true });
+fs.writeFileSync(path.join(gatesDir, "stage-04.backend.json"), JSON.stringify({
+  stage: "stage-04", workstream: "backend", host: "claude-code", status: "PASS",
+  track: "full", blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-31T00:00:00.000Z",
+  pr_summaries_written: ["pipeline/pr-backend.md"], local_verification: ["npm test"],
+  lint_passed: true
+}, null, 2) + "\\n");
+`, "utf8");
+    return script;
+  }
+
+  it("stamps lint_passed on stage-04.backend.json using the role's own allowedWrites surface", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n  verify:\n    lint_command: \"false\"\n",
+    }));
+    const script = makeBackendStub(cwd);
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script}`;
+    try {
+      const result = await runStageHeadless("build", { cwd, workstream: ["backend"] });
+      assert.equal(result.results.length, 1);
+      assert.equal(result.results[0].exitCode, 0);
+
+      const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+      const gate = JSON.parse(fs.readFileSync(gatePath, "utf8"));
+      assert.ok(gate._orchestrator_stamped, "workstream gate must carry an orchestrator stamp");
+      assert.equal(gate._orchestrator_stamped.scope, "workstream");
+      assert.equal(gate._orchestrator_stamped.role, "backend");
+      // Model claimed lint_passed:true; the configured lint command ("false")
+      // actually fails — orchestrator's truth wins, flipping status to FAIL.
+      assert.equal(gate.lint_passed, false);
+      assert.equal(gate.status, "FAIL");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("stamp: false disables workstream stamping (used by tests that don't want real lint/test commands)", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n  verify:\n    lint_command: \"false\"\n",
+    }));
+    const script = makeBackendStub(cwd);
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script}`;
+    try {
+      const result = await runStageHeadless("build", { cwd, workstream: ["backend"], stamp: false });
+      assert.equal(result.results[0].exitCode, 0);
+      const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+      const gate = JSON.parse(fs.readFileSync(gatePath, "utf8"));
+      assert.equal("_orchestrator_stamped" in gate, false);
+      assert.equal(gate.status, "PASS", "model's self-report is untouched when stamping is disabled");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
   });
 });
 
