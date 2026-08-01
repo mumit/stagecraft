@@ -16,6 +16,14 @@
     "local_verification": {
       "type": "array",
       "description": "Commands the dev ran locally to verify the change (e.g. 'npm test', 'npm run lint'). Stage 4a re-runs these in CI."
+    },
+    "lint_passed": {
+      "type": "boolean",
+      "description": "Optional model self-report. On a workstream gate, orchestrator-stamped (31.1): core/verify/stamp.js runs the project's lint command scoped to this role's allowedWrites directories and overwrites this field with what it observed. Absent on the merged gate."
+    },
+    "tests_passed": {
+      "type": "boolean",
+      "description": "Optional model self-report. Orchestrator-stamped (31.1) on both scopes: workstream gates get a same-purpose full-suite check (core/verify/stamp.js stampStage04Workstream); the merged gate gets one workspace-global authoritative run after merge (stampStage04Merged) — verification receipts collapse the repeated full-suite command to a single real execution across all workstreams plus the merged check. On the merged gate, mergeWorkstreamGates first rolls up any per-role claims (true only if every role that claimed one claimed true) before the merged check compares against it."
     }
   },
   "additionalProperties": true

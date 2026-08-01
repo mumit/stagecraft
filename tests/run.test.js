@@ -228,6 +228,48 @@ describe("driver: dispatch loop (injected deps)", () => {
     assert.deepEqual(s.stages_advanced, ["build"]);
   });
 
+  // 31.1: the driver stamps the merged stage-04 gate once, after merge — the
+  // workspace-global check that core/orchestrator.js's per-workstream stamping
+  // (during dispatch) doesn't cover. mergeWorkstreamGates itself is mocked (the
+  // per-role merge logic is covered elsewhere); this proves the driver wires the
+  // real stampMerged() in and that its result — not the model's pre-stamp claim —
+  // lands on disk.
+  it("31.1: stamps the merged stage-04 gate once after merge, overriding a false tests_passed claim", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n  verify:\n    test_command: \"false\"\n",
+    }));
+    const gatesDir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(gatesDir, { recursive: true });
+    const mergedGatePath = path.join(gatesDir, "stage-04.json");
+    fs.writeFileSync(mergedGatePath, JSON.stringify({
+      stage: "stage-04", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-07-31T00:00:00Z", blockers: [], warnings: [],
+      tests_passed: true, // rolled up from role gates that all self-reported true
+      workstreams: [{ workstream: "backend", host: "claude-code", status: "PASS" }],
+    }, null, 2));
+
+    const actions = [
+      { action: "merge", stage: "stage-04", name: "build" },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    let i = 0;
+    const s = await run({
+      cwd,
+      next: () => actions[i++],
+      mergeWorkstreamGates: () => ({
+        merged: true,
+        file: mergedGatePath,
+        gate: JSON.parse(fs.readFileSync(mergedGatePath, "utf8")),
+      }),
+    });
+    assert.equal(s.completed, true);
+
+    const gate = JSON.parse(fs.readFileSync(mergedGatePath, "utf8"));
+    assert.equal(gate._orchestrator_stamped.scope, "merged");
+    assert.equal(gate.tests_passed, false, "orchestrator's observed failing suite overrides the model's claim");
+    assert.equal(gate.status, "FAIL", "merged gate status must flip when the real suite fails");
+  });
+
   it("records workstream lifecycle progress in callbacks, run log, and run state", async () => {
     const cwd = track(makeTargetProject());
     const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");

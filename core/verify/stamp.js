@@ -525,6 +525,184 @@ async function stampStage03b(cwd, gatePath) {
   return finalizeStamp(gate, gatePath, blockers, stamp);
 }
 
+// 31.1: Stage-04 (Build) multi-workstream stamping. Build dispatches
+// backend/frontend/platform/qa as separate workstreams (STAGES.build,
+// core/pipeline/stages.js); each writes its own pipeline/gates/stage-04.<role>.json,
+// merged into pipeline/gates/stage-04.json by mergeWorkstreamGates. Previously
+// STAMPABLE_STAGES stamping was gated on `plan.workstreams.length === 1`
+// (see core/orchestrator.js), so build was never verified. Two scopes now:
+//   - workstream-scoped (stampStage04Workstream): lint scoped to the role's
+//     allowedWrites surface; runs as each workstream's gate lands.
+//   - workspace-global (stampStage04Merged): the full test suite, run once
+//     against the merged gate after all workstreams land — receipts (see
+//     core/verify/receipts.js) mean this and the per-role test checks below
+//     collapse to one real subprocess run when the workspace hasn't changed.
+
+// Directory-shaped allowedWrites entries (trailing "/") are the role's source
+// surface; file-shaped entries (package.json, pipeline/pr-<role>.md, etc.)
+// aren't lint targets.
+function scopedPathsFor(allowedWrites) {
+  if (!Array.isArray(allowedWrites)) return [];
+  return allowedWrites.filter((p) => typeof p === "string" && p.endsWith("/"));
+}
+
+// Best-effort scoping: appends the role's paths as extra positional args.
+// `npm run <script>` needs `--` to forward args to the underlying script;
+// a directly-configured command (e.g. "npx eslint") takes them as-is. Tools
+// that ignore extra path args just lint the whole project — scoped_paths is
+// recorded on the stamp regardless, so that limitation is auditable rather
+// than silent.
+function scopedLintCommand(baseCommand, scopedPaths) {
+  if (scopedPaths.length === 0) return baseCommand;
+  const separator = /^npm run\s/.test(baseCommand) ? " -- " : " ";
+  return `${baseCommand}${separator}${scopedPaths.join(" ")}`;
+}
+
+async function stampStage04Workstream(cwd, gatePath, { role, allowedWrites } = {}) {
+  const config = loadConfig(cwd);
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error) return { ok: false, error };
+
+  const stamp = {
+    stamper_version: STAMPER_VERSION,
+    at: new Date().toISOString(),
+    scope: "workstream",
+    role,
+    fields: [],
+    runs: {},
+  };
+  const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
+
+  const commands = resolveCommands(cwd, config);
+  const scopedPaths = scopedPathsFor(allowedWrites);
+  if (commands.lint) {
+    const scopedCommand = scopedLintCommand(commands.lint, scopedPaths);
+    const result = await runCommandWithReceipt(scopedCommand, {
+      cwd,
+      receipts: {
+        root: receiptRootFromGate(gatePath),
+        cwd,
+        config,
+        purpose: `stage-04:lint:${role}`,
+        suiteId: `lint-${role}`,
+        enabled: config.pipeline.verify.receipts !== false,
+      },
+    });
+    const passed = result.exitCode === 0 && !result.timedOut && !result.spawnError;
+    if (typeof gate.lint_passed === "boolean" && gate.lint_passed !== passed) {
+      stamp.fields.push({ field: "lint_passed", model_said: gate.lint_passed, orchestrator: passed });
+    } else {
+      stamp.fields.push({ field: "lint_passed", orchestrator: passed });
+    }
+    gate.lint_passed = passed;
+    stamp.runs.lint = {
+      command: result.command,
+      scoped_paths: scopedPaths.length > 0 ? scopedPaths : undefined,
+      exit_code: result.exitCode,
+      duration_ms: result.durationMs,
+      timed_out: result.timedOut || undefined,
+      spawn_error: result.spawnError || undefined,
+      receipt: result.receipt || undefined,
+    };
+    if (!passed) {
+      blockers.push(
+        `lint failed [${role}] (exit ${result.exitCode}${result.timedOut ? ", timed out" : ""}): ${result.command}`,
+      );
+    }
+  } else {
+    stamp.runs.lint = { skipped: "no lint command configured or discovered" };
+  }
+
+  // Not path-scoped: polyglot test commands (npm test / pytest / go test / configured
+  // test_suites) can't be portably filtered to a role's subtree. Same command+purpose
+  // as stampStage04Merged below, so the receipt cache (not new dedup logic) is what
+  // keeps 4 workstreams from meaning 4 real full-suite executions.
+  const testExecution = await executeTests(cwd, config, gatePath, "stage-04:test");
+  if (testExecution) {
+    const passed = testExecution.passed;
+    if (typeof gate.tests_passed === "boolean" && gate.tests_passed !== passed) {
+      stamp.fields.push({ field: "tests_passed", model_said: gate.tests_passed, orchestrator: passed });
+    } else {
+      stamp.fields.push({ field: "tests_passed", orchestrator: passed });
+    }
+    gate.tests_passed = passed;
+    stamp.runs.test = testRunRecord(testExecution);
+    if (!passed) appendTestFailures(blockers, testExecution);
+  } else {
+    stamp.runs.test = { skipped: "no test command configured or discovered" };
+  }
+
+  return finalizeStamp(gate, gatePath, blockers, stamp);
+}
+
+// Workspace-global: the merged stage-04.json gate. mergeWorkstreamGates
+// (core/orchestrator.js) already rolls any per-role `tests_passed` self-report
+// into `merged.tests_passed` before this runs, so a model claim that
+// disagrees with the real suite is recorded as model_said and overridden here.
+async function stampStage04Merged(cwd, gatePath) {
+  const config = loadConfig(cwd);
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error) return { ok: false, error };
+
+  const stamp = {
+    stamper_version: STAMPER_VERSION,
+    at: new Date().toISOString(),
+    scope: "merged",
+    fields: [],
+    runs: {},
+  };
+  const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
+
+  const testExecution = await executeTests(cwd, config, gatePath, "stage-04:test");
+  if (testExecution) {
+    const passed = testExecution.passed;
+    if (typeof gate.tests_passed === "boolean" && gate.tests_passed !== passed) {
+      stamp.fields.push({ field: "tests_passed", model_said: gate.tests_passed, orchestrator: passed });
+    } else {
+      stamp.fields.push({ field: "tests_passed", orchestrator: passed });
+    }
+    gate.tests_passed = passed;
+    stamp.runs.test = testRunRecord(testExecution);
+    if (!passed) appendTestFailures(blockers, testExecution);
+  } else {
+    stamp.runs.test = { skipped: "no test command configured or discovered" };
+  }
+
+  return finalizeStamp(gate, gatePath, blockers, stamp);
+}
+
+// Per-workstream dispatch — stamps one role's own gate as it completes.
+async function stampWorkstream(cwd, stageId, gatePath, ctx = {}) {
+  if (!STAMPABLE_WORKSTREAM_STAGES.has(stageId)) {
+    return { ok: false, error: `no orchestrator workstream stamping defined for ${stageId}` };
+  }
+  if (!fs.existsSync(gatePath)) {
+    return { ok: false, error: `gate not found: ${gatePath}` };
+  }
+  switch (stageId) {
+    case "stage-04": return stampStage04Workstream(cwd, gatePath, ctx);
+    default:          return { ok: false, error: `no orchestrator workstream stamping defined for ${stageId}` };
+  }
+}
+
+// Merged dispatch — stamps the workspace-global gate once, after merge.
+async function stampMerged(cwd, stageId, gatePath) {
+  if (!STAMPABLE_MERGE_STAGES.has(stageId)) {
+    return { ok: false, error: `no orchestrator merged stamping defined for ${stageId}` };
+  }
+  if (!fs.existsSync(gatePath)) {
+    return { ok: false, error: `gate not found: ${gatePath}` };
+  }
+  switch (stageId) {
+    case "stage-04": return stampStage04Merged(cwd, gatePath);
+    default:          return { ok: false, error: `no orchestrator merged stamping defined for ${stageId}` };
+  }
+}
+
+// Stages with per-role workstream stamping / one-shot merged stamping (31.1).
+const STAMPABLE_WORKSTREAM_STAGES = new Set(["stage-04"]);
+const STAMPABLE_MERGE_STAGES = new Set(["stage-04"]);
+
 function finalizeStamp(gate, gatePath, blockers, stamp) {
   // If the orchestrator detected failures, force gate status to FAIL.
   // The model may have written PASS optimistically; orchestrator's truth
@@ -577,6 +755,13 @@ module.exports = {
   stampStage04a,
   stampStage06,
   STAMPABLE_STAGES,
+  // 31.1: multi-workstream (stage-04) per-role + merged stamping.
+  stampWorkstream,
+  stampMerged,
+  stampStage04Workstream,
+  stampStage04Merged,
+  STAMPABLE_WORKSTREAM_STAGES,
+  STAMPABLE_MERGE_STAGES,
   STAMPER_VERSION,
   extractAcsFromBrief, // exposed for tests
   extractAcsFromReport,

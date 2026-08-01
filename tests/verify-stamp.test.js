@@ -3,8 +3,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { makeTargetProject, cleanup } = require("./_helpers");
-const { stamp, stampStage03b, stampStage04a, stampStage06, extractAcsFromBrief } =
-  require("../core/verify/stamp");
+const {
+  stamp, stampStage03b, stampStage04a, stampStage06, extractAcsFromBrief,
+  stampStage04Workstream, stampStage04Merged, stampWorkstream, stampMerged,
+} = require("../core/verify/stamp");
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -539,6 +541,199 @@ describe("verify/stamp: dispatch", () => {
   it("rejects missing gate", async () => {
     const cwd = track(makeTargetProject());
     const r = await stamp(cwd, "stage-04a");
+    assert.equal(r.ok, false);
+    assert.match(r.error, /gate not found/);
+  });
+});
+
+// ─── 31.1: Stage-04 (build) per-workstream + merged stamping ────────────────
+
+describe("verify/stamp: stage-04 workstream — lint scoped to allowedWrites", () => {
+  const ALLOWED_WRITES = {
+    backend: ["src/backend/", "src/tests/", "pipeline/pr-backend.md"],
+    frontend: ["src/frontend/", "pipeline/pr-frontend.md"],
+    platform: ["src/infra/", "pipeline/pr-platform.md"],
+    qa: ["src/tests/", "pipeline/pr-qa.md"],
+  };
+
+  function seedRoleGate(cwd, role, extra = {}) {
+    return seedGateRaw(cwd, `stage-04.${role}`, {
+      stage: "stage-04", workstream: role, host: "claude-code", status: "PASS",
+      orchestrator: "devteam@test", track: "full", timestamp: "2026-07-31T00:00:00Z",
+      blockers: [], warnings: [],
+      pr_summaries_written: [`pipeline/pr-${role}.md`],
+      local_verification: ["npm test"],
+      ...extra,
+    });
+  }
+
+  it("appends the role's directory-shaped allowedWrites as extra lint args", async () => {
+    const cwd = track(makeTargetProject());
+    const script = path.join(cwd, "record-lint.js");
+    fs.writeFileSync(script, `
+      const fs = require('node:fs');
+      fs.writeFileSync('lint-args.json', JSON.stringify(process.argv.slice(2)));
+    `);
+    fs.writeFileSync(
+      path.join(cwd, ".devteam", "config.yml"),
+      configWith({ lint_command: `node ${script}` }),
+    );
+    const gatePath = seedRoleGate(cwd, "backend");
+    const r = await stampStage04Workstream(cwd, gatePath, { role: "backend", allowedWrites: ALLOWED_WRITES.backend });
+    assert.equal(r.ok, true);
+    const args = JSON.parse(fs.readFileSync(path.join(cwd, "lint-args.json"), "utf8"));
+    assert.deepEqual(args, ["src/backend/", "src/tests/"], "only directory-shaped allowedWrites are passed");
+    assert.equal(r.gate._orchestrator_stamped.scope, "workstream");
+    assert.equal(r.gate._orchestrator_stamped.role, "backend");
+    assert.deepEqual(r.gate._orchestrator_stamped.runs.lint.scoped_paths, ["src/backend/", "src/tests/"]);
+  });
+
+  it("flips lint_passed to FAIL when the scoped lint command fails (model claimed true)", async () => {
+    const cwd = track(makeTargetProject({ config: configWith({ lint_command: "false" }) }));
+    const gatePath = seedRoleGate(cwd, "frontend", { lint_passed: true });
+    const r = await stampStage04Workstream(cwd, gatePath, { role: "frontend", allowedWrites: ALLOWED_WRITES.frontend });
+    assert.equal(r.gate.status, "FAIL", "status must flip when the role's lint actually fails");
+    assert.equal(r.gate.lint_passed, false);
+    assert.ok(r.gate.blockers.some((b) => /lint failed \[frontend\]/.test(b)));
+    const field = r.gate._orchestrator_stamped.fields.find((f) => f.field === "lint_passed");
+    assert.equal(field.model_said, true);
+    assert.equal(field.orchestrator, false);
+  });
+
+  it("records skipped runs (not a failure) when no lint/test command is configured", async () => {
+    const cwd = track(makeTargetProject());
+    const gatePath = seedRoleGate(cwd, "qa");
+    const r = await stampStage04Workstream(cwd, gatePath, { role: "qa", allowedWrites: ALLOWED_WRITES.qa });
+    assert.equal(r.ok, true);
+    assert.match(r.gate._orchestrator_stamped.runs.lint.skipped, /no lint command/);
+    assert.match(r.gate._orchestrator_stamped.runs.test.skipped, /no test command/);
+    assert.equal(r.gate.status, "PASS");
+  });
+});
+
+describe("verify/stamp: stage-04 merged — workspace-global authoritative check", () => {
+  it("overrides a false tests_passed claim on the merged gate against a real failing suite", async () => {
+    const cwd = track(makeTargetProject({ config: configWith({ test_command: "false" }) }));
+    const gatePath = seedGateRaw(cwd, "stage-04", {
+      stage: "stage-04", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-07-31T00:00:00Z", blockers: [], warnings: [],
+      // Rolled up from role gates that all self-reported tests_passed:true
+      // (see mergeWorkstreamGates in core/orchestrator.js).
+      tests_passed: true,
+      workstreams: [{ workstream: "backend", host: "claude-code", status: "PASS" }],
+    });
+    const r = await stampStage04Merged(cwd, gatePath);
+    assert.equal(r.gate.status, "FAIL", "merged status must flip when the real suite fails");
+    assert.equal(r.gate.tests_passed, false);
+    assert.equal(r.gate._orchestrator_stamped.scope, "merged");
+    const field = r.gate._orchestrator_stamped.fields.find((f) => f.field === "tests_passed");
+    assert.equal(field.model_said, true, "the model's (rolled-up) claim is preserved in the audit trail");
+    assert.equal(field.orchestrator, false);
+    assert.ok(r.gate._orchestrator_stamped.status_overridden);
+  });
+
+  it("does not touch tests_passed when no role made a claim", async () => {
+    const cwd = track(makeTargetProject({ config: configWith({ test_command: "true" }) }));
+    const gatePath = seedGateRaw(cwd, "stage-04", {
+      stage: "stage-04", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-07-31T00:00:00Z", blockers: [], warnings: [],
+      workstreams: [{ workstream: "backend", host: "claude-code", status: "PASS" }],
+    });
+    const r = await stampStage04Merged(cwd, gatePath);
+    assert.equal(r.gate.tests_passed, true);
+    const field = r.gate._orchestrator_stamped.fields.find((f) => f.field === "tests_passed");
+    assert.equal(field.model_said, undefined, "no claim to disagree with — no model_said entry");
+  });
+});
+
+describe("verify/stamp: stage-04 — receipts collapse 4 role stamps + 1 merged stamp to one real run", () => {
+  const ROLES = ["backend", "frontend", "platform", "qa"];
+  const ALLOWED_WRITES = {
+    backend: ["src/backend/"], frontend: ["src/frontend/"], platform: ["src/infra/"], qa: ["src/tests/"],
+  };
+
+  function seedRoleGate(cwd, role) {
+    return seedGateRaw(cwd, `stage-04.${role}`, {
+      stage: "stage-04", workstream: role, host: "claude-code", status: "PASS",
+      orchestrator: "devteam@test", track: "full", timestamp: "2026-07-31T00:00:00Z",
+      blockers: [], warnings: [],
+    });
+  }
+
+  it("the full test suite runs once; the other 3 workstream stamps + the merged stamp reuse the receipt", async () => {
+    const cwd = track(makeTargetProject());
+    const counterScript = path.join(cwd, "count-test.js");
+    // Counter file lives under pipeline/ — EXCLUDED_DIRS in core/verify/receipts.js
+    // keeps it out of the workspace digest, so writing it doesn't itself bust the
+    // cache between calls (mirrors the existing stampStage06 receipt-reuse test).
+    fs.writeFileSync(counterScript, `
+      const fs = require('node:fs');
+      fs.mkdirSync('pipeline', { recursive: true });
+      const file = 'pipeline/run-count.txt';
+      const n = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      fs.writeFileSync(file, String(n + 1));
+    `);
+    fs.writeFileSync(
+      path.join(cwd, ".devteam", "config.yml"),
+      configWith({ test_command: `node ${counterScript}` }),
+    );
+
+    const workstreamResults = [];
+    for (const role of ROLES) {
+      const gatePath = seedRoleGate(cwd, role);
+      workstreamResults.push(await stampStage04Workstream(cwd, gatePath, { role, allowedWrites: ALLOWED_WRITES[role] }));
+    }
+    const mergedGatePath = seedGateRaw(cwd, "stage-04", {
+      stage: "stage-04", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-07-31T00:00:00Z", blockers: [], warnings: [],
+      workstreams: ROLES.map((role) => ({ workstream: role, host: "claude-code", status: "PASS" })),
+    });
+    const merged = await stampStage04Merged(cwd, mergedGatePath);
+
+    assert.ok(workstreamResults.every((r) => r.ok), "all 4 workstream stamps must succeed");
+    assert.equal(merged.ok, true);
+    assert.equal(
+      fs.readFileSync(path.join(cwd, "pipeline", "run-count.txt"), "utf8"),
+      "1",
+      "4 workstream stamps + 1 merged stamp must mean exactly ONE real full-suite execution",
+    );
+
+    const receipts = [
+      ...workstreamResults.map((r) => r.gate._orchestrator_stamped.runs.test.receipt),
+      merged.gate._orchestrator_stamped.runs.test.receipt,
+    ];
+    assert.equal(receipts.filter((r) => r.reused === false).length, 1, "exactly one real execution recorded");
+    assert.equal(receipts.filter((r) => r.reused === true).length, 4, "the remaining 4 stamp calls reused it");
+  });
+});
+
+describe("verify/stamp: stage-04 dispatch (31.1)", () => {
+  it("stampWorkstream rejects a stage with no per-role stamping defined", async () => {
+    const cwd = track(makeTargetProject());
+    const r = await stampWorkstream(cwd, "stage-05", path.join(cwd, "nope.json"), { role: "backend" });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /no orchestrator workstream stamping defined/);
+  });
+
+  it("stampWorkstream rejects a missing gate for a stampable stage", async () => {
+    const cwd = track(makeTargetProject());
+    const missing = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+    const r = await stampWorkstream(cwd, "stage-04", missing, { role: "backend" });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /gate not found/);
+  });
+
+  it("stampMerged rejects a stage with no merged stamping defined", async () => {
+    const cwd = track(makeTargetProject());
+    const r = await stampMerged(cwd, "stage-05", path.join(cwd, "nope.json"));
+    assert.equal(r.ok, false);
+    assert.match(r.error, /no orchestrator merged stamping defined/);
+  });
+
+  it("stampMerged rejects a missing merged gate", async () => {
+    const cwd = track(makeTargetProject());
+    const missing = path.join(cwd, "pipeline", "gates", "stage-04.json");
+    const r = await stampMerged(cwd, "stage-04", missing);
     assert.equal(r.ok, false);
     assert.match(r.error, /gate not found/);
   });
