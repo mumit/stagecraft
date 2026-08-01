@@ -2014,3 +2014,117 @@ describe("driver: checkTrackConfidence guard (ADR-006 §3/4)", () => {
     assert.ok("track_confidence" in runStart, "track_confidence field must be present");
   });
 });
+
+// ─── Phase 29.2 (ADR-016): assess-by-default on `devteam run` ─────────────────
+// Supersedes ADR-006 §1 ("devteam run MUST NOT infer a track by calling assess
+// internally"): when there is no --track, no pipeline/track.json, and no
+// custom_stages, and there is a feature/description to assess, resolveTrack now
+// runs the assess() heuristics inline at any confidence level (not just "high"
+// as the pre-29.2 right-sizing downgrade path required) and the driver persists
+// the decision to pipeline/track.json with source:"inferred" — exactly the file
+// `devteam assess` would have written, so it flows through the unchanged
+// checkTrackConfidence guard above.
+
+describe("driver: assess-by-default on devteam run (Phase 29.2, ADR-016)", () => {
+  it("no --track, no track.json, feature given → assesses inline and writes pipeline/track.json", async () => {
+    const cwd = track(makeTargetProject());
+    const s = await run({
+      cwd,
+      feature: "quick fix for the login bug",
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+    assert.equal(s.completed, true);
+
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    const events = log.trim().split("\n").map((l) => JSON.parse(l));
+    const runStart = events.find((e) => e.outcome === "run-start");
+    assert.equal(runStart.track, "quick", "assess() must recommend 'quick' for a 'quick fix' description");
+    assert.equal(runStart.track_source, "inferred");
+    assert.equal(runStart.track_confidence, "medium");
+
+    const runPlan = events.find((e) => e.outcome === "run-plan");
+    assert.ok(Array.isArray(runPlan.assess_inline.reasons) && runPlan.assess_inline.reasons.length > 0);
+
+    const tjPath = path.join(cwd, "pipeline", "track.json");
+    assert.ok(fs.existsSync(tjPath), "pipeline/track.json must be written by the inline assess");
+    const tj = JSON.parse(fs.readFileSync(tjPath, "utf8"));
+    assert.equal(tj.track, "quick");
+    assert.equal(tj.source, "inferred");
+    assert.equal(tj.confidence, "medium");
+    assert.ok(Array.isArray(tj.reasons) && tj.reasons.length > 0);
+    assert.match(tj.assessed_by, /devteam run/, "assessed_by must record it came from `devteam run`, not `devteam assess`");
+  });
+
+  it("--track always wins and records source:human, even when the feature text would infer a different track", async () => {
+    const cwd = track(makeTargetProject());
+    const s = await run({
+      cwd,
+      track: "full",
+      feature: "quick fix for the login bug", // would infer "quick" if --track were absent
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+    assert.equal(s.completed, true);
+
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    const events = log.trim().split("\n").map((l) => JSON.parse(l));
+    const runStart = events.find((e) => e.outcome === "run-start");
+    assert.equal(runStart.track, "full");
+    assert.equal(runStart.track_source, "human");
+    assert.ok(!fs.existsSync(path.join(cwd, "pipeline", "track.json")), "--track must not write pipeline/track.json");
+  });
+
+  it("existing pipeline/track.json is respected — inline assess never runs or overwrites it", async () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    const original = JSON.stringify({ track: "config-only", source: "human", confidence: null, assessed_by: "operator" });
+    fs.writeFileSync(path.join(cwd, "pipeline", "track.json"), original);
+
+    const s = await run({
+      cwd,
+      feature: "quick fix for the login bug", // would infer "quick" if track.json weren't present
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+    assert.equal(s.completed, true);
+
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    const events = log.trim().split("\n").map((l) => JSON.parse(l));
+    const runStart = events.find((e) => e.outcome === "run-start");
+    assert.equal(runStart.track, "config-only", "the pre-existing track.json's track must win, not the assess() recommendation");
+    assert.equal(runStart.track_source, "human");
+
+    const tjContents = fs.readFileSync(path.join(cwd, "pipeline", "track.json"), "utf8");
+    assert.equal(tjContents, original, "pre-existing track.json must not be modified by inline assess");
+  });
+});
+
+describe("run CLI: assess-inline recommendation output (Phase 29.2, ADR-016)", () => {
+  // "Snapshot" of the printed recommendation block: seed every full-track gate
+  // PASS (a superset of any lighter track's gates) so the real next() reaches
+  // pipeline-complete immediately — no dispatch, deterministic stderr.
+  it("prints recommendation + rationale + ceremony slot/dispatch counts, and writes pipeline/track.json", () => {
+    const cwd = track(makeTargetProject());
+    seedAllPass(cwd);
+    const r = runCLI(["run", "--cwd", cwd, "--feature", "fix a typo in the README", "--budget-usd", "10"]);
+    assert.equal(r.status, 0, `expected clean exit, got status ${r.status}: ${r.stderr}`);
+
+    assert.match(r.stderr, /\[devteam run\] no --track given — assessed inline: "nano" \(confidence: medium\)/);
+    assert.match(r.stderr, /• description matches nano-change keywords/);
+    assert.match(r.stderr, /ceremony: \d+ stage slot\(s\), \d+ dispatch\(es\) \(TODO: cost estimate — plans\/phase-29-scale-adaptive-ceremony\.md 29\.3\)/);
+    assert.match(r.stderr, /wrote pipeline\/track\.json \(source: inferred\); pass --track to override/);
+    assert.match(r.stderr, /\[devteam run\] plan: nano track/);
+
+    const tj = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "track.json"), "utf8"));
+    assert.equal(tj.track, "nano");
+    assert.equal(tj.source, "inferred");
+    assert.equal(tj.confidence, "medium");
+  });
+
+  it("--track given → no recommendation block printed, no pipeline/track.json written", () => {
+    const cwd = track(makeTargetProject());
+    seedAllPass(cwd);
+    const r = runCLI(["run", "--cwd", cwd, "--track", "full", "--feature", "fix a typo in the README", "--budget-usd", "10"]);
+    assert.equal(r.status, 0);
+    assert.ok(!r.stderr.includes("assessed inline"), "explicit --track must not print the assess-inline recommendation");
+    assert.ok(!fs.existsSync(path.join(cwd, "pipeline", "track.json")));
+  });
+});

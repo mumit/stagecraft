@@ -27,8 +27,9 @@ const {
   candidateActiveRoles,
   deterministicSkipsForOrder,
   expectedWorkstreamCount,
-  highConfidenceTrack,
+  gitChangedFiles,
 } = require("./pipeline/right-sizing");
+const { assess } = require("./stage-shopping/assess");
 const { runAdvise } = require("./advise");
 const { MAX_RETRIES_DEFAULT, MAX_TRANSIENT_RETRIES_DEFAULT } = require("./gates/classify");
 const { loadPrincipalOutputs, runRuling, runFixEscalation } = require("./escalation");
@@ -431,10 +432,10 @@ function totalCostUsd(cwd, changeId) {
   return costUsdDetail(cwd, changeId).total;
 }
 
-// ADR-006: resolveTrack returns {track, source, confidence} so callers can
+// ADR-006 / ADR-016: resolveTrack returns {track, source, confidence} so callers can
 // apply the confidence guard without a second file read. Source values:
 //   "human"   — --track CLI flag or pipeline/track.json with source:"human"
-//   "inferred" — pipeline/track.json with source:"inferred"
+//   "inferred" — pipeline/track.json with source:"inferred", or assessed inline (below)
 //   "config"   — custom_stages or default_track from .devteam/config.yml
 //   "default"  — hard-coded "full" fallback
 function resolveTrack(opts, config, cwd) {
@@ -459,21 +460,25 @@ function resolveTrack(opts, config, cwd) {
   if (Array.isArray(config.pipeline.custom_stages)) {
     return { track: config.pipeline.custom_stages, source: "config", confidence: null };
   }
+
+  // ADR-016 (Phase 29.2, supersedes ADR-006 §1): when there is no human track
+  // decision anywhere in the chain above, and there is a feature/description to
+  // assess, run the `assess` heuristics inline — at ANY confidence level, not
+  // just "high" as the pre-29.2 downgrade-only path required — and mark the
+  // result "inferred". The caller (run()) persists this to pipeline/track.json
+  // so the decision is a file, not a silent side effect, and the existing
+  // checkTrackConfidence guard (ADR-006 §3/4) still gates medium/low confidence
+  // exactly as it does for a human-authored track.json.
   const assessmentText = opts.feature || opts.description || "";
   if (config.pipeline.right_sizing !== false && assessmentText.trim()) {
-    const inferred = highConfidenceTrack(cwd, assessmentText);
-    if (inferred && inferred.track && inferred.track !== (config.pipeline.default_track || "full")) {
-      return {
-        track: inferred.track,
-        source: "inferred",
-        confidence: inferred.confidence,
-        right_sizing: {
-          kind: "track",
-          reasons: inferred.reasons,
-          trigger_inputs: inferred.trigger_inputs,
-        },
-      };
-    }
+    const changedFiles = gitChangedFiles(cwd).files;
+    const result = assess(assessmentText, changedFiles, {});
+    return {
+      track: result.recommendedTrack,
+      source: "inferred",
+      confidence: result.confidence,
+      assess_inline: { reasons: result.reasons, stages: result.stages },
+    };
   }
   return { track: config.pipeline.default_track || "full", source: "config", confidence: null };
 }
@@ -841,8 +846,29 @@ async function run(opts = {}) {
     track,
     source: trackSource,
     confidence: trackConfidence,
-    right_sizing: trackRightSizing,
+    assess_inline: assessInline,
   } = resolveTrack(opts, config, cwd);
+  // ADR-016 (Phase 29.2): resolveTrack assessed a track inline (no --track, no
+  // pipeline/track.json, no custom_stages). Persist the decision as the same
+  // per-run record `devteam assess` writes, so it is a file an operator can
+  // read/override, not a silent side effect — and so a subsequent invocation
+  // in the same working tree picks up the recorded track via the higher-
+  // precedence pipeline/track.json branch above instead of re-assessing.
+  if (assessInline && cwd) {
+    try {
+      const tjPath = path.join(cwd, "pipeline", "track.json");
+      const version = require("../package.json").version;
+      fs.mkdirSync(path.dirname(tjPath), { recursive: true });
+      fs.writeFileSync(tjPath, JSON.stringify({
+        track,
+        source: "inferred",
+        confidence: trackConfidence,
+        reasons: assessInline.reasons,
+        assessed_at: nowIso(),
+        assessed_by: `devteam run ${version} (assess-inline, ADR-016)`,
+      }, null, 2) + "\n", "utf8");
+    } catch { /* best-effort — a failed write must never block the run */ }
+  }
   // ADR-009 §Decision.7: tag runs by intent from day one so feature vs repair
   // history is distinguishable in run-state.json and run-log.jsonl.
   const intent = opts.repair ? "repair" : "feature";
@@ -1049,7 +1075,7 @@ async function run(opts = {}) {
       track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
       track_source: trackSource,
       track_confidence: trackConfidence,
-      right_sizing: trackRightSizing || null,
+      assess_inline: assessInline || null,
       intent,
       ...runPlan,
     });
@@ -1058,7 +1084,7 @@ async function run(opts = {}) {
       track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
       track_source: trackSource,
       track_confidence: trackConfidence,
-      right_sizing: trackRightSizing || null,
+      assess_inline: assessInline || null,
       intent,
       ...runPlan,
     });
