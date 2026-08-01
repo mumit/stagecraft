@@ -2,6 +2,8 @@
 
 A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The seven tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team` (plus `loop`, added in phase-29 for minimal-ceremony iteration).
 
+`loop` is the day-to-day default: the lightest track that still produces a brief, a build, a QA pass, and a review gate. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not run by default just because it's the safest-looking option. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes of change in between. See the ceremony-cost column below, or run `devteam assess --json` for a numeric estimate against your project's routed models.
+
 - [Pick by what you're shipping](#pick-by-what-youre-shipping)
 - [What each track runs](#what-each-track-runs)
 - [The `loop` track](#the-loop-track)
@@ -25,15 +27,17 @@ Or override per-invocation: `devteam stage build --track quick`.
 
 ## Pick by what you're shipping
 
-| Change type | Track | Why |
-|---|---|---|
-| Bounded feature or fix with clear requirements and no cross-cutting design concerns | `quick` | Skips design, clarification, pre-review, and red-team; PM brief is still required. Good default for most new features that don't touch the stoplist |
-| Complex feature, cross-cutting architecture change, or anything needing formal design or adversarial review | `full` | Full rigor: requirements → design → build → review → tests → sign-off → deploy → retro |
-| Mechanical change with obvious scope (rename a function, bump padding) | `nano` | Build + scoped peer-review (1 reviewer, 1 approval) + qa |
-| Tweaking config/feature-flag values, no code | `config-only` | Build + pre-review + (security if triggered) + qa + sign-off + deploy |
-| Dependency bump or library upgrade | `dep-update` | Build + peer-review + qa + sign-off + deploy |
-| Urgent production incident | `hotfix` | Build + pre-review + (security if triggered) + peer-review + qa + sign-off + deploy + retro |
-| Small bounded iteration, no deploy needed yet | `loop` | Minimal brief → single-workstream build → qa → scoped peer-review (1 reviewer, 1 approval); no design, no red-team, no sign-off/deploy. See [§ The `loop` track](#the-loop-track) |
+| Change type | Track | Ceremony cost | Why |
+|---|---|---|---|
+| Small bounded iteration, no deploy needed yet — **the day-to-day default** | `loop` | Lightest — 4 dispatches | Minimal brief → single-workstream build → qa → scoped peer-review (1 reviewer, 1 approval); no design, no red-team, no sign-off/deploy. See [§ The `loop` track](#the-loop-track) |
+| Mechanical change with obvious scope (rename a function, bump padding) | `nano` | Minimal | Build + scoped peer-review (1 reviewer, 1 approval) + qa |
+| Bounded feature or fix with clear requirements and no cross-cutting design concerns | `quick` | Light | Skips design, clarification, pre-review, and red-team; PM brief is still required. Good default for most new features that don't touch the stoplist |
+| Tweaking config/feature-flag values, no code | `config-only` | Light, conditional security review | Build + pre-review + (security if triggered) + qa + sign-off + deploy |
+| Dependency bump or library upgrade | `dep-update` | Light | Build + peer-review + qa + sign-off + deploy |
+| Urgent production incident | `hotfix` | Moderate — pre-review and peer-review are mandatory | Build + pre-review + (security if triggered) + peer-review + qa + sign-off + deploy + retro |
+| Complex feature, cross-cutting architecture change, or anything needing formal design or adversarial review — the **audited** path for regulated/high-stakes changes | `full` | Heaviest — all 18 stages | Full rigor: requirements → design → build → review → red-team → tests → sign-off → deploy → retro. Choose it when stakes justify the ceremony (Phase 34 — roadmap, not yet built — extends this trail into exportable, regulator-shaped attestations) |
+
+These are relative sizings, not bills. Run `devteam assess --json` (or watch `devteam run`'s pre-flight output) for the actual per-track estimate — stage-slot count, dispatch-count range, token estimate, and cost range against your project's routed models. Static by default; once the run corpus has ≥5 comparable runs for a track, the estimate switches to an empirical median and says so (`estimate_basis`). See [`core/ceremony-preview.js`](../core/ceremony-preview.js) (phase-29.3).
 
 ## What each track runs
 
@@ -71,7 +75,9 @@ loop          ✓               ✓ˢ                  ✓ˢ  ✓
 
 ## The `loop` track
 
-`loop` is the 4-slot minimal-ceremony track: brief → build → verify → review
+`loop` is the day-to-day default — reach for it before `quick` unless the
+change needs a design stage or is heading to deploy. It's the 4-slot
+minimal-ceremony track: brief → build → verify → review
 (`requirements` → `build` → `qa` → `peer-review`). Note the order — `qa`
 (stage-06, "verify") runs **before** `peer-review` (stage-05, "review") on
 this track, the reverse of every other track. A full stubbed `loop` run is
@@ -175,9 +181,10 @@ Decision tree:
 4. **Is the change a dependency bump?** → `dep-update`.
 5. **Is the change a mechanical edit (rename, format, copy change)?** → `nano`.
 6. **Does the change cross multiple systems, require architectural decisions, or carry significant security surface?** → `full`.
-7. **Otherwise** → `quick`. This covers most bounded features and fixes: a new endpoint, a new UI component, added business logic, a non-trivial bug fix. Requirements must be clear and design self-contained. When in doubt between `quick` and `full`, start with `quick`; if Stage 2 design review surfaces cross-cutting concerns, restart on `full`.
+7. **Is the change bounded, low-stakes, and doesn't need to deploy yet (still iterating)?** → `loop`, the day-to-day default. Promote to a deploy-capable track later with `--until` or a `custom_stages` re-run — see [§ The `loop` track](#the-loop-track).
+8. **Otherwise** → `quick`. This covers most bounded features and fixes: a new endpoint, a new UI component, added business logic, a non-trivial bug fix. Requirements must be clear and design self-contained. When in doubt between `quick` and `full`, start with `quick`; if Stage 2 design review surfaces cross-cutting concerns, restart on `full`.
 
-> **Note on the config.yml default.** The factory default is `pipeline.default_track: full`, which is conservative and always safe. However, `full` runs red-team adversarial review and formal design on every change, which is wasteful when most attack surfaces don't apply. Evaluate the appropriate track for each brief rather than relying on the config default.
+> **Note on the config.yml default.** The factory default is `pipeline.default_track: full`, which is conservative and always safe. However, `full` runs red-team adversarial review and formal design on every change, which is wasteful when most attack surfaces don't apply. Evaluate the appropriate track for each brief rather than relying on the config default — in practice, treat `loop` as the day-to-day default and reserve `full` for changes where the audited trail is worth the ceremony.
 
 ## Prototype mode is not a track
 
