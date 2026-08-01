@@ -30,6 +30,7 @@ in `pipeline-tracks.md`. The full index is in `pipeline.md`. Gate schemas
 | 6c | [`stage-06c.md`](stage-06c.md) | platform | Observability gate — verify brief §9 signals actually emit. Tracks: full, hotfix. |
 | 6d | [`stage-06d.md`](stage-06d.md) | verifier | Verification beyond tests: property-based, mutation, formal. Tracks: full. |
 | 6e | [`stage-06e.md`](stage-06e.md) | qa | Performance budget: Lighthouse, bundle size, load test. Tracks: full, quick, hotfix. |
+| 6x | [`stage-06x.md`](stage-06x.md) | qa | Verification sweep (29.4) — folds 6b/6c/6d/6e into one dispatch on `compact_qa` tracks. Tracks: quick. |
 | 7 | [`stage-07.md`](stage-07.md) | pm, platform | Sign-off. Auto-folds from Stage 6 when the AC→test contract is satisfied. |
 | 8 | [`stage-08.md`](stage-08.md) | platform | Deploy. Adapter-driven (docker-compose / kubernetes / terraform / custom). |
 

@@ -177,6 +177,13 @@ function clarificationNeeded(cwd, { changeId = null } = {}) {
   };
 }
 
+// 29.4: "verification-sweep" (stage-06x) is the folded stand-in for
+// whichever of these a compact_qa track lists. It has no STAGE_TRIGGERS
+// entry of its own — deterministicSkipForStage evaluates all four
+// constituent triggers and only skips the combined dispatch when NONE of
+// them fire, same as the standalone stages would each be skipped today.
+const QA_SWEEP_TRIGGER_STAGES = Object.keys(STAGE_TRIGGERS);
+
 function deterministicSkipForStage(stageName, cwd, opts = {}) {
   if (stageName === "clarification") {
     const evidence = clarificationNeeded(cwd, opts);
@@ -188,6 +195,16 @@ function deterministicSkipForStage(stageName, cwd, opts = {}) {
       };
     }
     return null;
+  }
+  if (stageName === "verification-sweep") {
+    const files = opts.files || gitChangedFiles(cwd).files;
+    const evidences = QA_SWEEP_TRIGGER_STAGES.map((name) => stageTriggerEvidence(name, cwd, { ...opts, files }));
+    if (evidences.some((e) => e && e.matched)) return null;
+    return {
+      skip_kind: "right-sizing.verification-sweep",
+      reason: "no accessibility/observability/verification/performance trigger found in changed files or brief/design context",
+      trigger_inputs: { changed_files: files },
+    };
   }
   const evidence = stageTriggerEvidence(stageName, cwd, opts);
   if (!evidence || evidence.matched) return null;

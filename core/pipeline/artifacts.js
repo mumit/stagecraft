@@ -29,6 +29,7 @@ const STAGE_ARTIFACTS = {
   "stage-06c": ["observability-report.md"],   // observability-gate
   "stage-06d": ["verification-report.md"],    // verification-beyond-tests
   "stage-06e": ["performance-report.md"],     // performance-budget
+  "stage-06x": ["verification-sweep-report.md", "axe-report.json", "lhci-result.json"], // verification-sweep (29.4 compact_qa fold)
   "stage-07": ["runbook.md"],                 // sign-off
   "stage-08": ["deploy-log.md"],              // deploy
   "stage-09": ["retrospective.md", "lessons-learned.md"], // retrospective
