@@ -274,9 +274,16 @@ function collect({ cwd, pipelineRoot }) {
   }
   const all = [...byFingerprint.values()];
   writeObservations(cwd, all);
-  const candidates = candidatesFromObservations(all);
+  const rawCandidates = candidatesFromObservations(all);
+  // 30.1: a retired pattern's identity (id, derived from pattern_key the same
+  // way promote()/retire() do) must not re-enter the candidate pool from the
+  // same observations that got it retired — retirement is a one-way decision
+  // until an operator explicitly reconsiders it.
+  const retiredIds = new Set(loadRetired(cwd).map((item) => item.id));
+  const candidates = rawCandidates.filter((item) => !retiredIds.has(item.id));
+  const suppressed = rawCandidates.length - candidates.length;
   writeJson(patternsPath(cwd, PENDING_FILE), { schema_version: SCHEMA_VERSION, candidates });
-  return { added, total: all.length, candidates: candidates.length, dir: patternsDir(cwd) };
+  return { added, total: all.length, candidates: candidates.length, suppressed, dir: patternsDir(cwd) };
 }
 
 function candidatesFromObservations(observations) {

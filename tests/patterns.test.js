@@ -136,6 +136,34 @@ describe("patterns: collection and promotion", () => {
     const selected = patterns.selectForDescriptor({ cwd, descriptor, ctx: { cwd, feature: "api endpoint" } });
     assert.equal(selected.length, 0);
   });
+
+  it("collect() suppresses a retired pattern_key so it never re-enters candidates (30.1)", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-06c", {
+      status: "FAIL",
+      blockers: [{ signal: "missing_log", assigned_to: "backend" }],
+    });
+    const first = patterns.collect({ cwd });
+    assert.equal(first.suppressed, 0);
+    assert.equal(first.candidates, 1);
+
+    const candidate = patterns.list({ cwd }).candidates[0];
+    const promoted = patterns.promote({ cwd, candidateId: candidate.id });
+    patterns.retire({ cwd, patternId: promoted.id });
+
+    // The underlying observations are untouched by retire() — a re-collect over
+    // the same gate must not resurrect the retired pattern_key as a candidate.
+    const second = patterns.collect({ cwd });
+    assert.equal(second.candidates, 0, "retired pattern_key must not reappear as a candidate");
+    assert.equal(second.suppressed, 1, "the suppressed candidate must be counted in the collect summary");
+
+    const pendingPath = path.join(cwd, ".devteam", "patterns", "pending-review.json");
+    const pending = JSON.parse(fs.readFileSync(pendingPath, "utf8"));
+    assert.ok(
+      !pending.candidates.some((c) => c.id === promoted.id),
+      "pending-review.json must not list the retired pattern_key",
+    );
+  });
 });
 
 describe("patterns: CLI and prompt rendering", () => {
