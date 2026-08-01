@@ -104,6 +104,19 @@ function run(positional, _flags) {
     const tag = ev.failure_class ? `  [${ev.failure_class}]` : "";
     switch (ev.type) {
       case "run-plan": {
+        // ADR-016 (Phase 29.2): no --track / pipeline/track.json / custom_stages —
+        // the track above was assessed inline. Print the recommendation + rationale
+        // before the plan line so the operator sees it before any dispatch.
+        if (ev.track_source === "inferred" && ev.assess_inline) {
+          process.stderr.write(`[devteam run] no --track given — assessed inline: "${ev.track}" (confidence: ${ev.track_confidence || "unknown"})\n`);
+          for (const reason of ev.assess_inline.reasons || []) {
+            process.stderr.write(`  • ${reason}\n`);
+          }
+          // 29.3 (ceremony cost preview) hasn't landed yet — print slot/dispatch
+          // counts only; replace with the token/cost estimate once it does.
+          process.stderr.write(`  ceremony: ${ev.stages_included} stage slot(s), ${ev.base_workstreams} dispatch(es) (TODO: cost estimate — plans/phase-29-scale-adaptive-ceremony.md 29.3)\n`);
+          process.stderr.write(`  wrote pipeline/track.json (source: inferred); pass --track to override\n`);
+        }
         const skipped = ev.stages_skipped_by_config ? `, ${ev.stages_skipped_by_config} skipped by config` : "";
         const conditional = ev.conditional_stages ? `, ${ev.conditional_stages} conditional` : "";
         process.stderr.write(`[devteam run] plan: ${ev.track} track, ${ev.stages_included}/${ev.stages_total} stages${skipped}${conditional}, ${ev.base_workstreams} base workstreams\n`);

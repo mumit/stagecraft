@@ -165,6 +165,8 @@ This is an escape hatch, not a block.
 
 `devteam assess` automates this decision: given a change description and a file list it returns a `recommendedTrack`, a `confidence` level (`high | medium | low`), and the reasons. Running `devteam assess` (no flags) writes the result to `pipeline/track.json` so `devteam run` picks it up automatically. Use `devteam assess --confirm` to set `source:"human"` (operator-confirmed). See [Track record (`pipeline/track.json`)](#track-record-pipelinetrackjson) and [`ADR-006`](adr/006-track-inference-under-autonomy.md).
 
+**You don't have to run `devteam assess` yourself first.** If `devteam run` starts with no `--track`, no `pipeline/track.json`, and no `pipeline.custom_stages`, it runs the same `assess()` heuristics inline — at any confidence level, not just "high" — prints the recommendation and reasons before dispatching anything, and writes `pipeline/track.json` itself (`source:"inferred"`) so the decision is still a file you can read, diff, or override with `--track`. This requires a `--feature`/description to assess; a bare `devteam run` with nothing to go on still falls through to `pipeline.default_track`. See [ADR-016](adr/016-assess-by-default.md) (supersedes ADR-006 §1).
+
 Decision tree:
 
 1. **Is this a hotfix for a live incident?** → `hotfix`. Pre-review and peer-review are mandatory; urgency is not a reason to skip them.
@@ -230,6 +232,7 @@ data, infrastructure, or anything headed toward production.
 devteam assess                  # writes pipeline/track.json with source:"inferred"
 devteam assess --confirm        # writes pipeline/track.json with source:"human"
 devteam assess --apply          # writes custom_stages to .devteam/config.yml (project-wide; no track.json)
+devteam run --feature "..."     # ADR-016: no track.json yet → assesses inline, writes it with source:"inferred"
 devteam run --track quick       # bypasses track.json entirely; always source:"human"
 ```
 

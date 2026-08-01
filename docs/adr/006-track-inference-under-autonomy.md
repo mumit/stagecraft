@@ -1,6 +1,6 @@
 # ADR 006 — Track inference under autonomy
 
-**Status:** Accepted
+**Status:** Accepted; **Decision §1 superseded by [ADR-016](016-assess-by-default.md)** (2026-07-31) — see Addendum below. Decisions §2–4 (the `pipeline/track.json` schema, the warn/halt confidence guard, no-prompt) remain in force unchanged.
 **Date:** 2026-06-11 (accepted 2026-06-15)
 **Authors:** Mumit Khan (design), drafted with Claude Sonnet 4.6
 
@@ -317,6 +317,21 @@ All three pass before the driver enters its main loop.
 - Docs: `docs/tracks.md`, `docs/runbooks/autonomous-run.md`, `docs/ci.md`
 
 The open questions below remain open (none blocked the implementation). ADR-007 Tier 2 (11.4) remains parked pending `stall-detected` data.
+
+## Addendum (2026-07-31) — Decision §1 superseded by ADR-016
+
+Phase 29.2 (`plans/phase-29-scale-adaptive-ceremony.md`) reverses **Decision §1 only**
+("`devteam run` MUST NOT infer a track by calling `assess` internally"). The market
+evidence gathered for the Phase 29 landscape review (heavyweight-pipeline backlash;
+"assess is a manual step operators skip") shifted the tradeoff: opacity was the
+original objection to internal inference, and the fix for opacity is an auditable
+file, not a ban on inference. [ADR-016](016-assess-by-default.md) keeps that file —
+`devteam run` now writes `pipeline/track.json` itself when it infers inline, so the
+decision is still a file an operator can read, diff, or override, exactly as this ADR
+required; it just no longer requires a separate `devteam assess` invocation to
+produce it. Decisions §2 (file schema), §3 (warn/halt confidence matrix), and §4
+(stoplist-is-the-floor) are unchanged and still govern the inferred result. See
+ADR-016 for the full rationale and the boundary between the two ADRs.
 
 ## Implementation sketch (post-ADR; no code in this draft)
 
