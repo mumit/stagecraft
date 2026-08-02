@@ -6,6 +6,7 @@ const { makeTargetProject, cleanup } = require("./_helpers");
 const {
   stamp, stampStage03b, stampStage04a, stampStage06, extractAcsFromBrief,
   stampStage04Workstream, stampStage04Merged, stampWorkstream, stampMerged,
+  stampStage05Merged,
 } = require("../core/verify/stamp");
 
 let _dirs = [];
@@ -724,8 +725,10 @@ describe("verify/stamp: stage-04 dispatch (31.1)", () => {
   });
 
   it("stampMerged rejects a stage with no merged stamping defined", async () => {
+    // stage-05 gained merged stamping in 31.5 — use stage-06 (single-role,
+    // never merged) as the still-unstamped example instead.
     const cwd = track(makeTargetProject());
-    const r = await stampMerged(cwd, "stage-05", path.join(cwd, "nope.json"));
+    const r = await stampMerged(cwd, "stage-06", path.join(cwd, "nope.json"));
     assert.equal(r.ok, false);
     assert.match(r.error, /no orchestrator merged stamping defined/);
   });
@@ -736,6 +739,91 @@ describe("verify/stamp: stage-04 dispatch (31.1)", () => {
     const r = await stampMerged(cwd, "stage-04", missing);
     assert.equal(r.ok, false);
     assert.match(r.error, /gate not found/);
+  });
+});
+
+// ─── 31.5: stage-05 merged — approval quorum re-derivation ──────────────────
+
+describe("verify/stamp: stage-05 merged — approval quorum re-derivation (31.5)", () => {
+  function seedReview(cwd, file, content) {
+    const dir = path.join(cwd, "pipeline", "code-review");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, file), content);
+  }
+
+  function seedStage05(cwd, workstreams) {
+    return seedGateRaw(cwd, "stage-05", {
+      stage: "stage-05", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-07-31T00:00:00Z", blockers: [], warnings: [],
+      workstreams,
+    });
+  }
+
+  it("seeded mismatch caught on a non-claude-code host fixture: gate says APPROVED, file says CHANGES REQUESTED", async () => {
+    const cwd = track(makeTargetProject());
+    // Simulate a non-claude-code host: the workstream gate was written by the
+    // model itself (no PostToolUse hook ran to derive it), and disagrees with
+    // what the reviewer actually wrote.
+    seedReview(cwd, "by-generic.md", "## Review of backend\nMissing null check.\nREVIEW: CHANGES REQUESTED\nBLOCKER: null check\n");
+    const gatePath = seedStage05(cwd, [
+      { workstream: "backend", host: "generic", status: "PASS" },
+    ]);
+
+    const r = await stampStage05Merged(cwd, gatePath);
+
+    assert.equal(r.gate.status, "FAIL", "merged status must flip when the review file disagrees");
+    assert.ok(r.gate._orchestrator_stamped.status_overridden);
+    const field = r.gate._orchestrator_stamped.fields.find((f) => f.workstream === "backend");
+    assert.equal(field.gate_said, "APPROVED");
+    assert.equal(field.file_said, "CHANGES_REQUESTED");
+    assert.ok(r.gate.blockers.some((b) => /backend/.test(b) && /CHANGES REQUESTED/.test(b)));
+  });
+
+  it("agreeing states leave the merge untouched", async () => {
+    const cwd = track(makeTargetProject());
+    seedReview(cwd, "by-generic.md", "## Review of backend\nLooks good.\nREVIEW: APPROVED\n");
+    const gatePath = seedStage05(cwd, [
+      { workstream: "backend", host: "generic", status: "PASS" },
+    ]);
+
+    const r = await stampStage05Merged(cwd, gatePath);
+
+    assert.equal(r.gate.status, "PASS");
+    assert.equal(r.gate._orchestrator_stamped.status_overridden, undefined);
+    assert.equal(r.gate._orchestrator_stamped.fields.length, 0);
+  });
+
+  it("unparseable file handled as its own mismatch class", async () => {
+    const cwd = track(makeTargetProject());
+    // No pipeline/code-review directory at all — nothing to derive from,
+    // yet the workstream gate claims APPROVED.
+    const gatePath = seedStage05(cwd, [
+      { workstream: "backend", host: "generic", status: "PASS" },
+    ]);
+
+    const r = await stampStage05Merged(cwd, gatePath);
+
+    assert.equal(r.gate.status, "FAIL");
+    const field = r.gate._orchestrator_stamped.fields.find((f) => f.workstream === "backend");
+    assert.equal(field.gate_said, "APPROVED");
+    assert.equal(field.file_said, "NO_PARSEABLE_VERDICT");
+  });
+
+  it("does not re-derive adversarial mode's reviewer/critic workstreams", async () => {
+    const cwd = track(makeTargetProject());
+    // by-reviewer.md exists but with no matching area sections at all under
+    // the literal role names "reviewer"/"critic" — those are never valid
+    // area names, so they must be skipped rather than flagged.
+    seedReview(cwd, "by-reviewer.md", "## Review of backend\nfine\nREVIEW: APPROVED\n");
+    const gatePath = seedStage05(cwd, [
+      { workstream: "reviewer", host: "generic", status: "PASS" },
+      { workstream: "critic", host: "generic", status: "PASS" },
+    ]);
+
+    const r = await stampStage05Merged(cwd, gatePath);
+
+    assert.equal(r.gate.status, "PASS");
+    assert.equal(r.gate._orchestrator_stamped.fields.length, 0);
   });
 });
 

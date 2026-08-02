@@ -819,6 +819,92 @@ async function stampStage04Merged(cwd, gatePath) {
   return finalizeStamp(gate, gatePath, blockers, stamp);
 }
 
+// 31.5: stage-05 (peer-review) merged dispatch — post-merge, host-independent
+// re-derivation of approval state. On claude-code, the PostToolUse hook
+// (core/hooks/approval-derivation.js) keeps stage-05.<area>.json in sync with
+// pipeline/code-review/by-*.md as reviews are written; on every other host
+// (and any claude-code save that happened outside the hook — the reason
+// `devteam derive-approvals` exists) nothing parses those files automatically,
+// so a workstream gate can claim PASS off a self-written status that never
+// matched what the review file actually says. This closes that gap
+// unconditionally, using the hook's own parseReviewFile() — never a
+// reimplementation of the REVIEW:/CHANGES REQUESTED grammar.
+//
+// Scope: only panel-mode per-area workstreams (backend/frontend/platform/qa)
+// are re-derived here. Adversarial mode's "reviewer"/"critic" workstreams
+// (31.3) don't map onto a single area name — by-reviewer.md covers every
+// area in one file and by-critic.md uses a different (challenge) grammar —
+// so ADVERSARIAL_WORKSTREAM_ROLES are skipped rather than falsely flagged
+// as having "no parseable verdict" for an area named "reviewer"/"critic".
+const ADVERSARIAL_WORKSTREAM_ROLES = new Set(["reviewer", "critic"]);
+
+async function stampStage05Merged(cwd, gatePath) {
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error) return { ok: false, error };
+
+  const stamp = {
+    stamper_version: STAMPER_VERSION,
+    at: new Date().toISOString(),
+    scope: "merged",
+    fields: [],
+    runs: {},
+  };
+  const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
+
+  // pipeline/code-review/ is always the sibling of the gates dir this gate
+  // lives in — true for both in-place (pipeline/gates, pipeline/code-review)
+  // and bounded (pipeline/changes/<id>/gates, pipeline/changes/<id>/code-review)
+  // isolation, so no changeId plumbing is needed here.
+  const reviewDir = path.join(path.dirname(gatePath), "..", "code-review");
+  let reviewFiles = [];
+  if (fs.existsSync(reviewDir)) {
+    try {
+      reviewFiles = fs.readdirSync(reviewDir).filter((f) => /^by-[\w-]+\.md$/.test(f));
+    } catch { reviewFiles = []; }
+  }
+
+  const { parseReviewFile } = require("../hooks/approval-derivation");
+  const derivedByArea = new Map();
+  for (const file of reviewFiles) {
+    const verdicts = parseReviewFile(path.join(reviewDir, file));
+    for (const v of verdicts) {
+      const entry = derivedByArea.get(v.area) || { approved: false, changesRequested: false };
+      if (v.verdict === "CHANGES_REQUESTED") entry.changesRequested = true;
+      if (v.verdict === "APPROVED") entry.approved = true;
+      derivedByArea.set(v.area, entry);
+    }
+  }
+  stamp.runs.review_files = {
+    dir: reviewDir,
+    files_found: reviewFiles.length,
+    areas_derived: Array.from(derivedByArea.keys()),
+  };
+
+  const workstreams = Array.isArray(gate.workstreams) ? gate.workstreams : [];
+  for (const ws of workstreams) {
+    if (ADVERSARIAL_WORKSTREAM_ROLES.has(ws.workstream)) continue;
+    if (ws.status !== "PASS") continue; // only claimed approvals need re-deriving
+
+    const derived = derivedByArea.get(ws.workstream);
+    const fileSaid = !derived ? "NO_PARSEABLE_VERDICT"
+      : derived.changesRequested ? "CHANGES_REQUESTED"
+      : "APPROVED";
+    if (fileSaid === "APPROVED") continue; // agrees — leave untouched
+
+    stamp.fields.push({
+      field: "approval_state", workstream: ws.workstream, gate_said: "APPROVED", file_said: fileSaid,
+    });
+    blockers.push(
+      `peer-review approval mismatch: workstream "${ws.workstream}" gate claims APPROVED but ` +
+      (fileSaid === "NO_PARSEABLE_VERDICT"
+        ? `no review file under pipeline/code-review/ has a parseable "## Review of ${ws.workstream}" verdict`
+        : `pipeline/code-review says CHANGES REQUESTED`),
+    );
+  }
+
+  return finalizeStamp(gate, gatePath, blockers, stamp);
+}
+
 // Per-workstream dispatch — stamps one role's own gate as it completes.
 async function stampWorkstream(cwd, stageId, gatePath, ctx = {}) {
   if (!STAMPABLE_WORKSTREAM_STAGES.has(stageId)) {
@@ -843,13 +929,16 @@ async function stampMerged(cwd, stageId, gatePath) {
   }
   switch (stageId) {
     case "stage-04": return stampStage04Merged(cwd, gatePath);
+    case "stage-05": return stampStage05Merged(cwd, gatePath);
     default:          return { ok: false, error: `no orchestrator merged stamping defined for ${stageId}` };
   }
 }
 
 // Stages with per-role workstream stamping / one-shot merged stamping (31.1).
+// stage-05 (31.5) only ever gets the merged pass — panel-mode areas don't
+// need a per-role stamp of their own the way stage-04's roles do.
 const STAMPABLE_WORKSTREAM_STAGES = new Set(["stage-04"]);
-const STAMPABLE_MERGE_STAGES = new Set(["stage-04"]);
+const STAMPABLE_MERGE_STAGES = new Set(["stage-04", "stage-05"]);
 
 function finalizeStamp(gate, gatePath, blockers, stamp) {
   // If the orchestrator detected failures, force gate status to FAIL.
@@ -910,6 +999,8 @@ module.exports = {
   stampMerged,
   stampStage04Workstream,
   stampStage04Merged,
+  // 31.5: stage-05 merged approval re-derivation.
+  stampStage05Merged,
   STAMPABLE_WORKSTREAM_STAGES,
   STAMPABLE_MERGE_STAGES,
   STAMPER_VERSION,

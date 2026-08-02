@@ -623,6 +623,15 @@ When `routing.review_fanout` is configured, Stage 5 (peer-review) duplicates eac
 - Mutually exclusive with `routing.review_fanout` per run (adversarial mode wins if both are set)
 - Motivated by 2026 evidence that review panels underperform, and are collusion-prone relative to, an adversarial reviewer/critic pair — see `plans/phase-31-verification-depth.md` §31.3
 
+### Peer-review quorum re-derivation — approval state verified on every host (31.5)
+
+The claude-code PostToolUse hook (`core/hooks/approval-derivation.js`) keeps panel-mode `stage-05.<area>.json` gates in sync with `pipeline/code-review/by-*.md` as reviews are written. On every other host — and any claude-code save that happens outside the hook, which is why `devteam derive-approvals` exists — nothing parses those files automatically, so a workstream gate can claim `PASS` off a status that was never actually derived from what the reviewer wrote.
+
+- After stage-05 merges, the orchestrator independently re-derives approval state by calling `parseReviewFile()` (the hook's own parser — never reimplemented) over every `pipeline/code-review/by-*.md`, for every host
+- A panel-mode workstream gate claiming `PASS` whose review file says `CHANGES REQUESTED` — or has no parseable verdict at all — flips the merged stage-05 gate to `FAIL`, with a `{workstream, gate_said, file_said}` record on `_orchestrator_stamped.fields`
+- Scoped to panel mode's per-area workstreams (backend/frontend/platform/qa); adversarial mode's `reviewer`/`critic` workstreams (31.3) aren't area-named and are left to their own verification path
+- Runs once, on the merged gate, alongside stage-04's existing merged stamp — see `STAMPABLE_MERGE_STAGES` in `core/verify/stamp.js`
+
 ### Closed-loop acceptance criteria → spec → tests — drift caught structurally
 
 The PM writes numbered acceptance criteria (`AC-N`) in `pipeline/brief.md`. The chain is enforced end-to-end:
