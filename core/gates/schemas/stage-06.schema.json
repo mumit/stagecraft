@@ -53,6 +53,21 @@
     "criterion_to_test_mapping_is_one_to_one": {
       "type": "boolean",
       "description": "True when every criterion maps to exactly one dedicated test and no test covers multiple criteria with distinct verify conditions. Drives the Stage 7 auto-fold; when in doubt, set false."
+    },
+    "mutation_score": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "31.4: orchestrator-observed kill ratio (killed / non-skipped mutants) from the opt-in, changed-files-only mutation smoke gate (pipeline.verify.mutation.enabled). Absent/null when the gate is disabled, no runner was found, or the run couldn't be scored. Below pipeline.verify.mutation.threshold is advisory (WARN + noted_for_followup) unless threshold_hard is set, in which case it's a blocker. Distinct from stage-06d's model-driven, full-track-only `mutation` object: this is a mechanical smoke check on every track's changed files."
+    },
+    "mutation_runner": {
+      "type": ["string", "null"],
+      "description": "31.4: which mutation-testing tool the orchestrator detected and ran (\"stryker\", \"mutmut\", or \"configured\" when pipeline.verify.mutation.command overrides auto-detection). Null when mutation_score is null."
+    },
+    "mutation_scope": {
+      "type": ["object", "null"],
+      "description": "31.4: { changed_files, mutated_files } — the changed-file set the mutation gate was scoped to (intersected with pipeline.verify.mutation.paths when configured). Null when mutation_score is null.",
+      "additionalProperties": true
     }
   },
   "additionalProperties": true
