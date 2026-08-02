@@ -564,6 +564,7 @@ module.exports = {
   uninstall,
   status,
   renderStagePrompt: shared.renderStagePrompt,
+  renderStagePromptLayers: shared.renderStagePromptLayers,
   invoke,
   buildOmnigentArgs,
   buildOmnigentCommandFromProfile,

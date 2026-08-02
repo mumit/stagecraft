@@ -13,6 +13,17 @@
 // `gate` is the stage-specific skeleton shown to the LLM in the stage
 // prompt; base fields (stage, status, orchestrator, track, timestamp,
 // blockers, warnings) are filled by the orchestrator at write time.
+//
+// Phase 32.1 (cache-first prompt assembly): every dispatched stage's
+// readFirst begins with this exact 3-item prefix — the "framework"
+// files that are the same regardless of stage, role, or run. Adapters
+// (core/adapters/render-helpers.js#splitReadFirst) use it to split each
+// descriptor's readFirst into a byte-stable layer-1 preamble and a
+// stage-specific remainder, so the prefix stays cacheable across every
+// dispatch in a run. Keep this in sync with STAGES entries below — a
+// meta-test (tests/prompt-layout.test.js) asserts every dispatched
+// stage's readFirst starts with it.
+const FRAMEWORK_READ_FIRST = ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md"];
 
 const STAGES = {
   requirements: {
@@ -793,6 +804,7 @@ function getStage(name) {
 
 module.exports = {
   STAGES,
+  FRAMEWORK_READ_FIRST,
   TRACKS,
   ORDERED_STAGE_NAMES,
   STAGES_BY_TRACK,

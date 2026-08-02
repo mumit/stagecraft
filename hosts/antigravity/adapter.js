@@ -50,7 +50,7 @@ const capabilities = require("./capabilities.json");
 const { runHeadless } = require("../../core/adapters/headless");
 const { makeMarkdownHostAdapter } = require("../../core/adapters/markdown-host");
 
-const { install, uninstall, status, renderStagePrompt } = makeMarkdownHostAdapter(capabilities);
+const { install, uninstall, status, renderStagePrompt, renderStagePromptLayers } = makeMarkdownHostAdapter(capabilities);
 
 function invoke(descriptor, ctx, preRenderedPrompt) {
   return runHeadless(module.exports, descriptor, ctx, preRenderedPrompt);
@@ -62,5 +62,6 @@ module.exports = {
   uninstall,
   status,
   renderStagePrompt,
+  renderStagePromptLayers,
   invoke,
 };

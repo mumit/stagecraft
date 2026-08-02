@@ -91,6 +91,35 @@ function toolBudgetSection(toolBudget, enforcementLevel) {
   ].join("\n");
 }
 
+// Phase 32.1 (cache-first prompt assembly): split a descriptor's readFirst
+// into the constant layer-1 "framework" prefix (core/pipeline/stages.js's
+// FRAMEWORK_READ_FIRST — AGENTS.md + the two always-loaded rule files) and
+// the stage-specific remainder (pipeline/*.md project artifacts, which grow
+// and change over a run). Matches positionally so a descriptor whose
+// readFirst doesn't start with the framework set (e.g. a test fixture)
+// degrades gracefully to an empty framework split rather than throwing.
+function splitReadFirst(readFirst) {
+  const { FRAMEWORK_READ_FIRST } = require("../pipeline/stages");
+  const list = Array.isArray(readFirst) ? readFirst : [];
+  let i = 0;
+  while (i < list.length && i < FRAMEWORK_READ_FIRST.length && list[i] === FRAMEWORK_READ_FIRST[i]) {
+    i++;
+  }
+  return { framework: list.slice(0, i), rest: list.slice(i) };
+}
+
+// Layer 1 renderer (phase 32.1): the framework preamble/rules section —
+// byte-identical across every dispatch in a run regardless of stage or
+// role, so it forms the cacheable prefix providers/CLIs can reuse. Call
+// this first, before anything stage- or role-specific.
+function renderFrameworkPreamble(lines, descriptor) {
+  const { framework } = splitReadFirst(descriptor.readFirst);
+  if (framework.length === 0) return;
+  lines.push("## Framework (read first — every stage, every role)");
+  for (const f of framework) lines.push(`- ${f}`);
+  lines.push("");
+}
+
 function renderContextManifest(lines, descriptor) {
   const manifest = descriptor.contextManifest;
   if (!manifest || !Array.isArray(manifest.files) || manifest.files.length === 0) return;
@@ -111,6 +140,10 @@ function renderContextManifest(lines, descriptor) {
   lines.push("");
 }
 
+// Layer 3 (phase 32.1): learned context, positioned after the layer-1/2
+// preamble and before the layer-4 volatile tail (objective, readFirst
+// remainder, manifest, gate shape) — see renderFrameworkPreamble above and
+// each adapter's renderStagePrompt for the full four-layer order.
 function renderKnownPatterns(lines, descriptor) {
   const items = descriptor.knownPatterns;
   if (!Array.isArray(items) || items.length === 0) return;
@@ -181,4 +214,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, splitReadFirst, toolBudgetSection };

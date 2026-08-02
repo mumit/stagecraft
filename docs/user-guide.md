@@ -864,6 +864,34 @@ hosts:
       default: accounts/fireworks/models/qwen3-coder-480b-a35b-instruct
 ```
 
+#### Prompt caching (phase 32.1)
+
+Every stage prompt is assembled in a stable four-layer order — framework
+preamble/rules, role brief, learned context, then the volatile per-dispatch
+tail — so the first three layers are byte-identical across every dispatch in
+a run that shares the same role. OpenAI-style endpoints get automatic prefix
+caching from that ordering alone, no config needed.
+
+For Anthropic-compatible endpoints reached through this adapter (a proxy
+that accepts `cache_control` on message content blocks), opt in explicitly:
+
+```yaml
+hosts:
+  openai-compat:
+    caching:
+      enabled: true
+```
+
+When enabled, `invoke()` sends the prompt as separate content blocks with
+`cache_control: {type: "ephemeral"}` after the framework, role-brief, and
+learned-context layers (never on the volatile tail, since it changes on
+every dispatch and would never hit cache). `cached_tokens`, when the API
+reports it under `usage.prompt_tokens_details`, is recorded on the gate so
+`scripts/dashboard.js --view cost` can show cache-hit economics. Off by
+default — only enable it against an endpoint that actually understands
+`cache_control`; a plain OpenAI-compatible endpoint will typically just
+ignore the extra field, but some strict implementations may reject it.
+
 #### Environment variables
 
 | Variable | Purpose | Default |
