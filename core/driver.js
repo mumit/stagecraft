@@ -1837,8 +1837,10 @@ async function run(opts = {}) {
         const mergeStart = Date.now();
         const m = _merge(r.name, { cwd, track: effectiveTrack, changeId });
         // 31.1: workspace-global orchestrator stamping, once, on the merged
-        // gate (stampWorkstream in core/orchestrator.js already stamped each
-        // role's own gate as it completed). Best-effort — a stamping failure
+        // gate (for stage-04, stampWorkstream in core/orchestrator.js already
+        // stamped each role's own gate as it completed; stage-05's 31.5
+        // approval re-derivation below has no per-role counterpart — it only
+        // runs here, on the merged gate). Best-effort — a stamping failure
         // must never fail the merge; m.gate is refreshed so mergeTransition
         // below sees the post-stamp status, not the model's pre-stamp claim.
         if (m.merged) {
