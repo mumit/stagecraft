@@ -66,6 +66,13 @@ const REVIEWER_MAP = {
   qa:       "dev-qa",
   security: "security-engineer",
   principal: "principal",
+  // 31.3: adversarial mode's two workstreams. Their by-*.md files are routed
+  // to dedicated apply functions below (applyAdversarialReviewerFile /
+  // applyCriticVerdict) rather than the generic per-area verdict loop — these
+  // map entries exist for identity/logging consistency with the rest of the
+  // table, not because applyVerdict() is called for them.
+  reviewer: "reviewer",
+  critic:   "critic",
 };
 
 const KNOWN_AREAS = new Set(["backend", "frontend", "platform", "qa", "deps"]);
@@ -205,6 +212,161 @@ function hostFromPath(filePath) {
   const m = base.match(/^by-([\w-]+)\.md$/);
   if (!m) return null;
   return KNOWN_HOSTS.has(m[1]) ? m[1] : null;
+}
+
+// ---------------------------------------------------------------------------
+// 31.3: adversarial mode — by-reviewer.md (single reviewer, all areas) and
+// by-critic.md (challenges to the review). Distinct from the panel-mode
+// per-area gates above: there is exactly one reviewer and one critic, so
+// each file's content fully replaces its gate on every write rather than
+// accumulating per-reviewer entries.
+// ---------------------------------------------------------------------------
+
+// Reuses parseReviewFile()'s "## Review of <area>" + "REVIEW:" parsing
+// verbatim, but rolls every area verdict from the single by-reviewer.md
+// file into ONE combined gate (stage-05.reviewer.json) instead of one gate
+// per area — adversarial mode has a single reviewer, not a cross-review
+// matrix, so there is nothing to fan out across.
+function applyAdversarialReviewerFile(filePath, { reviewer, host, gatesDir: customGatesDir } = {}) {
+  const effectiveGatesDir = customGatesDir || GATES_DIR;
+  if (!fs.existsSync(effectiveGatesDir)) fs.mkdirSync(effectiveGatesDir, { recursive: true });
+
+  const verdicts = parseReviewFile(filePath);
+  const areasReviewed = verdicts.map((v) => v.area);
+  const approvedAreas = verdicts.filter((v) => v.verdict === "APPROVED").map((v) => v.area);
+  const changesRequested = verdicts
+    .filter((v) => v.verdict === "CHANGES_REQUESTED")
+    .map((v) => ({ area: v.area, blockers: v.blockers, timestamp: new Date().toISOString() }));
+  const blockers = changesRequested.flatMap((cr) => cr.blockers.map((text) => ({ area: cr.area, text })));
+
+  const gatePath = path.join(effectiveGatesDir, "stage-05.reviewer.json");
+  const lockPath = path.join(effectiveGatesDir, ".stage-05.reviewer.lock");
+  if (!acquireLock(lockPath)) {
+    console.log(`[approval-derivation] ⚠️  could not acquire lock for stage-05.reviewer after ${LOCK_RETRIES} retries; skipping`);
+    return;
+  }
+  try {
+    const status = areasReviewed.length > 0 && changesRequested.length === 0 ? "PASS" : "FAIL";
+    const gate = {
+      stage: "stage-05",
+      workstream: "reviewer",
+      mode: "adversarial",
+      host: host || HOST,
+      orchestrator: ORCHESTRATOR_ID,
+      status,
+      timestamp: new Date().toISOString(),
+      blockers,
+      warnings: areasReviewed.length === 0
+        ? [`${path.basename(filePath)} contained no '## Review of <area>' sections`]
+        : [],
+      areas_reviewed: areasReviewed,
+      approved_areas: approvedAreas,
+      changes_requested: changesRequested,
+    };
+    const tmpPath = `${gatePath}.tmp.${process.pid}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(gate, null, 2) + "\n");
+    fs.renameSync(tmpPath, gatePath);
+    console.log(`[approval-derivation] ${reviewer || "reviewer"} → ${status} on stage-05.reviewer (areas: ${areasReviewed.join(", ") || "none"})`);
+    logEvent("adversarial_reviewer_gate_updated", { areas_reviewed: areasReviewed, approved_areas: approvedAreas, status });
+  } finally {
+    releaseLock(lockPath);
+  }
+}
+
+// Challenge section: "## Challenge <id>" followed by FILE:/CLAIM:/DISPOSITION:
+// lines, closed by the DISPOSITION: marker (mirrors REVIEW_MARKER_RE closing
+// a "## Review of <area>" section above).
+const CHALLENGE_HEADER_RE = /^##\s+Challenge\s+([\w-]+)\s*$/i;
+const CHALLENGE_FILE_RE = /^\s*FILE:\s*(.+?):(\d+)\s*$/i;
+const CHALLENGE_CLAIM_RE = /^\s*CLAIM:\s*(.+)$/i;
+const CHALLENGE_DISPOSITION_RE = /^\s*DISPOSITION:\s*(RESOLVED|UNRESOLVED)\s*$/i;
+
+// Plan §31.3: "require file:line evidence for every challenge." A challenge
+// with no parseable FILE:<path>:<line> line is still recorded (conservative —
+// never silently drop a challenge) but its disposition is mechanically
+// forced to "unresolved" regardless of what the critic wrote, so a missing
+// reproducer can never be waved through as resolved.
+function parseCriticFile(filePath) {
+  let content;
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > MAX_FILE_BYTES) {
+      console.log(`[approval-derivation] ⚠️  ${filePath} exceeds ${MAX_FILE_BYTES} bytes; skipping`);
+      return [];
+    }
+    content = fs.readFileSync(filePath, "utf8");
+  } catch { return []; }
+
+  const challenges = [];
+  let current = null;
+  const flush = () => {
+    if (!current) return;
+    const evidenceMissing = !current.file;
+    challenges.push({
+      id: current.id,
+      file: current.file || null,
+      line: current.line || null,
+      claim: current.claim || "",
+      disposition: evidenceMissing ? "unresolved" : current.disposition,
+      evidence_missing: evidenceMissing || undefined,
+    });
+    current = null;
+  };
+  for (const line of content.split(/\r?\n/)) {
+    const h = line.match(CHALLENGE_HEADER_RE);
+    if (h) { flush(); current = { id: h[1], file: null, line: null, claim: "", disposition: "unresolved" }; continue; }
+    if (!current) continue;
+    const f = line.match(CHALLENGE_FILE_RE);
+    if (f) { current.file = f[1].trim(); current.line = Number(f[2]); continue; }
+    const c = line.match(CHALLENGE_CLAIM_RE);
+    if (c) { current.claim = c[1].trim(); continue; }
+    const d = line.match(CHALLENGE_DISPOSITION_RE);
+    if (d) { current.disposition = d[1].toLowerCase(); flush(); continue; }
+  }
+  flush(); // tolerate a final section with no closing DISPOSITION: line
+  return challenges;
+}
+
+// Single critic, full-replace semantics on every write (like red-team's
+// stage-04c gate) — there is exactly one critic file, so accumulation across
+// writes (the panel-mode reviewer pattern) doesn't apply.
+function applyCriticVerdict(filePath, { reviewer, host, gatesDir: customGatesDir } = {}) {
+  const effectiveGatesDir = customGatesDir || GATES_DIR;
+  if (!fs.existsSync(effectiveGatesDir)) fs.mkdirSync(effectiveGatesDir, { recursive: true });
+
+  const challenges = parseCriticFile(filePath);
+  const gatePath = path.join(effectiveGatesDir, "stage-05.critic.json");
+  const lockPath = path.join(effectiveGatesDir, ".stage-05.critic.lock");
+  if (!acquireLock(lockPath)) {
+    console.log(`[approval-derivation] ⚠️  could not acquire lock for stage-05.critic after ${LOCK_RETRIES} retries; skipping`);
+    return;
+  }
+  try {
+    const challengesResolved = challenges.every((c) => c.disposition === "resolved");
+    const unresolved = challenges.filter((c) => c.disposition !== "resolved");
+    const gate = {
+      stage: "stage-05",
+      workstream: "critic",
+      mode: "adversarial",
+      host: host || HOST,
+      orchestrator: ORCHESTRATOR_ID,
+      status: challengesResolved ? "PASS" : "FAIL",
+      timestamp: new Date().toISOString(),
+      blockers: unresolved.map((c) => ({ id: c.id, text: c.claim || `unresolved challenge ${c.id}` })),
+      warnings: challenges.some((c) => c.evidence_missing)
+        ? [`${challenges.filter((c) => c.evidence_missing).length} challenge(s) missing FILE:<path>:<line> evidence — forced to unresolved`]
+        : [],
+      challenges,
+      challenges_resolved: challengesResolved,
+    };
+    const tmpPath = `${gatePath}.tmp.${process.pid}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(gate, null, 2) + "\n");
+    fs.renameSync(tmpPath, gatePath);
+    console.log(`[approval-derivation] ${reviewer || "critic"} → ${gate.status} on stage-05.critic (challenges: ${challenges.length}, resolved: ${challengesResolved})`);
+    logEvent("critic_gate_updated", { challenges_count: challenges.length, challenges_resolved: challengesResolved, status: gate.status });
+  } finally {
+    releaseLock(lockPath);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +522,13 @@ function deriveForProject(filePath, projectCwd) {
   if (!reviewer) return;
   const host = hostFromPath(filePath);
   const role = reviewerRoleFromPath(filePath);
+
+  // 31.3: adversarial mode's two files bypass the per-area verdict loop —
+  // by-reviewer.md rolls up into one combined gate, by-critic.md parses
+  // challenges instead of REVIEW: verdicts.
+  if (!host && role === "reviewer") { applyAdversarialReviewerFile(filePath, { reviewer, host, gatesDir }); return; }
+  if (!host && role === "critic") { applyCriticVerdict(filePath, { reviewer, host, gatesDir }); return; }
+
   const verdicts = parseReviewFile(filePath);
   for (const v of verdicts) {
     if (!host && role && v.area === role && !isSingleReviewer) {
@@ -394,6 +563,11 @@ function main() {
     if (!reviewer) continue;
     const host = hostFromPath(fullPath);  // null unless it's a fanout file
     const role = reviewerRoleFromPath(fullPath); // raw key, e.g. "backend"
+
+    // 31.3: adversarial mode's two files bypass the per-area verdict loop.
+    if (!host && role === "reviewer") { applyAdversarialReviewerFile(fullPath, { reviewer, host }); continue; }
+    if (!host && role === "critic") { applyCriticVerdict(fullPath, { reviewer, host }); continue; }
+
     const verdicts = parseReviewFile(fullPath);
     for (const v of verdicts) {
       // Self-review guard: skip sections where the reviewer's own workstream
@@ -420,4 +594,8 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, parseReviewFile, applyVerdict, deriveForProject, reviewerNameFromPath, hostFromPath, KNOWN_HOSTS };
+module.exports = {
+  main, parseReviewFile, applyVerdict, deriveForProject, reviewerNameFromPath, hostFromPath, KNOWN_HOSTS,
+  // 31.3
+  parseCriticFile, applyCriticVerdict, applyAdversarialReviewerFile,
+};

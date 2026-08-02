@@ -314,6 +314,43 @@ const STAGES = {
       changes_requested: [],
       escalated_to_principal: false,
     },
+    // 31.3: review.mode: "adversarial" (default stays "panel" — see
+    // core/config.js). Two workstreams instead of the four-area matrix: a
+    // single reviewer covers whatever areas apply, writing
+    // pipeline/code-review/by-reviewer.md; a critic — dispatched AFTER the
+    // reviewer completes, see core/orchestrator.js's dispatchWavesFor() —
+    // attacks the review itself in pipeline/code-review/by-critic.md.
+    // approval-derivation.js reuses parseReviewFile() for by-reviewer.md
+    // (rolled into one combined stage-05.reviewer.json gate rather than
+    // four per-area gates) and a parallel parser for by-critic.md's
+    // challenges. subagent is cleared so each role dispatches its own-named
+    // subagent (roles/reviewer.md / roles/critic.md) instead of the panel's
+    // fixed "reviewer" override.
+    reviewModeOverrides: {
+      adversarial: {
+        subagent: null,
+        objective: "Adversarial peer review. Reviewer: review the implementation across every area that applies, with file:line evidence, recorded in pipeline/code-review/by-reviewer.md. Critic (runs after the reviewer's gate lands): attack the review — missed findings, unsupported approvals, answer \"what would make this approval wrong?\" — with file:line evidence for every challenge, recorded in pipeline/code-review/by-critic.md.",
+        readFirst: [
+          "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
+          "pipeline/context.md", "pipeline/pr-*.md",
+          { path: "pipeline/code-review/by-reviewer.md", optional: true },
+        ],
+        roleWrites: {
+          reviewer: ["pipeline/code-review/by-reviewer.md", "pipeline/gates/stage-05.reviewer.json"],
+          critic:   ["pipeline/code-review/by-critic.md", "pipeline/gates/stage-05.critic.json"],
+        },
+        allowedWrites: [
+          "pipeline/code-review/by-reviewer.md", "pipeline/code-review/by-critic.md",
+          "pipeline/gates/stage-05.reviewer.json", "pipeline/gates/stage-05.critic.json",
+          "pipeline/gates/stage-05.json",
+        ],
+        gate: {
+          mode: "adversarial",
+          challenges: [],
+          challenges_resolved: false,
+        },
+      },
+    },
   },
   qa: {
     stage: "stage-06",
@@ -679,6 +716,18 @@ function loopBuildRole(config) {
   return LOOP_BUILD_WORKSTREAMS.includes(configured) ? configured : LOOP_DEFAULT_BUILD_ROLE;
 }
 
+// 31.3: adversarial review.mode replaces the four-area matrix with exactly
+// two workstreams — a single reviewer (covering whatever areas apply) and a
+// critic dispatched after the reviewer completes to attack the review itself.
+// Checked after the loop-track override so loop's single-workstream build/
+// peer-review scoping (29.1) always wins — adversarial mode isn't meaningful
+// on a track that already scopes peer-review to one workstream.
+const ADVERSARIAL_PEER_REVIEW_ROLES = ["reviewer", "critic"];
+
+function isAdversarialReviewMode(config) {
+  return Boolean(config && config.review && config.review.mode === "adversarial");
+}
+
 // Track-aware roles list for a stage. stage-04 (build) and stage-05
 // (peer-review) vary by track; every other stage uses its base `roles`
 // array unchanged.
@@ -688,6 +737,7 @@ function rolesForStage(stageDef, track, config) {
   }
   if (stageDef.stage === "stage-05") {
     if (track === "loop") return [loopBuildRole(config)];
+    if (isAdversarialReviewMode(config)) return ADVERSARIAL_PEER_REVIEW_ROLES;
     const sizing = PEER_REVIEW_SIZING[track] || PEER_REVIEW_SIZING.full;
     return sizing.roles;
   }
@@ -762,4 +812,6 @@ module.exports = {
   QA_SWEEP_STAGES,
   FOLD_ONLY_STAGES,
   foldQaSweep,
+  isAdversarialReviewMode,
+  ADVERSARIAL_PEER_REVIEW_ROLES,
 };

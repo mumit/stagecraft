@@ -32,7 +32,7 @@ Multi-role stages appear once per dispatched role. The CI advisory
 | stage-04b | security-review           | security   | 12,445      | 7,303        | 19,748     | 4937    |
 | stage-04c | red-team                  | red-team   | 12,445      | 13,683       | 26,128     | 6532    |
 | stage-04d | migration-safety          | migrations | 12,445      | 8,272        | 20,717     | 5180    |
-| stage-05  | peer-review               | reviewer   | 12,445      | 6,330        | 18,775     | 4694    |
+| stage-05  | peer-review               | reviewer   | 12,445      | 7,249        | 19,694     | 4924    |
 | stage-06  | qa                        | qa         | 12,445      | 2,718        | 15,163     | 3791    |
 | stage-06b | accessibility-audit       | qa         | 12,445      | 2,718        | 15,163     | 3791    |
 | stage-06c | observability-gate        | platform   | 12,445      | 2,400        | 14,845     | 3712    |
@@ -87,7 +87,7 @@ stage-04a,14845
 stage-04b,19748
 stage-04c,26128
 stage-04d,20717
-stage-05,18775
+stage-05,19694
 stage-06,15163
 stage-06b,15163
 stage-06c,14845

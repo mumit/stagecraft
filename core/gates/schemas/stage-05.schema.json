@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:stagecraft:schema:stage-05",
   "title": "Stage 05 Peer Review Gate",
-  "description": "Stage 5 (Peer Code Review) gate. Workstream gates land at pipeline/gates/stage-05.<area>.json (one per area: backend, frontend, platform, qa) and the orchestrator merges them into pipeline/gates/stage-05.json. WRITTEN BY THE approval-derivation HOOK ONLY — never authored by an agent. The hook parses pipeline/code-review/by-<reviewer>.md for REVIEW: APPROVED / REVIEW: CHANGES REQUESTED markers and reconciles approvals/changes_requested on every save. PASS when approvals.length >= required_approvals AND changes_requested is empty.",
+  "description": "Stage 5 (Peer Code Review) gate. review.mode: panel (default) — workstream gates land at pipeline/gates/stage-05.<area>.json (one per area: backend, frontend, platform, qa) and the orchestrator merges them into pipeline/gates/stage-05.json. WRITTEN BY THE approval-derivation HOOK ONLY — never authored by an agent. The hook parses pipeline/code-review/by-<reviewer>.md for REVIEW: APPROVED / REVIEW: CHANGES REQUESTED markers and reconciles approvals/changes_requested on every save. PASS when approvals.length >= required_approvals AND changes_requested is empty. review.mode: adversarial (31.3, opt-in) — two workstream gates instead: pipeline/gates/stage-05.reviewer.json (from by-reviewer.md, all areas rolled into one gate — required[] below does not apply to it, it carries areas_reviewed/approved_areas/changes_requested instead) and pipeline/gates/stage-05.critic.json (from by-critic.md — carries mode/challenges/challenges_resolved, see properties below). The merged stage-05.json additionally surfaces challenges/challenges_resolved from the critic gate; PASS requires the reviewer gate PASS AND challenges_resolved.",
   "type": "object",
   "required": [
     "review_shape",
@@ -12,6 +12,19 @@
     "escalated_to_principal"
   ],
   "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["adversarial"],
+      "description": "Present only on adversarial-mode workstream gates (stage-05.reviewer.json, stage-05.critic.json) and on the merged gate when adversarial mode produced it. Absent on panel-mode gates."
+    },
+    "challenges": {
+      "type": "array",
+      "description": "Critic-only (stage-05.critic.json, rolled onto the merged gate). One entry per '## Challenge <id>' section in by-critic.md: { id, file, line, claim, disposition, evidence_missing? }. disposition is forced to \"unresolved\" when file:line evidence is missing or unparseable."
+    },
+    "challenges_resolved": {
+      "type": "boolean",
+      "description": "Critic-only (stage-05.critic.json, rolled onto the merged gate). True iff every challenge's disposition is \"resolved\" (or there are none). The merged stage-05 gate PASSes only when the reviewer gate PASSes AND this is true."
+    },
     "area": {
       "type": "string",
       "enum": ["backend", "frontend", "platform", "qa", "security", "deps"],

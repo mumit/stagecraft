@@ -50,8 +50,14 @@ const ROLE_FRONTMATTER = {
   },
   reviewer: {
     name: "reviewer",
-    description: "Peer reviewer for Stage 5. READ-ONLY during a review invocation; writes only to pipeline/code-review/by-<area>.md. Does not edit source or write stage gates directly.",
+    description: "Peer reviewer for Stage 5. READ-ONLY during a review invocation; writes only to pipeline/code-review/by-<area>.md (panel mode) or by-reviewer.md (adversarial mode, review.mode: adversarial). Does not edit source or write stage gates directly.",
     model: "sonnet",
+    permissionMode: "acceptEdits",
+  },
+  critic: {
+    name: "critic",
+    description: "Adversarial critic for Stage 5 (review.mode: adversarial only). Dispatched AFTER the reviewer completes — attacks the review itself: missed findings, unsupported approvals, answers \"what would make this approval wrong?\". READ-ONLY on code; writes only pipeline/code-review/by-critic.md. Requires file:line evidence for every challenge. Route to a different host than the reviewer by default when ≥2 hosts are configured (routing.roles.critic overrides) — collusion counter-measure.",
+    model: "opus",
     permissionMode: "acceptEdits",
   },
   security: {

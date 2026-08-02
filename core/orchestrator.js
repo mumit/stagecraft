@@ -13,7 +13,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
-const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel } = require("./pipeline/stages");
+const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel, isAdversarialReviewMode } = require("./pipeline/stages");
 const { loadConfig, changeIdFromFeature } = require("./config");
 const { gatesDir: getGatesDir, logsDir: getLogsDir, pipelineRoot, prefixPipelineRelative } = require("./paths");
 const { resolveAdapter } = require("./router");
@@ -252,7 +252,11 @@ function computeDispatchPlan(stageDef, config, track, opts = {}) {
   const fanout = (config && config.routing && Array.isArray(config.routing.review_fanout))
     ? config.routing.review_fanout
     : [];
-  const isPeerReview = stageDef.stage === "stage-05" && fanout.length > 0;
+  // 31.3: review_fanout (multi-host copies of the SAME area matrix) and
+  // adversarial mode (reviewer + critic, cross-host by routing rules instead)
+  // are two different diversity mechanisms — combining them isn't designed
+  // or tested, so adversarial mode always wins and fanout is ignored.
+  const isPeerReview = stageDef.stage === "stage-05" && fanout.length > 0 && !isAdversarialReviewMode(config);
   // Track-aware roles. stage-05 (peer-review) varies by track — nano and
   // loop dispatch a single reviewer; every other track uses the standard
   // four-area matrix. stage-04 (build) also varies on loop — a single
@@ -302,7 +306,13 @@ function buildDescriptor(stageDef, role, opts = {}) {
   const trackOverride = (!override && typeof opts.track === "string" && stageDef.trackOverrides)
     ? stageDef.trackOverrides[opts.track]
     : null;
-  const effectiveDef = { ...stageDef, ...(override || trackOverride || {}) };
+  // 31.3: review.mode-keyed override (e.g. stage-05's adversarial reviewer/
+  // critic shape). Same precedence slot as trackOverride — checked only when
+  // neither a repair nor a track override already applies.
+  const reviewModeOverride = (!override && !trackOverride && opts.reviewMode && stageDef.reviewModeOverrides)
+    ? stageDef.reviewModeOverrides[opts.reviewMode]
+    : null;
+  const effectiveDef = { ...stageDef, ...(override || trackOverride || reviewModeOverride || {}) };
 
   const allowedWrites = effectiveDef.roleWrites?.[role] ?? effectiveDef.allowedWrites;
   const wsId = opts.workstreamId || workstreamId(stageDef.stage, role, stageDef.roles.length);
@@ -343,7 +353,11 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // subagent regardless of role (used by peer-review where the
     // workstreams are areas being reviewed but the dispatched agent
     // is always the reviewer). Adapters honor this in renderStagePrompt.
-    subagent: stageDef.subagent,
+    // Read from effectiveDef (not stageDef) so a reviewModeOverride/
+    // trackOverride/repairOverride can clear or change it — e.g. 31.3's
+    // adversarial mode sets this to null so "reviewer"/"critic" each
+    // dispatch their own-named subagent instead of panel's fixed override.
+    subagent: effectiveDef.subagent,
   };
 }
 
@@ -535,7 +549,7 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, priorKnowledge: opts.priorKnowledge });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       const descriptor = { ...baseDescriptor, knownPatterns };
       const prompt = withSpan("adapter.renderStagePrompt", {
@@ -605,6 +619,31 @@ async function resolvePriorKnowledgeOpts(stageName, opts) {
 // to spawn the host CLI per workstream. Resolves with an array of
 // {role, host, invokeResult, descriptor}. Honors per-workstream
 // capability check; rejects if any routed host has headless: false.
+// 31.3: split a stage's planned workstreams into sequential dispatch waves.
+// [verify-first] resolution: core/scheduler.js's mapByHostConcurrency enqueues
+// every item immediately and bounds concurrency only per-host (ADR-015) — it
+// has no "wait for sibling workstream X" primitive, and adding one is a larger
+// DAG-wave scheduling change out of scope here (see ADR-015's own "future
+// work" note). So adversarial stage-05 is implemented as the plan's documented
+// fallback: "two orchestrator steps" — the critic must read the reviewer's
+// completed pipeline/code-review/by-reviewer.md, so its wave only starts once
+// the reviewer wave's mapByHostConcurrency call has fully resolved. Every other
+// stage (and panel-mode stage-05) returns a single wave containing the whole
+// plan, exactly matching pre-31.3 behavior.
+function dispatchWavesFor(plan, config) {
+  if (plan.stage === "stage-05" && isAdversarialReviewMode(config)) {
+    const reviewerWs = plan.workstreams.filter((ws) => ws.role === "reviewer");
+    const criticWs = plan.workstreams.filter((ws) => ws.role === "critic");
+    const rest = plan.workstreams.filter((ws) => ws.role !== "reviewer" && ws.role !== "critic");
+    const waves = [];
+    if (reviewerWs.length > 0) waves.push(reviewerWs);
+    if (criticWs.length > 0) waves.push(criticWs);
+    if (rest.length > 0) waves.push(rest);
+    return waves.length > 0 ? waves : [plan.workstreams];
+  }
+  return [plan.workstreams];
+}
+
 async function runStageHeadless(stageName, opts = {}) {
   opts = await resolvePriorKnowledgeOpts(stageName, opts);
   const plan = runStage(stageName, opts);
@@ -776,7 +815,7 @@ async function runStageHeadless(stageName, opts = {}) {
     const limitForHost = (host) => hostConcurrencyLimit(config, host);
     // --workstream filtering is applied in runStage (before rendering), so
     // plan.workstreams already contains only the requested workstreams here.
-    const results = await mapByHostConcurrency(plan.workstreams, {
+    const dispatchOptions = {
       key: (ws) => ws.host,
       limit: limitForHost,
       onQueued: (ws, _index, queue) => {
@@ -797,7 +836,8 @@ async function runStageHeadless(stageName, opts = {}) {
           queue_limit: queue.queueLimit,
         });
       },
-    }, async (ws, _index, queue) => {
+    };
+    const dispatchWorker = async (ws, _index, queue) => {
       const wsGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
       const expectedLogPath = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
         ? null
@@ -1014,7 +1054,18 @@ async function runStageHeadless(stageName, opts = {}) {
         stub_gate: Boolean(r.stubGate),
       });
       return result;
-    });
+    };
+    // 31.3: adversarial stage-05 dispatches reviewer then critic as two
+    // sequential waves (core/scheduler.js's mapByHostConcurrency has no
+    // ordering primitive — see dispatchWavesFor()'s header comment). Every
+    // other stage gets a single wave containing the full plan, identical to
+    // the one mapByHostConcurrency call this replaced.
+    const waves = dispatchWavesFor(plan, config);
+    let results = [];
+    for (const wave of waves) {
+      const waveResults = await mapByHostConcurrency(wave, dispatchOptions, dispatchWorker);
+      results = results.concat(waveResults);
+    }
 
     // Orchestrator-stamped verification. For stages where the gate
     // claims something the orchestrator can verify (stage-04a:
@@ -1236,6 +1287,20 @@ function mergeWorkstreamGates(stageName, opts = {}) {
       if (testsClaims.length > 0) merged.tests_passed = testsClaims.every(Boolean);
     }
 
+    // 31.3: surface the critic's challenges on the merged stage-05 gate.
+    // No extra gating logic needed here — the generic aggregate above
+    // already flips merged.status to FAIL whenever the critic's own gate
+    // is FAIL, and applyCriticVerdict() (core/hooks/approval-derivation.js)
+    // sets that FAIL exactly when challenges_resolved is false. This block
+    // only makes the reason visible on the merged gate.
+    if (stageDef.stage === "stage-05") {
+      const criticGate = wsGates.find((w) => w.role === "critic");
+      if (criticGate) {
+        merged.challenges = Array.isArray(criticGate.gate.challenges) ? criticGate.gate.challenges : [];
+        merged.challenges_resolved = criticGate.gate.challenges_resolved !== false;
+      }
+    }
+
     const outFile = path.join(gatesDir, `${stageDef.stage}.json`);
     fs.writeFileSync(outFile, JSON.stringify(merged, null, 2) + "\n", "utf8");
     // C6: stamp the tamper-evident chain hash of the predecessor stage gate.
@@ -1307,6 +1372,7 @@ function next(opts = {}) {
       auditedSkips: opts.auditedSkips || [],
       forceStages,
       rightSizing: config.pipeline.right_sizing !== false,
+      config,
     });
     setSpanAttributes({
       "devteam.next.action": result.action,
@@ -1770,16 +1836,25 @@ function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX
 
     if (!fs.existsSync(stageGatePath)) {
       if (stageDef.roles.length > 1) {
+        // 31.3: stage-05's actual dispatched roles vary with review.mode
+        // (adversarial dispatches ["reviewer","critic"], not the static
+        // 4-area stageDef.roles) — without this, the completed/remaining
+        // check below looks for stage-05.backend.json/etc that adversarial
+        // mode never writes, and the stage can never be recognized as done.
+        // Every other stage keeps using stageDef.roles unchanged.
+        const baseRoles = stageDef.stage === "stage-05"
+          ? rolesForStage(stageDef, track, opts.config)
+          : stageDef.roles;
         // Apply active_roles filter: only expect gates for roles that were
         // actually dispatched. Without this, a suppressed role (e.g. frontend
         // when active_roles=[backend,platform,qa]) keeps `remaining` non-empty
         // forever and the driver loops until max-iterations is exhausted.
-        let effectiveRoles = stageDef.roles;
+        let effectiveRoles = baseRoles;
         const s1Path = path.join(gatesDir, "stage-01.json");
         if (fs.existsSync(s1Path)) {
           const { gate: s1Gate } = loadGateSafe(s1Path);
           if (s1Gate) {
-            const filtered = inferActiveRoles(s1Gate, stageDef.roles);
+            const filtered = inferActiveRoles(s1Gate, baseRoles, stageDef.alwaysDispatch);
             if (filtered) effectiveRoles = filtered;
           }
         }
@@ -2031,6 +2106,7 @@ module.exports = {
   summary,
   buildDescriptor,
   computeDispatchPlan,
+  dispatchWavesFor,
   renderOmnigentDirectorPrompt,
   patchGateForUnpricedModel,
   patchGateForObservedUsage,

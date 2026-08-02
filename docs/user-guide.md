@@ -720,6 +720,20 @@ routing:
 
 With three hosts and four review areas, Stage 5 produces 12 parallel workstreams. Any FAIL from any model on any area blocks the stage. See [Multi-model peer review](#multi-model-peer-review) for the full picture.
 
+**Adversarial peer review: reviewer/critic pair instead of the four-area panel**
+
+`review_fanout` above multiplies the *same* panel across hosts. `review.mode: adversarial` is a different mechanism entirely — it replaces the four-area matrix with exactly two sequential workstreams:
+
+```yaml
+review:
+  mode: adversarial   # default: panel
+routing:
+  roles:
+    critic: gemini-cli  # optional — auto-picks a different host from reviewer when ≥2 are configured
+```
+
+A single reviewer covers every applicable area in one pass (`pipeline/code-review/by-reviewer.md`), then a critic — dispatched only after the reviewer's gate lands — attacks the review itself in `pipeline/code-review/by-critic.md`: missed findings, unsupported approvals, "what would make this approval wrong?", with file:line evidence required for every challenge. The merged Stage 5 gate PASSes only when the reviewer approves AND the critic's `challenges_resolved` is `true`. The two modes are mutually exclusive per run — combining `review_fanout` with `review.mode: adversarial` is not supported; adversarial mode wins. Default stays `panel`; this is opt-in.
+
 ### Using Omnigent
 
 `omnigent` is Stagecraft's adapter for the [Omnigent](https://github.com/omnigent-ai/omnigent) meta-harness. Stagecraft still owns routing, gates, write audits, retries, and `devteam next`; Omnigent owns the runtime that consumes one workstream prompt.
