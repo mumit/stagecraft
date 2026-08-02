@@ -56,6 +56,7 @@ What else was on the table and why we didn't pick those.
 | [014](014-docker-headless-runner.md) | Docker-based headless runner: local containerized orchestration with mounted-project state | Accepted |
 | [015](015-workstream-scheduling.md) | Bounded workstream scheduling: per-host concurrency, queue telemetry, and retry backoff reasons without stage DAG reordering | Accepted |
 | [016](016-assess-by-default.md) | Assess-by-default on `devteam run`: inline `assess()` inference at any confidence when no `--track`/`track.json`/`custom_stages`, persisted to `pipeline/track.json` — supersedes ADR-006 §1 | Accepted |
+| [017](017-dag-wave-execution.md) | Stage DAG waves: curated `dependsOn[]` metadata (not a mechanical readFirst mirror), wave formation bounded by `autonomy.max_parallel_stages`, chain stays track-order, per-member failure/stall/heartbeat handling | Proposed |
 
 ### Deferred
 
