@@ -362,6 +362,12 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #   test_concurrency: 2           # 1 serializes suites; maximum is 8");
   lines.push("  #   dependency_audit_command: \"npm audit --json\"  # stage-04c mechanical floor; null disables");
   lines.push("  #   receipts: true                # false disables content-addressed verification receipt reuse");
+  lines.push("  #   mutation:                     # stage-06 opt-in mutation smoke gate (31.4); off by default");
+  lines.push("  #     enabled: false              # true runs it — Stryker (JS/TS) or mutmut (Python), never installed");
+  lines.push("  #     threshold: 0.7              # kill-ratio floor; below it is advisory unless threshold_hard");
+  lines.push("  #     threshold_hard: false        # true turns a below-threshold score into a blocking FAIL");
+  lines.push("  #     timeout_ms: 300000           # time-box for the mutation run; killed cleanly on expiry");
+  lines.push("  #     paths: [\"src/billing/\"]      # optional: further restrict scope within changed files");
   lines.push("  #   test_suites:                  # optional replacement for auto-discovered suites");
   lines.push("  #     - id: unit");
   lines.push("  #       command: \"npm test\"");

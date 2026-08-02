@@ -31,6 +31,7 @@ const { runLicenseCheck } = require("./license-runner");
 const {
   runDependencyAudit, runSecretScanFloor, runSemgrepFloor, computeDependencyDiff, getChangedFiles,
 } = require("./redteam-floor");
+const { runMutationGate } = require("./mutation");
 
 const STAMPER_VERSION = "1";
 
@@ -305,6 +306,49 @@ async function stampStage06(cwd, gatePath) {
     }
   } else {
     stamp.runs.ac_mapping = { skipped: acCheck.reason };
+  }
+
+  // 31.4: opt-in mutation smoke gate — changed-files-only, time-boxed,
+  // never installs a runner. Disabled by default (pipeline.verify.mutation.
+  // enabled=false), so an unconfigured project's stage-06 gate is unaffected
+  // beyond this always-recorded, always-honest audit entry. See
+  // core/verify/mutation.js and plans/phase-31-verification-depth.md §31.4.
+  const changedFiles = getChangedFiles(cwd);
+  const mutationResult = await runMutationGate(cwd, config, changedFiles);
+  stamp.runs.mutation = mutationResult;
+  if (mutationResult.ran) {
+    gate.mutation_score = mutationResult.score;
+    gate.mutation_runner = mutationResult.runner;
+    gate.mutation_scope = mutationResult.scope;
+    stamp.fields.push({ field: "mutation_score", orchestrator: mutationResult.score, runner: mutationResult.runner });
+
+    if (mutationResult.score < mutationResult.threshold) {
+      const scorePct = (mutationResult.score * 100).toFixed(1);
+      const thresholdPct = (mutationResult.threshold * 100).toFixed(1);
+      const msg = `mutation score ${scorePct}% below threshold ${thresholdPct}% ` +
+        `(runner: ${mutationResult.runner}, scope: ${mutationResult.scope.mutated_files.length} changed file(s))`;
+      if (mutationResult.threshold_hard) {
+        // threshold_hard: the model cannot talk its way past a mechanically
+        // observed mutation gap — finalizeStamp's blockers-length check
+        // below flips PASS/WARN to FAIL the same way every other stamped
+        // check does.
+        blockers.push(`mutation score below hard threshold: ${msg}`);
+      } else {
+        // Advisory by default: surfaced as a gate warning AND a
+        // noted_for_followup entry so `devteam advise` classifies it (see
+        // core/advise.js#classifyItem — severity: "high" with no AC ref
+        // routes to PEER_REVIEW_RISK) rather than being silently absorbed.
+        gate.warnings = Array.isArray(gate.warnings) ? gate.warnings : [];
+        gate.warnings.push(`WARN mutation-below-threshold: ${msg}`);
+        gate.noted_for_followup = Array.isArray(gate.noted_for_followup) ? gate.noted_for_followup : [];
+        gate.noted_for_followup.push({
+          id: "MUT-1",
+          severity: "high",
+          surface: "mutation_testing",
+          text: msg,
+        });
+      }
+    }
   }
 
   return finalizeStamp(gate, gatePath, blockers, stamp);
