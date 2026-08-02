@@ -26,12 +26,16 @@
 //         migrations: gpt-4.1
 //         qa: gpt-4.1-mini
 //         verifier: gpt-4.1
+//       caching:
+//         enabled: false  # phase 32.1: cache_control breakpoints for
+//                          # Anthropic-compatible endpoints reached through
+//                          # this HTTP-native adapter (see invoke.js)
 
 const capabilities = require("./capabilities.json");
 const { makeMarkdownHostAdapter } = require("../../core/adapters/markdown-host");
 const { invoke } = require("./invoke");
 
-const { install, uninstall, status, renderStagePrompt } =
+const { install, uninstall, status, renderStagePrompt, renderStagePromptLayers } =
   makeMarkdownHostAdapter(capabilities);
 
 module.exports = {
@@ -40,5 +44,6 @@ module.exports = {
   uninstall,
   status,
   renderStagePrompt,
+  renderStagePromptLayers,
   invoke,
 };

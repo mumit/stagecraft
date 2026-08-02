@@ -340,7 +340,15 @@ function status(targetDir) {
   };
 }
 
-function renderStagePrompt(descriptor, ctx) {
+// Phase 32.1 (cache-first prompt assembly): renders the stage prompt as
+// four ordered layers — (1) framework preamble/rules, (2) role brief
+// pointer, (3) learned context, (4) volatile tail — and reports the
+// line-index boundaries between them. Layers 1-2 are byte-identical
+// across every dispatch in a run using the same role, which is what makes
+// the prefix cacheable by the claude-code CLI/API automatically.
+// renderStagePrompt() below is a thin wrapper that returns the full joined
+// string.
+function renderStagePromptLayers(descriptor, ctx) {
   // descriptor.subagent (when set) overrides the role-to-agent mapping —
   // used by stages like peer-review where every workstream-area dispatches
   // to the same reviewer subagent.
@@ -348,25 +356,38 @@ function renderStagePrompt(descriptor, ctx) {
     ? ROLE_FRONTMATTER[descriptor.subagent]
     : ROLE_FRONTMATTER[descriptor.role];
   const agentName = fm ? fm.name : (descriptor.subagent || descriptor.role);
+  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst } = require("../../core/adapters/render-helpers");
   const lines = [];
+
+  // --- Layer 1: framework preamble/rules (constant per version) ---
+  renderFrameworkPreamble(lines, descriptor);
+  const layer1End = lines.length;
+
+  // --- Layer 2: role brief (constant per role) ---
+  lines.push(`Use the **${agentName}** subagent (\`.claude/agents/${agentName}.md\`) for this workstream.`);
+  lines.push("");
+  const layer2End = lines.length;
+
+  // --- Layer 3: learned context (constant per run) ---
+  renderKnownPatterns(lines, descriptor);
+  renderPriorKnowledge(lines, descriptor);
+  const layer3End = lines.length;
+
+  // --- Layer 4: volatile tail (changes per dispatch) ---
   lines.push(`# Stage ${descriptor.stage} — ${descriptor.name}`);
   lines.push(`Workstream: ${descriptor.workstreamId} (role: ${descriptor.role}, host: claude-code)`);
   lines.push(`Track: ${ctx.track}`);
   if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
-  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPriorKnowledge } = require("../../core/adapters/render-helpers");
   renderPatchBlock(ctx, lines);
-  lines.push("");
-  lines.push(`Use the **${agentName}** subagent (\`.claude/agents/${agentName}.md\`) for this workstream.`);
   lines.push("");
   lines.push(`## Objective`);
   lines.push(descriptor.objective);
   lines.push("");
   lines.push(`## Read first`);
-  for (const f of descriptor.readFirst) lines.push(`- ${f}`);
+  const { rest } = splitReadFirst(descriptor.readFirst);
+  for (const f of rest) lines.push(`- ${f}`);
   lines.push("");
   renderContextManifest(lines, descriptor);
-  renderKnownPatterns(lines, descriptor);
-  renderPriorKnowledge(lines, descriptor);
   lines.push(allowedWritesCaption(capabilities.enforces.allowed_writes, capabilities.displayName));
   for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
   lines.push("");
@@ -374,7 +395,20 @@ function renderStagePrompt(descriptor, ctx) {
   lines.push(`Produce \`${descriptor.artifact}\` using \`templates/${descriptor.template}\`.`);
   lines.push("");
   appendGateFooter(lines, descriptor, ctx, "claude-code");
-  return lines.join("\n");
+
+  return {
+    lines,
+    layers: [
+      lines.slice(0, layer1End).join("\n"),
+      lines.slice(layer1End, layer2End).join("\n"),
+      lines.slice(layer2End, layer3End).join("\n"),
+      lines.slice(layer3End).join("\n"),
+    ],
+  };
+}
+
+function renderStagePrompt(descriptor, ctx) {
+  return renderStagePromptLayers(descriptor, ctx).lines.join("\n");
 }
 
 function invoke(descriptor, ctx, preRenderedPrompt) {
@@ -387,6 +421,7 @@ module.exports = {
   uninstall,
   status,
   renderStagePrompt,
+  renderStagePromptLayers,
   invoke,
   toolBudgetFor,
   renderSettingsLocal,

@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const { listRoles, ROLES_DIR } = require("../roles");
 const baseInstall = require("./base-install");
-const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns, renderPriorKnowledge, toolBudgetSection } = require("./render-helpers");
+const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst, toolBudgetSection } = require("./render-helpers");
 
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -118,27 +118,50 @@ function makeMarkdownHostAdapter(capabilities) {
     };
   }
 
-  function renderStagePrompt(descriptor, ctx) {
+  // Phase 32.1 (cache-first prompt assembly): renders the stage prompt as
+  // four ordered layers — (1) framework preamble/rules, (2) role brief
+  // pointer, (3) learned context, (4) volatile tail — and reports the
+  // line-index boundaries between them. Layers 1-2 are byte-identical
+  // across every dispatch in a run (same role), which is what makes the
+  // prefix cacheable by providers/CLIs automatically. renderStagePrompt()
+  // below is a thin wrapper that returns the full joined string; hosts
+  // that want to attach cache_control breakpoints (e.g. openai-compat
+  // against Anthropic-compatible endpoints) call renderStagePromptLayers()
+  // directly for the per-layer text.
+  function renderStagePromptLayers(descriptor, ctx) {
     const promptRole = descriptor.subagent || descriptor.role;
     const rolePromptPath = `${capabilities.rolePromptsDir}/${promptRole}.md`;
     const lines = [];
+
+    // --- Layer 1: framework preamble/rules (constant per version) ---
+    renderFrameworkPreamble(lines, descriptor);
+    const layer1End = lines.length;
+
+    // --- Layer 2: role brief (constant per role) ---
+    lines.push(`Read the role prompt at \`${rolePromptPath}\` before acting on this stage.`);
+    lines.push("");
+    const layer2End = lines.length;
+
+    // --- Layer 3: learned context (constant per run) ---
+    renderKnownPatterns(lines, descriptor);
+    renderPriorKnowledge(lines, descriptor);
+    const layer3End = lines.length;
+
+    // --- Layer 4: volatile tail (changes per dispatch) ---
     lines.push(`# Stage ${descriptor.stage} — ${descriptor.name}`);
     lines.push(`Workstream: ${descriptor.workstreamId} (role: ${descriptor.role}, host: ${hostName})`);
     lines.push(`Track: ${ctx.track}`);
     if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
     renderPatchBlock(ctx, lines);
     lines.push("");
-    lines.push(`Read the role prompt at \`${rolePromptPath}\` before acting on this stage.`);
-    lines.push("");
     lines.push(`## Objective`);
     lines.push(descriptor.objective);
     lines.push("");
     lines.push(`## Read first`);
-    for (const f of descriptor.readFirst) lines.push(`- ${f}`);
+    const { rest } = splitReadFirst(descriptor.readFirst);
+    for (const f of rest) lines.push(`- ${f}`);
     lines.push("");
     renderContextManifest(lines, descriptor);
-    renderKnownPatterns(lines, descriptor);
-    renderPriorKnowledge(lines, descriptor);
     lines.push(allowedWritesCaption(capabilities.enforces.allowed_writes, capabilities.displayName || hostName));
     for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
     if (descriptor.allowedWrites.some((f) => f.includes("<"))) {
@@ -156,10 +179,23 @@ function makeMarkdownHostAdapter(capabilities) {
       : `Produce \`${descriptor.artifact}\`.`);
     lines.push("");
     appendGateFooter(lines, descriptor, ctx, hostName);
-    return lines.join("\n");
+
+    return {
+      lines,
+      layers: [
+        lines.slice(0, layer1End).join("\n"),
+        lines.slice(layer1End, layer2End).join("\n"),
+        lines.slice(layer2End, layer3End).join("\n"),
+        lines.slice(layer3End).join("\n"),
+      ],
+    };
   }
 
-  return { install, uninstall, status, renderStagePrompt };
+  function renderStagePrompt(descriptor, ctx) {
+    return renderStagePromptLayers(descriptor, ctx).lines.join("\n");
+  }
+
+  return { install, uninstall, status, renderStagePrompt, renderStagePromptLayers };
 }
 
 module.exports = { makeMarkdownHostAdapter };

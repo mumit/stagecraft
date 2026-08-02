@@ -57,7 +57,34 @@ function resolveConfig(ctx, role) {
   // Quiet (default): only writes, bash failures, and errors are logged.
   const verbose = cfg.verbose === true || process.env.DEVTEAM_VERBOSE === "1";
 
-  return { baseUrl, apiKey, model, verbose };
+  // Phase 32.1: opt-in cache_control breakpoints for Anthropic-compatible
+  // endpoints reached through this HTTP-native adapter. Off by default —
+  // OpenAI-style endpoints get prefix caching for free from renderStagePrompt's
+  // stable layer ordering alone, with no explicit markers needed.
+  const cachingEnabled = cfg.caching?.enabled === true;
+
+  return { baseUrl, apiKey, model, verbose, cachingEnabled };
+}
+
+// Phase 32.1: build the `content` value for the single user message from a
+// renderStagePromptLayers() result. When caching is disabled (default) or
+// the layers aren't available (a preRendered prompt string was supplied),
+// callers should just use the plain prompt string instead — this only
+// handles the cache-aware array-of-blocks shape.
+//
+// cache_control breakpoints land after layers 1-3 (framework preamble, role
+// brief, learned context) — every layer except the volatile tail, which
+// changes on every dispatch and would never hit cache anyway. Empty layers
+// (e.g. no known patterns yet) are dropped rather than emitted as empty
+// text blocks.
+function buildCacheAwareContent(layers) {
+  const blocks = layers
+    .map((text, i) => ({ text, cacheable: i < layers.length - 1 }))
+    .filter((b) => b.text.length > 0)
+    .map((b) => b.cacheable
+      ? { type: "text", text: b.text, cache_control: { type: "ephemeral" } }
+      : { type: "text", text: b.text });
+  return blocks.length > 0 ? blocks : [{ type: "text", text: "" }];
 }
 
 // Single HTTP call to the chat-completions endpoint.
@@ -94,7 +121,7 @@ async function callAPI(url, apiKey, model, messages, tools, timeoutMs) {
 
 async function invoke(descriptor, ctx, preRenderedPrompt) {
   const role = descriptor.role;
-  const { baseUrl, apiKey, model, verbose } = resolveConfig(ctx, role);
+  const { baseUrl, apiKey, model, verbose, cachingEnabled } = resolveConfig(ctx, role);
 
   if (!apiKey) {
     throw new Error(
@@ -110,7 +137,14 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
   }
 
   const adapter = require("./adapter");
-  const prompt = preRenderedPrompt || adapter.renderStagePrompt(descriptor, ctx);
+  // Phase 32.1: when caching is enabled and we're rendering the prompt
+  // ourselves (no preRenderedPrompt — that arrives as a flat string with no
+  // layer boundaries), send the four layers as separate content blocks with
+  // cache_control breakpoints after layers 1-3. Otherwise, same plain-string
+  // content as before.
+  const content = (!preRenderedPrompt && cachingEnabled && typeof adapter.renderStagePromptLayers === "function")
+    ? buildCacheAwareContent(adapter.renderStagePromptLayers(descriptor, ctx).layers)
+    : (preRenderedPrompt || adapter.renderStagePrompt(descriptor, ctx));
   const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
   const timeoutMs =
     typeof ctx.timeoutMs === "number" && ctx.timeoutMs > 0
@@ -118,7 +152,7 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
       : DEFAULT_TIMEOUT_MS;
 
   const tools = buildTools(descriptor);
-  const messages = [{ role: "user", content: prompt }];
+  const messages = [{ role: "user", content }];
 
   process.stderr.write(
     verbose
@@ -325,4 +359,4 @@ function isOrchestratorWrite(ctx, relPath) {
     normalized.startsWith(`${relLogsDir}/`);
 }
 
-module.exports = { invoke, resolveConfig, callAPI, isOrchestratorWrite };
+module.exports = { invoke, resolveConfig, callAPI, isOrchestratorWrite, buildCacheAwareContent };

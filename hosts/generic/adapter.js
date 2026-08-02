@@ -21,30 +21,55 @@ function status() {
   return { ok: true, missing: [], stale: [], notes: ["generic adapter — nothing to verify"] };
 }
 
-function renderStagePrompt(descriptor, ctx) {
+// Phase 32.1 (cache-first prompt assembly): renders the stage prompt as
+// four ordered layers — (1) framework preamble/rules, (2) role brief
+// (inlined verbatim — generic has no native subagent/read_file mechanism
+// to fetch it separately), (3) learned context, (4) volatile tail — and
+// reports the line-index boundaries between them. Layers 1-2 are
+// byte-identical across every dispatch in a run using the same role.
+// renderStagePrompt() below is a thin wrapper that returns the full
+// joined string.
+function renderStagePromptLayers(descriptor, ctx) {
   const roleBriefPath = path.join(__dirname, "..", "..", "roles", `${descriptor.role}.md`);
   const briefSnippet = fs.existsSync(roleBriefPath)
     ? fs.readFileSync(roleBriefPath, "utf8")
     : `(role brief missing at ${roleBriefPath})`;
 
+  const { renderPatchBlock, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
   const lines = [];
+
+  // --- Layer 1: framework preamble/rules (constant per version) ---
+  renderFrameworkPreamble(lines, descriptor);
+  const layer1End = lines.length;
+
+  // --- Layer 2: role brief (constant per role) ---
+  lines.push(`## Role brief (roles/${descriptor.role}.md)`);
+  lines.push("");
+  lines.push(briefSnippet);
+  lines.push("");
+  const layer2End = lines.length;
+
+  // --- Layer 3: learned context (constant per run) ---
+  renderKnownPatterns(lines, descriptor);
+  renderPriorKnowledge(lines, descriptor);
+  const layer3End = lines.length;
+
+  // --- Layer 4: volatile tail (changes per dispatch) ---
   lines.push(`# Stage: ${descriptor.stage} — ${descriptor.name}`);
   lines.push(`Role: ${descriptor.role}`);
   lines.push(`Workstream: ${descriptor.workstreamId}`);
   lines.push(`Track: ${ctx.track}`);
   if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
-  const { renderPatchBlock, renderContextManifest, renderKnownPatterns, renderPriorKnowledge, toolBudgetSection } = require("../../core/adapters/render-helpers");
   renderPatchBlock(ctx, lines);
   lines.push("");
   lines.push(`## Objective`);
   lines.push(descriptor.objective);
   lines.push("");
   lines.push(`## Read first`);
-  for (const f of descriptor.readFirst) lines.push(`- ${f}`);
+  const { rest } = splitReadFirst(descriptor.readFirst);
+  for (const f of rest) lines.push(`- ${f}`);
   lines.push("");
   renderContextManifest(lines, descriptor);
-  renderKnownPatterns(lines, descriptor);
-  renderPriorKnowledge(lines, descriptor);
   lines.push(`## Allowed writes (advisory — host: generic enforces this in prompt only)`);
   for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
   lines.push("");
@@ -68,12 +93,20 @@ function renderStagePrompt(descriptor, ctx) {
   }, null, 2));
   lines.push("```");
   lines.push(`Orchestrator fills "orchestrator": "${ctx.orchestrator}" and "host": "generic" at validation time.`);
-  lines.push("");
-  lines.push(`---`);
-  lines.push(`## Role brief (roles/${descriptor.role}.md)`);
-  lines.push("");
-  lines.push(briefSnippet);
-  return lines.join("\n");
+
+  return {
+    lines,
+    layers: [
+      lines.slice(0, layer1End).join("\n"),
+      lines.slice(layer1End, layer2End).join("\n"),
+      lines.slice(layer2End, layer3End).join("\n"),
+      lines.slice(layer3End).join("\n"),
+    ],
+  };
+}
+
+function renderStagePrompt(descriptor, ctx) {
+  return renderStagePromptLayers(descriptor, ctx).lines.join("\n");
 }
 
 module.exports = {
@@ -82,4 +115,5 @@ module.exports = {
   uninstall,
   status,
   renderStagePrompt,
+  renderStagePromptLayers,
 };
