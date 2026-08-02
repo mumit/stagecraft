@@ -39,7 +39,7 @@ are byte-identical across two different stages of the same run.
 
 ### 32.2 Stage DAG waves (ADR required)
 
-Write ADR-016: stage dependency metadata (`dependsOn: []` on the STAGES table, derived
+Write ADR-017: stage dependency metadata (`dependsOn: []` on the STAGES table, derived
 initially from `readFirst`/artifact-flow analysis) and wave execution semantics — the
 driver dispatches all ready stages whose dependencies hold PASS/WARN gates, bounded by
 `autonomy.max_parallel_stages` (default 2). First wave targets, per the existing speed

@@ -9,16 +9,22 @@ Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see 
 
 | Phase | Theme | Items | Status |
 |---|---|---|---|
-| 28 | Ground truth: telemetry, corpus, host continuity | 28.1–28.6 | 🔲 all ready |
-| 29 | Scale-adaptive ceremony | 29.1–29.5 | 🔲 all ready |
-| 30 | Closed learning loop | 30.1–30.5 | 🔲 30.3 benefits from 28.5 |
-| 31 | Verification depth | 31.1–31.5 | 🔲 all ready |
-| 32 | Performance & parallelism | 32.1–32.5 | ⏸ 32.2 needs its ADR accepted; rest ready |
-| 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ⏸ 33.3 after 28.5; 33.4 after 33.1–33.3 |
+| 28 | Ground truth: telemetry, corpus, host continuity | 28.1–28.6 | ✅ complete |
+| 29 | Scale-adaptive ceremony | 29.1–29.5 | ✅ complete (29.2 landed ADR-016) |
+| 30 | Closed learning loop | 30.1–30.5 | ✅ complete |
+| 31 | Verification depth | 31.1–31.5 | ✅ complete |
+| 32 | Performance & parallelism | 32.1–32.5 | 🔲 32.1 in progress; **32.2 needs ADR-017** (not 016) |
+| 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ⏸ 33.3 after 28.5 (done); 33.4 after 33.1–33.3 |
 | 34 | Interop & auditable SDLC | 34.1–34.4 | 🔲 34.4 after 28.6 ships one release |
+| 35 | Existing-codebase mode | 35.1–35.5 | 🔲 all ready |
 
-Recommended order: 28 → 29 → (30 ∥ 31) → 32 → 33 → 34, but items within a phase are
-independently mergeable unless the item says otherwise.
+Recommended order: 28 → 29 → (30 ∥ 31) → 32 → 33 → 34, with 35 insertable at any point
+(it depends on 31.4's mutation runner for 35.3/35.5 and on nothing else). Items within a
+phase are independently mergeable unless the item says otherwise.
+
+**Status chips lag reality.** Implementation sessions don't update this table, so verify
+before running an item:
+`git log --no-merges --oneline --reverse a8e071a..main` lists what has actually landed.
 
 ---
 
@@ -652,10 +658,12 @@ full suite green.
 ### 32.2 Stage DAG waves ⏸ (ADR first)
 
 ```
-TASK: Implement plans/phase-32-performance-parallelism.md item 32.2 — ADR-016 stage
+TASK: Implement plans/phase-32-performance-parallelism.md item 32.2 — ADR-017 stage
 dependency metadata + wave execution in the driver.
 Branch: feat/stage-waves
-PRECONDITION CHECK: docs/adr/016-*.md exists with status Accepted. If not: write ONLY
+PRECONDITION CHECK: docs/adr/017-*.md exists, is titled for stage-wave scheduling, and
+has status Accepted. (ADR-016 is "Assess-by-default" from 29.2 — do NOT treat its
+existence as this precondition being met.) If not: write ONLY
 the ADR (following docs/adr/ house format, covering: dependsOn derivation from
 readFirst/artifact flow, wave semantics, chain stays track-order, failure-in-wave
 handling, --max-iterations accounting where one wave = one iteration, max_parallel_stages
@@ -943,6 +951,152 @@ plugin from its new location.
 
 Tests: init error message; plugin-path resolution round-trip in a tmpdir project;
 consistency green; no orphaned gemini references (grep sweep in the report).
+```
+
+---
+
+## Phase 35 — Existing-Codebase Mode 🔲
+
+### 35.1 `review-only` track + artifact-tolerant readFirst 🔲
+
+```
+TASK: Implement plans/phase-35-existing-codebase-mode.md item 35.1 — a review-only track
+plus optional readFirst entries, so review stages work on repos with no pipeline history.
+Branch: feat/review-only-track
+
+[verify-first] Confirm three claims before editing: (a) core/cli/commands/stage.js has no
+predecessor-gate check (only the peer-review auto-preflight, bypassable with
+--skip-preflight); (b) the readFirst arrays for security-review, red-team, peer-review and
+verification-beyond-tests reference pipeline artifacts that will not exist on a brownfield
+repo (read them from core/pipeline/stages.js); (c) gate schemas for those stages carry
+AC-linked required fields.
+
+Implement both halves — neither is useful alone:
+
+1. SOFT readFirst. Add an optional-entry form to the STAGES table (either
+   {path, optional:true} entries or a parallel readIfPresent array — pick ONE, and say why
+   in a why-comment). At render time an absent optional path is OMITTED from the prompt
+   entirely, never rendered as "read this file" for a file that isn't there. Required
+   entries (AGENTS.md, the rules docs) keep today's behavior. Add the regression test that
+   full-track prompts are byte-identical after this change.
+2. THE TRACK. Add review-only to STAGES_BY_TRACK: ["security-review","red-team",
+   "peer-review"]. Add --scope <path> (repeatable) threading into the rendered prompt and
+   onto the gate. Make AC-referencing gate fields null-permitted when track is
+   review-only — a schema conditional, NOT a new schema; follow the 29.4 stage-06x
+   precedent for how track shape drives validation.
+
+Tests: `devteam run --track review-only` completes on a fixture repo containing NO
+pipeline/ directory; assert no rendered prompt mentions a nonexistent path; full-track
+prompt byte-comparison; verify-chain passes on the 3-stage track; --scope reaches prompt
+and gate.
+```
+
+### 35.2 `devteam review-pr <number|url>` 🔲
+
+```
+TASK: Implement plans/phase-35-existing-codebase-mode.md item 35.2 — review an inbound
+GitHub PR with the existing reviewer/critic machinery.
+Branch: feat/review-pr
+
+[verify-first] Find the existing `gh` shell-out precedent (scripts/pr-publish.js is the
+likely one) and reuse its auth handling and error messages rather than inventing a second
+pattern. Report what you found.
+
+Implement `devteam review-pr <number|url> [--post] [--yes] [--json]`:
+materialize the PR into pipeline/review-input/ (unified diff, changed-file list, PR
+title/body as the stated intent — the closest thing to a brief a PR provides), then
+dispatch stage-05 against that input: reviewer alone in panel mode, reviewer then critic
+when review.mode is adversarial (31.3). Output is a normal stage-05 gate plus
+pipeline/code-review/by-*.md. Reuse 35.1's soft-readFirst so no brief/spec is required
+(if 35.1 has not merged, STOP and report — this item depends on it).
+
+PUBLISHING IS OPT-IN AND GATED. Default: local only, nothing sent anywhere. --post
+publishes findings as PR review comments and MUST (a) print the exact payload and require
+interactive confirmation, (b) refuse in a non-interactive context unless --yes is ALSO
+passed, (c) refuse outright if the review did not complete or any gate is FAIL-to-render.
+Posting to a PR is outward-facing and hard to retract — the confirmation is load-bearing,
+not decorative. Never post on a partial review.
+
+Tests: a scripted `gh` stub on PATH drives an end-to-end review of a fixture PR producing
+a valid stage-05 gate; adversarial mode adds the critic; --post without confirmation posts
+nothing (assert the stub received no create-review call); missing `gh` gives an actionable
+error; partial review never posts.
+```
+
+### 35.3 Mechanical stamping for stage-06d 🔲
+
+```
+TASK: Implement plans/phase-35-existing-codebase-mode.md item 35.3 — orchestrator-verified
+evidence that 06d's methods actually ran.
+Branch: feat/stamp-06d
+
+[verify-first] STAMPABLE_STAGES in core/verify/stamp.js is {stage-03b, stage-04a,
+stage-04c, stage-06} — 06d is absent, so methods_attempted[] is model-asserted. Confirm,
+and read the 31.4 mutation runner path before adding anything.
+
+Add stage-06d to the stampable set and verify per method:
+- property_based: detect the runner from the project manifest (fast-check / hypothesis /
+  proptest — NEVER install), execute the property tests at the configured path, stamp
+  executed-property count and pass/fail.
+- mutation: REUSE the 31.4 runner rather than adding a second implementation; stamp
+  mutation_score with scope.
+- formal: presence-and-exit-code only (TLA+/Alloy/Lean output is too varied to parse) —
+  stamp {tool, ran, exit_code}; unparseable output is attempted_but_blocked, NEVER success.
+
+methods_attempted[] becomes orchestrator-derived. A method the model claims but for which
+no executable evidence exists is downgraded to attempted_but_blocked:<method> with the
+model's original claim preserved in the stamp block. Existing FAIL rules (surviving mutant
+on a critical path, property counterexample, formal counterexample) are unchanged — what
+changes is that the orchestrator decides whether the method ran at all.
+
+Tests: fixture with a real property counterexample FAILs on orchestrator evidence; a model
+claiming property_based with zero executed properties is downgraded; absent toolchain
+records a skip; enumerate every existing 06d test you update and why (this intentionally
+changes asserted behavior).
+```
+
+### 35.4 Findings report with mitigations 🔲
+
+```
+TASK: Implement plans/phase-35-existing-codebase-mode.md item 35.4 — a severity-ordered
+findings report aimed at fixing things.
+Branch: feat/findings-report
+
+`devteam report --findings [--out <file>] [--json]`: collect findings from every review
+artifact present — security-review, red-team (including the 31.2 mechanical floor),
+peer-review and critic files, 06d, the 31.4 mutation gate, and docs/audit/*.md when the
+audit workflow has run — and render ONE ranked table: severity, file:line, what's wrong,
+suggested mitigation, rough effort, and provenance.
+
+Provenance is the important column: label each finding orchestrator-observed vs
+model-asserted using the existing _orchestrator_stamped / _orchestrator_observed
+distinction, so a reader can tell which findings are machine-confirmed. Do not invent a
+new provenance mechanism. Reuse core/report/ collection + render-html patterns for a
+self-contained offline file.
+
+Tests: fixture pipeline with findings from three different sources yields one ranked report
+with correct provenance labels; the no-findings case renders an honest empty state rather
+than a broken table; --json shape validated against a checked-in schema.
+```
+
+### 35.5 `refactor` track 🔲
+
+```
+TASK: Implement plans/phase-35-existing-codebase-mode.md item 35.5 — a behavior-preservation
+track for refactors.
+Branch: feat/track-refactor
+
+Add refactor to STAGES_BY_TRACK: ["build","peer-review","qa"], with two differences from
+nano (which has the same stage list — read nano first and say how you keep them distinct):
+(1) stage-01 is skipped but the build prompt is a CHARACTERIZATION brief — capture current
+behavior before changing structure; (2) QA's bar is behavior-preserved: the existing suite
+must pass unchanged AND the 31.4 mutation gate is enabled by DEFAULT on this track only
+(a refactor that survives mutation testing is one that preserved behavior). AC-mapping
+gate fields are null-permitted as in 35.1 (depends on 35.1 — STOP if it hasn't merged).
+
+Tests: --track refactor runs on a fixture; a behavior-CHANGING edit fails the
+preserved-behavior bar; mutation defaults on for refactor and stays off elsewhere;
+nano behavior unchanged.
 ```
 
 ---

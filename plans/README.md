@@ -39,9 +39,10 @@ observability remain the active capability priorities.**
 | 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | 📝 proposed (2026-07 landscape review) |
 | 30 | [phase-30-closed-learning-loop.md](phase-30-closed-learning-loop.md) | [prompts](prompts/roadmap-2026-prompts.md) | Auto-collect patterns, outcome-feedback counters, memory injection, ACE-lite reflector, SKILL.md export | 📝 proposed (2026-07 landscape review) |
 | 31 | [phase-31-verification-depth.md](phase-31-verification-depth.md) | [prompts](prompts/roadmap-2026-prompts.md) | Per-role stamping, mechanical red-team floor, adversarial review pair, mutation gate, quorum verification | 📝 proposed (2026-07 landscape review) |
-| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-016), model-tier routing, best-of-N, context diet | 📝 proposed (2026-07 landscape review) |
+| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | 📝 proposed (2026-07 landscape review) |
 | 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | 📝 proposed (2026-07 landscape review) |
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | 📝 proposed (2026-07 landscape review) |
+| 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | 📝 proposed (2026-08 brownfield capability review) |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt in
 [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md) (single source of truth, with status
