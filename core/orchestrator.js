@@ -14,7 +14,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel, isAdversarialReviewMode } = require("./pipeline/stages");
-const { loadConfig, changeIdFromFeature } = require("./config");
+const { loadConfig, changeIdFromFeature, escalateModel } = require("./config");
 const { gatesDir: getGatesDir, logsDir: getLogsDir, pipelineRoot, prefixPipelineRelative } = require("./paths");
 const { resolveAdapter } = require("./router");
 const { withSpan, setSpanAttributes } = require("./observability");
@@ -142,6 +142,37 @@ function patchGateForObservedUsage(gatePath, usage) {
     },
   };
   fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
+}
+
+// Phase-32 item 32.3: record the model the routing config resolved for this
+// dispatch BEFORE it ran (ws.model) — orchestrator truth, independent of
+// whether the dispatch ever reports usage. Distinct from the model-asserted
+// top-level `model` field and from `_orchestrator_observed.model_observed`
+// (what the host actually reported serving) — same "add a distinct
+// orchestrator-owned field, never touch the model-asserted one" discipline
+// as patchGateForObservedUsage above. `escalation` (from routing.tiers via
+// escalateModel(), non-null only when routing.escalate_on_retry bumped this
+// dispatch) additionally records tier-bump provenance. Fire-and-forget: a
+// write failure here must never fail the run.
+function patchGateWithRequestedModel(gatePath, model, escalation) {
+  if (!fs.existsSync(gatePath)) return;
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error || !gate) return;
+  const patched = {
+    ...gate,
+    model_requested: model,
+    ...(escalation ? {
+      _orchestrator_escalated: {
+        from_model: escalation.from,
+        to_model: escalation.to,
+        reason: "escalate_on_retry",
+        at: new Date().toISOString(),
+      },
+    } : {}),
+  };
+  try {
+    fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
+  } catch { /* fire-and-forget: telemetry writes must never fail the run */ }
 }
 
 // Phase-28 item 28.3: for hosts whose capabilities declare
@@ -476,6 +507,10 @@ function runStage(stageName, opts = {}) {
     orchestrator: ORCHESTRATOR_ID,
     timeoutMs: typeof opts.timeoutMs === "number" ? opts.timeoutMs : undefined,
     patchItems: Array.isArray(opts.patchItems) && opts.patchItems.length > 0 ? opts.patchItems : null,
+    // 32.3: true when this dispatch is a fix-and-retry re-dispatch (set by
+    // the driver from state.fixRetries), consulted below to decide whether
+    // routing.escalate_on_retry should bump a pinned model one tier.
+    isRetry: opts.isRetry === true,
   };
 
   if (!isStageInTrack(stageName, ctx.track)) {
@@ -531,7 +566,7 @@ function runStage(stageName, opts = {}) {
     }, () => {
       // For fanout entries the host is fixed by the fanout list; for
       // normal entries the router resolves via precedence.
-      let hostName, adapter;
+      let hostName, adapter, model, modelEscalated = null;
       if (entry.hostName) {
         hostName = entry.hostName;
         const { loadAdapter } = require("./router");
@@ -540,6 +575,18 @@ function runStage(stageName, opts = {}) {
         const resolved = resolveAdapter(config, stageDef.stage, entry.role);
         hostName = resolved.hostName;
         adapter = resolved.adapter;
+        model = resolved.model;
+        // 32.3: escalate-on-retry — a fix-and-retry of a dispatch whose
+        // route pinned a model bumps it one tier up routing.tiers[host].
+        // Never applies to fanout entries (handled above) since those
+        // don't carry a routing-resolved model at all.
+        if (ctx.isRetry && config.routing.escalate_on_retry && model) {
+          const escalated = escalateModel(config, hostName, model);
+          if (escalated && escalated !== model) {
+            modelEscalated = { from: model, to: escalated };
+            model = escalated;
+          }
+        }
       }
       assertCapabilities(stageDef, entry.role, hostName, adapter);
       // G10 / 6.1: resolve per-role tool budget from core/roles.js (host-neutral).
@@ -551,14 +598,17 @@ function runStage(stageName, opts = {}) {
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
       const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
-      const descriptor = { ...baseDescriptor, knownPatterns };
+      // 32.3: model rides on the descriptor (like knownPatterns above) so
+      // every adapter's invoke()/runHeadless sees it without a signature
+      // change — undefined when routing didn't pin one for this dispatch.
+      const descriptor = { ...baseDescriptor, knownPatterns, model };
       const prompt = withSpan("adapter.renderStagePrompt", {
         "devteam.host": hostName,
         "devteam.stage": stageDef.stage,
         "devteam.workstream.role": entry.role,
       }, () => adapter.renderStagePrompt(descriptor, ctx));
       setSpanAttributes({ "devteam.host": hostName });
-      return { role: entry.role, host: hostName, descriptor, prompt, adapter, fanout: entry.fanout };
+      return { role: entry.role, host: hostName, model, modelEscalated, descriptor, prompt, adapter, fanout: entry.fanout };
     }));
 
     // roles[] reflects the filtered set when --workstream is active, so callers
@@ -999,6 +1049,11 @@ async function runStageHeadless(stageName, opts = {}) {
         patchGateForObservedUsage(r.gatePath || wsGatePathExpected, r.usage);
       } else if (ws.adapter.capabilities && ws.adapter.capabilities.telemetry !== "native") {
         patchGateForEstimatedUsage(r.gatePath || wsGatePathExpected, telemetry.promptBytes);
+      }
+      // 32.3: record what routing asked for, regardless of whether usage
+      // telemetry was available above.
+      if (ws.model) {
+        patchGateWithRequestedModel(r.gatePath || wsGatePathExpected, ws.model, ws.modelEscalated);
       }
       // 31.1: per-role orchestrator stamping for multi-workstream stampable
       // stages (stage-04 build) — stamps THIS workstream's own gate as it
@@ -2111,6 +2166,7 @@ module.exports = {
   patchGateForUnpricedModel,
   patchGateForObservedUsage,
   patchGateForEstimatedUsage,
+  patchGateWithRequestedModel,
   ORCHESTRATOR_ID,
   rolesPath,
   templatesPath,

@@ -1716,6 +1716,10 @@ async function run(opts = {}) {
             timeoutMs,
             skipCompleted: r.action === "continue-stage",
             runId: state.started_at, // 28.5: correlates run-corpus dispatch records to this run
+            // 32.3: this stage has at least one prior fix-and-retry attempt —
+            // lets the orchestrator's routing.escalate_on_retry bump a pinned
+            // model one tier for this (re-)dispatch.
+            isRetry: (state.fixRetries[r.name] || 0) > 0,
             // ADR-009 §Decision.2: repair builds run in PATCH MODE (renderPatchBlock).
             // After 10.2 diagnosis, repairPatchItems holds structured per-file items.
             ...(targetedFix ? { workstream: [targetedFix.workstream] } : {}),

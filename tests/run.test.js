@@ -591,6 +591,60 @@ describe("driver: autonomous fix-and-retry (PR-B)", () => {
     assert.equal(state.targetedFix, null, "targeted fix hint is one-shot and cleared after dispatch");
   });
 
+  // Phase-32 item 32.3: escalate-on-retry needs to know "is this dispatch a
+  // fix-and-retry re-dispatch" — the driver signals that via opts.isRetry,
+  // computed from state.fixRetries[stageName] (incremented by
+  // fixRetryTransition on the fix-and-retry action itself, one loop
+  // iteration before the actual re-dispatch happens).
+  it("32.3: passes isRetry: true to the re-dispatch after a fix-and-retry, isRetry: false on a fresh run", async () => {
+    const cwd = track(makeTargetProject());
+    const victim = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+    fs.writeFileSync(victim, "{}");
+    const nextSeq = [
+      {
+        action: "fix-and-retry", stage: "stage-04", name: "build", failure_class: "code-defect",
+        blockers: ["backend test failing"],
+        clear_gates: ["pipeline/gates/stage-04.backend.json"],
+      },
+      { action: "run-stage", stage: "stage-04", name: "build" },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    let n = 0;
+    const dispatchOpts = [];
+    const s = await run({
+      cwd,
+      next: () => nextSeq[n++],
+      runStageHeadless: async (_stageName, opts) => {
+        dispatchOpts.push(opts);
+        return [{ role: "backend", gatePath: "x", exitCode: 0, durationMs: 1 }];
+      },
+    });
+    assert.equal(s.completed, true);
+    assert.equal(dispatchOpts.length, 1, "fix-and-retry action itself doesn't dispatch; only the following run-stage does");
+    assert.equal(dispatchOpts[0].isRetry, true);
+  });
+
+  it("32.3: isRetry is false on a stage's first dispatch (no prior fix-and-retry)", async () => {
+    const cwd = track(makeTargetProject());
+    const nextSeq = [
+      { action: "run-stage", stage: "stage-04", name: "build" },
+      { action: "pipeline-complete", reason: "done" },
+    ];
+    let n = 0;
+    const dispatchOpts = [];
+    const s = await run({
+      cwd,
+      next: () => nextSeq[n++],
+      runStageHeadless: async (_stageName, opts) => {
+        dispatchOpts.push(opts);
+        return [{ role: "backend", gatePath: "x", exitCode: 0, durationMs: 1 }];
+      },
+    });
+    assert.equal(s.completed, true);
+    assert.equal(dispatchOpts.length, 1);
+    assert.equal(dispatchOpts[0].isRetry, false);
+  });
+
   it("halts targeted build fixes that pass without changing the blocker file", async () => {
     const cwd = track(makeTargetProject());
     const victim = path.join(cwd, "pipeline", "gates", "stage-04.platform.json");

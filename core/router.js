@@ -8,7 +8,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { resolveHost } = require("./config");
+const { resolveRoute } = require("./config");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const HOSTS_DIR = path.join(PROJECT_ROOT, "hosts");
@@ -88,14 +88,18 @@ function listHosts() {
 }
 
 function resolveAdapter(config, stage, role) {
-  const hostName = resolveHost(config, stage, role);
+  const { hostName, model } = resolveRoute(config, stage, role);
   if (!hostName) {
     throw new Error(
       `Routing did not resolve a host for stage="${stage}" role="${role}". ` +
       `Set routing.default_host in .devteam/config.yml.`,
     );
   }
-  return { hostName, adapter: loadAdapter(hostName) };
+  // 32.3: model is the routing-resolved model for this (stage, role), if
+  // routing.roles/stages pinned one via the {host, model} object form.
+  // Undefined when nothing pinned one — adapters treat that as "use your
+  // own default."
+  return { hostName, model, adapter: loadAdapter(hostName) };
 }
 
 module.exports = { resolveAdapter, loadAdapter, listHosts };

@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, cleanup } = require("./_helpers");
-const { loadConfig, clearConfigCache, resolveHost, renderDefaultConfig, writeConfigIfAbsent, DEFAULTS, KNOWN_DEPLOY_ADAPTERS } =
+const { loadConfig, clearConfigCache, resolveHost, resolveRoute, escalateModel, renderDefaultConfig, writeConfigIfAbsent, DEFAULTS, KNOWN_DEPLOY_ADAPTERS } =
   require(path.join(REPO_ROOT, "core", "config"));
 
 let _tmpDirs = [];
@@ -108,6 +108,136 @@ describe("config: loadConfig", () => {
       config: "memory:\n  inject_top_k: 0\n",
     }));
     assert.equal(loadConfig(cwd).memory.inject_top_k, DEFAULTS.memory.inject_top_k);
+  });
+
+  // Phase-32 item 32.3: routing.tiers + routing.escalate_on_retry.
+  it("defaults routing.tiers to {} and escalate_on_retry to false", () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: generic\n" }));
+    const c = loadConfig(cwd);
+    assert.deepEqual(c.routing.tiers, {});
+    assert.equal(c.routing.escalate_on_retry, false);
+    assert.deepEqual(DEFAULTS.routing.tiers, {});
+    assert.equal(DEFAULTS.routing.escalate_on_retry, false);
+  });
+
+  it("parses routing.tiers ladders and escalate_on_retry: true", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\n  escalate_on_retry: true\n  tiers:\n    claude-code:\n      - haiku\n      - sonnet\n      - opus\n    codex:\n      - gpt-5-mini\n      - gpt-5\n",
+    }));
+    const c = loadConfig(cwd);
+    assert.equal(c.routing.escalate_on_retry, true);
+    assert.deepEqual(c.routing.tiers["claude-code"], ["haiku", "sonnet", "opus"]);
+    assert.deepEqual(c.routing.tiers.codex, ["gpt-5-mini", "gpt-5"]);
+  });
+
+  it("ignores a malformed routing.tiers (falls back to {})", () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  tiers: not-an-object\n" }));
+    assert.deepEqual(loadConfig(cwd).routing.tiers, {});
+  });
+});
+
+// Phase-32 item 32.3: routing.roles/routing.stages accept either the
+// pre-32.3 bare host-name string, OR {host, model}. resolveRoute is the new
+// entry point that surfaces both; resolveHost (tested above) must stay a
+// byte-identical wrapper around resolveRoute(...).hostName.
+describe("config: resolveRoute (32.3 object-form routing)", () => {
+  it("string-form roles/stages resolve with model undefined (back-compat)", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: "codex" },
+        stages: { "stage-08": "claude-code" },
+      },
+    };
+    assert.deepEqual(resolveRoute(cfg, "stage-04", "backend"), { hostName: "codex", model: undefined });
+    assert.deepEqual(resolveRoute(cfg, "stage-08", "platform"), { hostName: "claude-code", model: undefined });
+    assert.deepEqual(resolveRoute(cfg, "stage-01", "pm"), { hostName: "generic", model: undefined });
+  });
+
+  it("object-form roles/stages resolve both host and model", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { qa: { host: "claude-code", model: "claude-haiku-4-5-20251001" } },
+        stages: { "stage-08": { host: "codex", model: "gpt-5-mini" } },
+      },
+    };
+    assert.deepEqual(resolveRoute(cfg, "stage-06", "qa"), { hostName: "claude-code", model: "claude-haiku-4-5-20251001" });
+    assert.deepEqual(resolveRoute(cfg, "stage-08", "backend"), { hostName: "codex", model: "gpt-5-mini" });
+  });
+
+  it("object-form stages still beats object-form roles", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: { host: "codex", model: "gpt-5-mini" } },
+        stages: { "stage-08": { host: "claude-code", model: "opus" } },
+      },
+    };
+    assert.deepEqual(resolveRoute(cfg, "stage-08", "backend"), { hostName: "claude-code", model: "opus" });
+  });
+
+  it("an object-form value missing `host` falls through to the next precedence level rather than throwing", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: { model: "gpt-5-mini" } }, // no host — malformed
+        stages: {},
+      },
+    };
+    assert.deepEqual(resolveRoute(cfg, "stage-04", "backend"), { hostName: "generic", model: undefined });
+  });
+
+  it("resolveHost stays a byte-identical wrapper for object-form routes", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: { host: "codex", model: "gpt-5-mini" } },
+        stages: {},
+      },
+    };
+    assert.equal(resolveHost(cfg, "stage-04", "backend"), "codex");
+  });
+
+  it("critic diversity (31.3) still works when the reviewer's route is object-form", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { reviewer: { host: "codex", model: "gpt-5" } },
+        stages: {},
+      },
+    };
+    assert.deepEqual(resolveRoute(cfg, "stage-05", "critic"), { hostName: "generic", model: undefined });
+  });
+});
+
+describe("config: escalateModel (32.3)", () => {
+  const cfg = {
+    routing: {
+      default_host: "generic",
+      tiers: {
+        "claude-code": ["claude-haiku-4-5-20251001", "sonnet", "opus"],
+        codex: ["gpt-5-mini", "gpt-5"],
+      },
+    },
+  };
+
+  it("bumps one tier up the host's ladder", () => {
+    assert.equal(escalateModel(cfg, "claude-code", "claude-haiku-4-5-20251001"), "sonnet");
+    assert.equal(escalateModel(cfg, "codex", "gpt-5-mini"), "gpt-5");
+  });
+
+  it("returns null when already at the top tier", () => {
+    assert.equal(escalateModel(cfg, "claude-code", "opus"), null);
+    assert.equal(escalateModel(cfg, "codex", "gpt-5"), null);
+  });
+
+  it("returns null when the host has no configured ladder", () => {
+    assert.equal(escalateModel(cfg, "gemini-cli", "gemini-2.5-pro"), null);
+  });
+
+  it("returns null when the current model isn't on the ladder (never throws)", () => {
+    assert.equal(escalateModel(cfg, "claude-code", "some-unlisted-model"), null);
   });
 });
 

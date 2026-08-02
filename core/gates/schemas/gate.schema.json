@@ -101,6 +101,11 @@
       "minLength": 1,
       "description": "Optional. Specific model id used by the host for this dispatch (e.g. 'claude-opus-4-7', 'gpt-5', 'gemini-2.5-pro'). Distinct from host (which is the framework adapter, e.g. 'claude-code'). Required for cost_usd to be computable."
     },
+    "model_requested": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional (phase-32 item 32.3). Orchestrator-stamped: the model routing.roles/routing.stages resolved for this dispatch BEFORE it ran (the {host, model} object form). Distinct from `model` (model-asserted, self-reported) and from `_orchestrator_observed.model_observed` (what the host actually reported serving) — this is what was requested, not what ran or what was claimed."
+    },
     "duration_ms": {
       "type": "number",
       "minimum": 0,
@@ -190,6 +195,30 @@
         "ts": {
           "type": "string",
           "description": "ISO 8601 timestamp when the autonomous resolution was applied."
+        }
+      },
+      "additionalProperties": true
+    },
+    "_orchestrator_escalated": {
+      "type": "object",
+      "description": "Optional (phase-32 item 32.3). Orchestrator-stamped when routing.escalate_on_retry bumped this fix-and-retry dispatch's model one tier up routing.tiers[host]. Absent when this dispatch wasn't escalated.",
+      "properties": {
+        "from_model": {
+          "type": "string",
+          "description": "The model routing would have resolved without escalation."
+        },
+        "to_model": {
+          "type": "string",
+          "description": "The model actually dispatched, one tier up from_model on routing.tiers[host]."
+        },
+        "reason": {
+          "type": "string",
+          "const": "escalate_on_retry",
+          "description": "Always 'escalate_on_retry' today — the only escalation trigger phase-32.3 implements."
+        },
+        "at": {
+          "type": "string",
+          "description": "ISO 8601 timestamp when the escalation was recorded."
         }
       },
       "additionalProperties": true

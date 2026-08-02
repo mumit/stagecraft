@@ -739,3 +739,41 @@ test("usageFormat: codex plain-text stub (older CLI without --json) degrades gra
     fs.rmSync(ctx.cwd, { recursive: true, force: true });
   }
 });
+
+test("32.3: runHeadless appends --model <value> when descriptor.model is set", async () => {
+  const ctx = makeCtx();
+  const recordPath = path.join(ctx.cwd, "argv-record.json");
+  const scriptPath = writeFixtureScript(ctx.cwd, "argv-recorder.js", [
+    "const fs = require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify(process.argv.slice(2)));`,
+  ].join("\n"));
+  try {
+    const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
+    const descriptor = { ...makeDescriptor(), model: "claude-haiku-4-5-20251001" };
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", undefined, () => runHeadless(adapter, descriptor, ctx));
+    assert.equal(r.exitCode, 0);
+    const argv = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    assert.deepEqual(argv.slice(-2), ["--model", "claude-haiku-4-5-20251001"]);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("32.3: runHeadless omits --model entirely when descriptor.model is absent (back-compat)", async () => {
+  const ctx = makeCtx();
+  const recordPath = path.join(ctx.cwd, "argv-record.json");
+  const scriptPath = writeFixtureScript(ctx.cwd, "argv-recorder.js", [
+    "const fs = require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify(process.argv.slice(2)));`,
+  ].join("\n"));
+  try {
+    const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
+    const descriptor = makeDescriptor(); // no .model field
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", undefined, () => runHeadless(adapter, descriptor, ctx));
+    assert.equal(r.exitCode, 0);
+    const argv = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    assert.deepEqual(argv, []);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});

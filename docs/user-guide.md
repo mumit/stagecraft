@@ -598,7 +598,7 @@ A *host* controls how Stagecraft delivers work to a model. Five built-in hosts a
 
 **Gemini CLI is deprecated.** Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18; Google's supported successor is Antigravity CLI. `devteam doctor` warns whenever routing resolves any role or stage to `gemini-cli`. The `gemini-cli` adapter itself stays installed and functional for one release (full retirement is a later, separate item) — migrate at your own pace with `devteam init --host antigravity` in existing projects, or start new projects with `--host antigravity` directly. The two hosts share the same install shape (markdown role prompts, no hooks/slash commands/native subagents, post-hoc write audit) so migration is a routing change, not a re-install.
 
-**Host and model are two different things.** For CLI/runtime hosts, which model runs is configured inside the host (e.g., Claude Code's `.claude/agents/<role>.md` has a `model:` field; Codex, Antigravity, Gemini, and Omnigent use their own settings). For `openai-compat`, the model is set per-role in `.devteam/config.yml` under `hosts.openai-compat.models`.
+**Host and model are two different things.** For CLI/runtime hosts, which model runs is configured inside the host (e.g., Claude Code's `.claude/agents/<role>.md` has a `model:` field; Codex, Antigravity, Gemini, and Omnigent use their own settings). For `openai-compat`, the model is set per-role in `.devteam/config.yml` under `hosts.openai-compat.models`. Phase-32 item 32.3 adds a third, host-neutral option: pin a model directly in `routing.roles`/`routing.stages` (see [Pinning a model in routing config](#pinning-a-model-in-routing-config) below) — it works the same way across every headless host and takes precedence over the per-host mechanisms just described.
 
 When optimizing cost or comparing model quality, you can route different roles to different models. For CLI/runtime hosts, edit the host's native configuration. For openai-compat, edit the config — see [Using openai-compat](#using-openai-compat-openai-compatible-apis). Multiple hosts are only needed when mixing runtimes (e.g. Claude Code for some roles, Codex or Omnigent for others).
 
@@ -655,9 +655,80 @@ Routing precedence: **`stages` → `roles` → `default_host`**. The stage-level
 
 When a stage with multiple workstreams runs, each workstream is independently routed. `devteam stage build` (four workstreams: backend, frontend, platform, QA) with the config above routes all four to Codex. `devteam stage design` (Principal role) routes to Claude Code. The gate merge is host-agnostic. The orchestrator reads JSON files, and the merged gate's `workstreams[]` array records `"host"` per row so you can see which CLI handled what.
 
-Use `npm run performance` and `npm run routing:suggest` after several real runs to compare hosts by first-try pass rate, cost per pass, p50/p95 duration, and retry-adjusted completion time. Recommendations remain quality-first: latency only breaks ties after first-try quality and cost. Stage prompts include a compact changed-file manifest with paths, byte sizes, and SHA-256 digests; agents should read file bodies on demand for their workstream instead of relying on preloaded changed-file contents. See [`docs/capacity-strategy.md`](capacity-strategy.md) before moving work to remote capacity or enabling provider prompt caches.
+Use `npm run performance` and `npm run routing:suggest` after several real runs to compare hosts by first-try pass rate, cost per pass, p50/p95 duration, and retry-adjusted completion time. Recommendations remain quality-first: latency only breaks ties after first-try quality and cost. `npm run routing:suggest` also reports a per-tier cost-delta table (below) once a role has been dispatched under ≥2 distinct (host, model) pairs. Stage prompts include a compact changed-file manifest with paths, byte sizes, and SHA-256 digests; agents should read file bodies on demand for their workstream instead of relying on preloaded changed-file contents. See [`docs/capacity-strategy.md`](capacity-strategy.md) before moving work to remote capacity or enabling provider prompt caches.
+
+### Pinning a model in routing config
+
+`routing.roles.<role>` and `routing.stages.<stage>` accept either the plain host-name string shown above, or `{host, model}` to also pin a specific model for that role/stage — the pre-32.3 string form keeps working unchanged; this is additive:
+
+```yaml
+routing:
+  default_host: claude-code
+  roles:
+    qa:
+      host: claude-code
+      model: claude-haiku-4-5-20251001   # mechanical stage — cheap model is fine
+    principal:
+      host: claude-code
+      model: opus                        # design/architecture — frontier model
+```
+
+The pinned model reaches the dispatch the same way on every headless host: `claude`, `codex`, `gemini`, and `agy` all accept an identical `--model <value>` CLI flag, and `openai-compat` puts it in the API request body (taking precedence over that host's own `hosts.openai-compat.models`). Omnigent's `hosts.omnigent.model` is likewise overridden when a routing-pinned model is present. Whichever model was requested is recorded as `model_requested` on the dispatch's gate — distinct from the model-asserted `model` field and from `_orchestrator_observed.model_observed` (phase-28 telemetry: what the host actually reported serving). Absent a pin, every adapter falls back to exactly what it did before 32.3 — a host with no model configured anywhere still runs on its own default.
+
+**Model tiers + escalate-on-retry.** `routing.tiers` declares an ordered, cheapest-first model ladder per host; `routing.escalate_on_retry: true` (default `false`) bumps a pinned model one tier up that ladder when a fix-and-retry re-dispatches a stage:
+
+```yaml
+routing:
+  escalate_on_retry: true
+  tiers:
+    claude-code: [claude-haiku-4-5-20251001, sonnet, opus]
+    codex: [gpt-5-mini, gpt-5]
+```
+
+A retried dispatch whose route pinned `claude-haiku-4-5-20251001` on `claude-code` gets `sonnet` instead; a second retry does not escalate further (escalation is a single one-tier bump, not cumulative per attempt). The bump is recorded as `_orchestrator_escalated: {from_model, to_model, reason: "escalate_on_retry", at}` on the gate — orchestrator-owned provenance, same discipline as `_orchestrator_observed`/`_orchestrator_stamped`. Nothing escalates when a role has no pinned model, when the current model isn't on the host's ladder, or when it's already at the top tier.
+
+**Preset: "frontier plans, cheap executes."** Not a changed default — copy this block into `.devteam/config.yml` to opt in. Design/reasoning-heavy roles get the frontier model; mechanical stages (lint-fix follow-ups, docs, retro) get the cheap tier; escalation covers the case where the cheap tier gets stuck:
+
+```yaml
+routing:
+  default_host: claude-code
+  escalate_on_retry: true
+  tiers:
+    claude-code: [claude-haiku-4-5-20251001, sonnet, opus]
+  roles:
+    principal:
+      host: claude-code
+      model: opus            # design/architecture sign-off
+    security:
+      host: claude-code
+      model: opus
+    red-team:
+      host: claude-code
+      model: opus
+    reviewer:
+      host: claude-code
+      model: opus
+    qa:
+      host: claude-code
+      model: claude-haiku-4-5-20251001   # mechanical — cheap tier, escalates on retry
+    backend:
+      host: claude-code
+      model: sonnet
+    frontend:
+      host: claude-code
+      model: sonnet
+    platform:
+      host: claude-code
+      model: sonnet
+```
+
+See [`docs/cost.md`](cost.md) for the corpus-driven cost-delta reporting this preset is meant to be validated against before you commit to it project-wide.
+
+`scripts/routing-suggest.js` groups its host-swap recommendations by role as before (host-level, unchanged), but now also loads `.devteam/corpus/dispatches.jsonl` rows keyed by `(role, host, model)` to report per-tier cost deltas — see `npm run routing:suggest`'s output for a worked example once you have real dispatch history.
 
 ### Choosing models within a single host
+
+Prefer `routing.roles`/`routing.stages`' `{host, model}` form (above) — it's host-neutral, shows up on the gate as `model_requested`, and works identically whether you're on one host or several. The per-host mechanisms below still work and are what `devteam init` writes by default; they're documented here for existing projects and for cases the routing form doesn't reach (e.g. Claude Code's own internal Task-tool subagent delegation, which is a separate mechanism from the per-dispatch CLI invocation routing controls).
 
 If you're using only Claude Code and want different models per role, you don't need multi-host at all. The installed agent files already have model tiers set:
 

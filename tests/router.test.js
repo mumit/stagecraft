@@ -90,6 +90,31 @@ describe("router: resolveAdapter", () => {
     assert.throws(() => resolveAdapter(broken, "stage-01", "pm"), /No adapter found/);
   });
 
+  // 32.3: routing.roles/routing.stages may be {host, model} instead of a
+  // bare host string. resolveAdapter surfaces the resolved model alongside
+  // hostName/adapter; string-form entries keep model undefined.
+  it("32.3: resolves {host, model} object-form routes and surfaces model", () => {
+    const cfgWithModel = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: { host: "codex", model: "gpt-5-mini" } },
+        stages: { "stage-08": { host: "claude-code", model: "claude-haiku-4-5-20251001" } },
+      },
+    };
+    const a = resolveAdapter(cfgWithModel, "stage-04", "backend");
+    assert.equal(a.hostName, "codex");
+    assert.equal(a.model, "gpt-5-mini");
+    const b = resolveAdapter(cfgWithModel, "stage-08", "platform");
+    assert.equal(b.hostName, "claude-code");
+    assert.equal(b.model, "claude-haiku-4-5-20251001");
+  });
+
+  it("32.3: string-form routes keep model undefined (back-compat)", () => {
+    const a = resolveAdapter(cfg, "stage-04", "backend");
+    assert.equal(a.hostName, "codex");
+    assert.equal(a.model, undefined);
+  });
+
   it("resolves routing to an external @devteam/host-* adapter", () => {
     const tmp = writeExternalAdapterFixture("acme-route");
     process.chdir(tmp);

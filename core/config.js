@@ -14,6 +14,16 @@ const DEFAULTS = {
     stages: {},
     review_fanout: [],
     host_concurrency: {},
+    // 32.3: per-host model-tier ladder (cheapest → frontier), consulted by
+    // escalateModel() when routing.escalate_on_retry is true. Empty by
+    // default — shipping a real ladder is a documented opt-in preset
+    // (docs/user-guide.md "frontier plans / cheap executes"), not a
+    // changed default.
+    tiers: {},
+    // 32.3: when true, a fix-and-retry of a dispatch whose route carried an
+    // explicit model bumps it one tier up routing.tiers[host]. Off by
+    // default — escalation is opt-in.
+    escalate_on_retry: false,
   },
   pipeline: {
     default_track: "full",
@@ -128,6 +138,13 @@ function loadConfig(cwd = process.cwd()) {
           && parsed.routing.host_concurrency !== null
           && !Array.isArray(parsed.routing.host_concurrency)
         ) ? parsed.routing.host_concurrency : {},
+        tiers: (
+          parsed.routing
+          && typeof parsed.routing.tiers === "object"
+          && parsed.routing.tiers !== null
+          && !Array.isArray(parsed.routing.tiers)
+        ) ? parsed.routing.tiers : {},
+        escalate_on_retry: parsed.routing?.escalate_on_retry === true,
       },
       pipeline: {
         default_track: parsed.pipeline?.default_track ?? DEFAULTS.pipeline.default_track,
@@ -183,6 +200,23 @@ function loadConfig(cwd = process.cwd()) {
   return result;
 }
 
+// 32.3: routing.roles/routing.stages values accept either the original bare
+// host-name string, or {host, model} to also pin a per-role/per-stage model.
+// An unrecognized shape (missing/non-string host) returns null so the caller
+// falls through to the next precedence level rather than throwing — a
+// typo'd config must never silently disable the whole stage (same
+// philosophy as review.mode above).
+function normalizeRouteValue(value) {
+  if (typeof value === "string" && value) return { host: value, model: undefined };
+  if (value && typeof value === "object" && !Array.isArray(value) && typeof value.host === "string" && value.host) {
+    return {
+      host: value.host,
+      model: typeof value.model === "string" && value.model ? value.model : undefined,
+    };
+  }
+  return null;
+}
+
 // The set of host names this project's config actually references —
 // default_host plus every value in routing.roles/routing.stages, deduped.
 // Used only to decide whether there is any host diversity to route the
@@ -190,15 +224,28 @@ function loadConfig(cwd = process.cwd()) {
 function configuredHosts(routing) {
   const set = new Set();
   if (routing.default_host) set.add(routing.default_host);
-  if (routing.roles) for (const h of Object.values(routing.roles)) if (h) set.add(h);
-  if (routing.stages) for (const h of Object.values(routing.stages)) if (h) set.add(h);
+  const addFrom = (obj) => {
+    if (!obj) return;
+    for (const value of Object.values(obj)) {
+      const normalized = normalizeRouteValue(value);
+      if (normalized) set.add(normalized.host);
+    }
+  };
+  addFrom(routing.roles);
+  addFrom(routing.stages);
   return set;
 }
 
-function resolveHost(config, stage, role) {
+// 32.3: resolves both the host AND an optional per-(stage,role) model in one
+// pass. Precedence unchanged from the pre-32.3 resolveHost: stages[stage] →
+// roles[role] → critic/reviewer diversity (31.3) → default_host. Returns
+// { hostName, model } — model is undefined when nothing configured one.
+function resolveRoute(config, stage, role) {
   const routing = config.routing || DEFAULTS.routing;
-  if (routing.stages && routing.stages[stage]) return routing.stages[stage];
-  if (routing.roles && routing.roles[role]) return routing.roles[role];
+  const fromStages = routing.stages && normalizeRouteValue(routing.stages[stage]);
+  if (fromStages) return { hostName: fromStages.host, model: fromStages.model };
+  const fromRoles = routing.roles && normalizeRouteValue(routing.roles[role]);
+  if (fromRoles) return { hostName: fromRoles.host, model: fromRoles.model };
   // 31.3: the critic's whole point is independence from the reviewer —
   // default it to a different host when the project has ≥2 hosts configured
   // and nothing explicitly routed it (checked above). Collusion counter-
@@ -208,12 +255,33 @@ function resolveHost(config, stage, role) {
   if (role === "critic" && stage === "stage-05") {
     const hosts = configuredHosts(routing);
     if (hosts.size >= 2) {
-      const reviewerHost = resolveHost(config, stage, "reviewer");
+      const reviewerHost = resolveRoute(config, stage, "reviewer").hostName;
       const alt = [...hosts].sort().find((h) => h !== reviewerHost);
-      if (alt) return alt;
+      if (alt) return { hostName: alt, model: undefined };
     }
   }
-  return routing.default_host;
+  return { hostName: routing.default_host, model: undefined };
+}
+
+// Back-compat wrapper — every existing caller wants just the bare host
+// string. Kept so string-only routing configs (and every pre-32.3 caller)
+// see byte-identical behavior.
+function resolveHost(config, stage, role) {
+  return resolveRoute(config, stage, role).hostName;
+}
+
+// 32.3: bump `currentModel` one tier up routing.tiers[host] (an ordered,
+// cheapest-first array). Returns null when there's no ladder for this host,
+// the current model isn't on it, or it's already the top tier — callers
+// treat null as "no escalation," never as an error (a model dropped from
+// the ladder, or a manually-set model outside it, must not block a retry).
+function escalateModel(config, host, currentModel) {
+  const routing = config.routing || DEFAULTS.routing;
+  const ladder = routing.tiers && Array.isArray(routing.tiers[host]) ? routing.tiers[host] : null;
+  if (!ladder) return null;
+  const idx = ladder.indexOf(currentModel);
+  if (idx === -1 || idx >= ladder.length - 1) return null;
+  return ladder[idx + 1];
 }
 
 // Adapter-specific deploy config hints. Each entry is an array of YAML lines
@@ -333,6 +401,10 @@ function renderDefaultConfig(hosts, opts = {}) {
     "# routing.default_host  fallback host for any (stage, role) not matched below",
     "# routing.roles         per-role overrides; key = role name, value = host name",
     "# routing.stages        per-stage overrides; key = stage id, takes precedence over roles",
+    "# roles/stages values may also be {host: <name>, model: <id>} to pin a model —",
+    "# see docs/user-guide.md \"Configuring routing\" for the object form and the",
+    "# documented frontier-plans/cheap-executes tier preset (routing.tiers +",
+    "# routing.escalate_on_retry).",
     "",
     "routing:",
     `  default_host: ${list[0]}`,
@@ -455,7 +527,8 @@ function checkBoundedFence(config, commandName) {
 const KNOWN_DEPLOY_ADAPTERS = ["local", "docker-compose", "kubernetes", "terraform", "cloud-run", "gizmos", "npm", "custom"];
 
 module.exports = {
-  loadConfig, clearConfigCache, resolveHost, configPath, renderDefaultConfig,
+  loadConfig, clearConfigCache, resolveHost, resolveRoute, escalateModel,
+  normalizeRouteValue, configPath, renderDefaultConfig,
   writeConfigIfAbsent, changeIdFromFeature, changeIdFromSymptom, DEFAULTS,
   BOUNDED_UNWIRED_COMMANDS, checkBoundedFence, KNOWN_DEPLOY_ADAPTERS,
   DEPLOY_ADAPTER_ARTIFACTS,

@@ -114,6 +114,27 @@ function aggregatePerformance(gates) {
   return groups;
 }
 
+// Phase-32 item 32.3: (role, host, model) grouping — additive alongside
+// aggregatePerformance's (role, host) grouping above (which is unchanged,
+// so every pre-32.3 caller/test keeps its exact shape). Feeds
+// scripts/routing-suggest.js's per-tier cost-delta section: for a role
+// dispatched to the same host under two different pinned models (a "tier"
+// swap), this is what lets the report show a cost/pass-rate delta between
+// them instead of blending both models into one (role, host) bucket.
+function aggregatePerformanceByModel(gates) {
+  const expanded = expandToWorkstreams(gates);
+  const groups = new Map();
+  for (const w of expanded) {
+    const role = w.workstream || "(no role)";
+    const host = w.host || "(no host)";
+    const model = w.model || "(unspecified)";
+    const key = `${role}@${host}@${model}`;
+    if (!groups.has(key)) groups.set(key, { role, host, model, ...emptyPerfRec() });
+    bump(groups.get(key), w);
+  }
+  return groups;
+}
+
 function mean(xs) {
   if (!xs || xs.length === 0) return null;
   return xs.reduce((s, x) => s + x, 0) / xs.length;
@@ -143,6 +164,9 @@ function summarize(rec) {
   return {
     role: rec.role,
     host: rec.host,
+    // 32.3: only present on aggregatePerformanceByModel() records — the
+    // (role, host) aggregate above never sets rec.model.
+    ...(rec.model !== undefined ? { model: rec.model } : {}),
     total_dispatches: rec.total_dispatches,
     pass: rec.pass,
     warn: rec.warn,
@@ -294,6 +318,7 @@ if (require.main === module) main();
 module.exports = {
   expandToWorkstreams,
   aggregatePerformance,
+  aggregatePerformanceByModel,
   summarize,
   renderMarkdown,
   renderJSON,

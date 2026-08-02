@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const {
   expandToWorkstreams,
   aggregatePerformance,
+  aggregatePerformanceByModel,
   summarize,
   renderMarkdown,
   renderJSON,
@@ -64,6 +65,48 @@ test("aggregatePerformance: counts first-try pass (retry_number absent or 0)", (
   const r = aggregatePerformance(gates).get("pm@claude-code");
   assert.equal(r.total_dispatches, 4);
   assert.equal(r.pass_first_try, 3); // 2 PASS-retry-0 + 1 WARN
+});
+
+// Phase-32 item 32.3: (role, host, model) grouping, additive alongside
+// aggregatePerformance's (role, host) grouping above.
+test("32.3: aggregatePerformanceByModel groups by (role, host, model), unlike aggregatePerformance", () => {
+  const gates = [
+    { workstream: "qa", host: "claude-code", status: "PASS", model: "haiku" },
+    { workstream: "qa", host: "claude-code", status: "PASS", model: "haiku" },
+    { workstream: "qa", host: "claude-code", status: "FAIL", model: "opus" },
+  ];
+  // aggregatePerformance blends both models into one (role, host) bucket —
+  // unchanged, byte-identical pre-32.3 behavior.
+  const byHost = aggregatePerformance(gates);
+  assert.equal(byHost.size, 1);
+  assert.equal(byHost.get("qa@claude-code").total_dispatches, 3);
+
+  // aggregatePerformanceByModel splits them.
+  const byModel = aggregatePerformanceByModel(gates);
+  assert.equal(byModel.size, 2);
+  const haiku = byModel.get("qa@claude-code@haiku");
+  assert.equal(haiku.total_dispatches, 2);
+  assert.equal(haiku.pass, 2);
+  assert.equal(haiku.model, "haiku");
+  const opus = byModel.get("qa@claude-code@opus");
+  assert.equal(opus.total_dispatches, 1);
+  assert.equal(opus.fail, 1);
+  assert.equal(opus.model, "opus");
+});
+
+test("32.3: aggregatePerformanceByModel buckets a missing model as (unspecified)", () => {
+  const gates = [{ workstream: "qa", host: "gemini-cli", status: "PASS" }];
+  const byModel = aggregatePerformanceByModel(gates);
+  assert.equal(byModel.size, 1);
+  assert.ok(byModel.has("qa@gemini-cli@(unspecified)"));
+});
+
+test("32.3: summarize() only includes `model` for aggregatePerformanceByModel records", () => {
+  const gates = [{ workstream: "qa", host: "codex", status: "PASS", model: "gpt-5" }];
+  const byHostSummary = summarize(aggregatePerformance(gates).get("qa@codex"));
+  assert.equal("model" in byHostSummary, false, "(role, host) summary never gains a top-level model field");
+  const byModelSummary = summarize(aggregatePerformanceByModel(gates).get("qa@codex@gpt-5"));
+  assert.equal(byModelSummary.model, "gpt-5");
 });
 
 test("summarize: computes pass_rate_first_try and mean retries", () => {

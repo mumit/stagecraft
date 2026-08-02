@@ -4,7 +4,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildRecommendations,
+  buildTierDeltas,
   renderRecommendations,
+  renderTierDeltas,
   compareScores,
   MIN_DISPATCHES,
   MIN_PASS_RATE_DELTA,
@@ -161,4 +163,54 @@ test("renderRecommendations: 'no changes recommended' when actionable list is em
   const md = renderRecommendations(recs);
   assert.match(md, /No changes recommended/);
   assert.match(md, /Already optimal/);
+});
+
+// Phase-32 item 32.3: per-(role, host, model) cost deltas.
+function modelSummary(role, host, model, opts = {}) {
+  return { ...summary(role, host, opts), model };
+}
+
+test("32.3: buildTierDeltas skips roles with fewer than 2 eligible (host, model) pairs", () => {
+  const summaries = [modelSummary("qa", "claude-code", "haiku", { dispatches: 10 })];
+  const deltas = buildTierDeltas(summaries, { minDispatches: MIN_DISPATCHES });
+  assert.equal(deltas.length, 0);
+});
+
+test("32.3: buildTierDeltas reports deltas vs the cheapest tier, sorted cheapest-first", () => {
+  const summaries = [
+    modelSummary("qa", "claude-code", "opus", { dispatches: 10, costPerPass: 0.50, passRate: 95 }),
+    modelSummary("qa", "claude-code", "haiku", { dispatches: 10, costPerPass: 0.05, passRate: 80 }),
+  ];
+  const deltas = buildTierDeltas(summaries, { minDispatches: MIN_DISPATCHES });
+  assert.equal(deltas.length, 1);
+  assert.equal(deltas[0].role, "qa");
+  assert.equal(deltas[0].tiers.length, 2);
+  // cheapest first
+  assert.equal(deltas[0].tiers[0].model, "haiku");
+  assert.equal(deltas[0].tiers[0].cost_delta_vs_cheapest_usd, 0);
+  assert.equal(deltas[0].tiers[1].model, "opus");
+  assert.ok(Math.abs(deltas[0].tiers[1].cost_delta_vs_cheapest_usd - 0.45) < 1e-9);
+});
+
+test("32.3: buildTierDeltas excludes pairs below the --min-dispatches floor", () => {
+  const summaries = [
+    modelSummary("qa", "claude-code", "opus", { dispatches: 10 }),
+    modelSummary("qa", "claude-code", "haiku", { dispatches: 2 }), // below floor
+  ];
+  const deltas = buildTierDeltas(summaries, { minDispatches: 5 });
+  assert.equal(deltas.length, 0, "only one eligible pair remains — nothing to compare");
+});
+
+test("32.3: renderTierDeltas is empty when there are no deltas, and renders a table otherwise", () => {
+  assert.deepEqual(renderTierDeltas([]), []);
+  const deltas = buildTierDeltas([
+    modelSummary("qa", "claude-code", "opus", { dispatches: 10, costPerPass: 0.50 }),
+    modelSummary("qa", "claude-code", "haiku", { dispatches: 10, costPerPass: 0.05 }),
+  ], { minDispatches: MIN_DISPATCHES });
+  const lines = renderTierDeltas(deltas);
+  const text = lines.join("\n");
+  assert.match(text, /Per-tier cost deltas/);
+  assert.match(text, /### qa/);
+  assert.match(text, /haiku/);
+  assert.match(text, /opus/);
 });
