@@ -243,7 +243,12 @@ Commands:
                                    stage-04a (lint+tests) and stage-06 (tests
                                    + AC mapping), runs the configured commands
                                    and rewrites the gate fields with what was
-                                   actually observed. Flips status to FAIL if
+                                   actually observed. stage-04c (red-team) runs
+                                   a mechanical floor instead — dependency
+                                   audit, secret-scan, semgrep (if configured),
+                                   and a lockfile delta — merging into
+                                   findings_count / must_address_before_peer_review.
+                                   Flips status to FAIL if
                                    the orchestrator's truth disagrees with the
                                    model's claim. Commands resolve from
                                    .devteam/config.yml pipeline.verify.* or

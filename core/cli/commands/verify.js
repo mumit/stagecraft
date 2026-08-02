@@ -21,6 +21,9 @@ async function run(positional, _flags) {
     console.error("Runs orchestrator-side verification for a stage and stamps the");
     console.error("gate with what was actually observed. Currently supports:");
     console.error("  stage-04a  pre-review: runs lint + tests, stamps lint_passed/tests_passed");
+    console.error("  stage-04c  red-team:   mechanical floor — dependency audit, secret-scan,");
+    console.error("                         semgrep (if configured), and a lockfile delta;");
+    console.error("                         merges into findings_count/must_address_before_peer_review");
     console.error("  stage-06   qa:         runs tests + AC→test mapping check, stamps");
     console.error("                         all_acceptance_criteria_met and the test exit code");
     console.error("");
@@ -57,7 +60,14 @@ async function run(positional, _flags) {
   console.log(`${icon} ${stageId}: orchestrator verification ${result.gate.status}`);
   for (const r of Object.keys(s.runs)) {
     const run = s.runs[r];
-    if (run.skipped) {
+    if (Array.isArray(run.findings)) {
+      // stage-04c mechanical floor tools: {ran, skipped, reason, findings}.
+      if (run.skipped) {
+        console.log(`   ${r}: skipped (${run.reason})`);
+      } else {
+        console.log(`   ${r}: ran — ${run.findings.length} finding(s) (${run.reason})`);
+      }
+    } else if (run.skipped) {
       console.log(`   ${r}: skipped (${run.skipped})`);
     } else if (run.command) {
       const exitLabel = run.exit_code === 0 ? "✓" : `✗ exit ${run.exit_code}`;
