@@ -28,6 +28,9 @@ const { receiptRootFromGate } = require("./receipts");
 const { loadGateSafe } = require("../gates/load-gate");
 const { verify: specVerify, generateScaffold, extractAcsFromBrief: extractAcsFromBriefSpec } = require("../spec/verify");
 const { runLicenseCheck } = require("./license-runner");
+const {
+  runDependencyAudit, runSecretScanFloor, runSemgrepFloor, computeDependencyDiff, getChangedFiles,
+} = require("./redteam-floor");
 
 const STAMPER_VERSION = "1";
 
@@ -360,6 +363,107 @@ function extractAcsFromReport(text) {
     seen.add(`AC-${m[1]}`);
   }
   return Array.from(seen);
+}
+
+// Stage-04c (Red Team): mechanical floor (31.2). The model's adversarial
+// pass stays authoritative for judgment (surfaces_walked, noted_for_followup),
+// but four orchestrator-run checks can't be sweet-talked: dependency audit,
+// secret-scan over the changeset, semgrep (only if already configured),
+// and a lockfile delta since the previous attempt. See
+// plans/phase-31-verification-depth.md item 31.2.
+const SEVERITY_LEVELS = ["critical", "high", "medium", "low"];
+
+async function stampStage04c(cwd, gatePath) {
+  const config = loadConfig(cwd);
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error) return { ok: false, error };
+
+  const stamp = {
+    stamper_version: STAMPER_VERSION,
+    at: new Date().toISOString(),
+    fields: [],
+    runs: {},
+  };
+  const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
+  const changedFiles = getChangedFiles(cwd);
+  const mechanicalFindings = [];
+
+  const auditResult = await runDependencyAudit(cwd, config);
+  stamp.runs.dependency_audit = auditResult;
+  mechanicalFindings.push(...auditResult.findings);
+
+  const secretResult = runSecretScanFloor(cwd, changedFiles);
+  stamp.runs.secret_scan = secretResult;
+  mechanicalFindings.push(...secretResult.findings);
+
+  const semgrepResult = await runSemgrepFloor(cwd, changedFiles);
+  stamp.runs.semgrep = semgrepResult;
+  mechanicalFindings.push(...semgrepResult.findings);
+
+  const gatesDir = path.dirname(gatePath);
+  const diffResult = computeDependencyDiff(cwd, gatesDir);
+  stamp.runs.dependency_diff = diffResult;
+
+  // findings_count := max(model_reported, mechanical) — the orchestrator
+  // never lowers what the model already found, only raises the floor.
+  const mechanicalSeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const f of mechanicalFindings) mechanicalSeverity[f.severity] = (mechanicalSeverity[f.severity] || 0) + 1;
+
+  const modelFindingsCount = typeof gate.findings_count === "number" ? gate.findings_count : 0;
+  const orchestratorFindingsCount = Math.max(modelFindingsCount, mechanicalFindings.length);
+  if (modelFindingsCount !== orchestratorFindingsCount) {
+    stamp.fields.push({ field: "findings_count", model_said: modelFindingsCount, orchestrator: orchestratorFindingsCount, mechanical: mechanicalFindings.length });
+  } else {
+    stamp.fields.push({ field: "findings_count", orchestrator: orchestratorFindingsCount, mechanical: mechanicalFindings.length });
+  }
+  gate.findings_count = orchestratorFindingsCount;
+
+  const modelSeverity = (gate.severity_breakdown && typeof gate.severity_breakdown === "object") ? gate.severity_breakdown : {};
+  const mergedSeverity = {};
+  for (const level of SEVERITY_LEVELS) {
+    mergedSeverity[level] = Math.max(Number(modelSeverity[level]) || 0, mechanicalSeverity[level]);
+  }
+  gate.severity_breakdown = mergedSeverity;
+
+  // A mechanical HIGH (or CRITICAL) finding forces must_address_before_peer_review
+  // regardless of what the model reported — the model cannot talk its way past a
+  // finding the orchestrator observed directly.
+  const existingMustAddress = Array.isArray(gate.must_address_before_peer_review) ? gate.must_address_before_peer_review.slice() : [];
+  const existingIds = new Set(existingMustAddress.map((item) => item && item.id));
+  const forced = mechanicalFindings.filter((f) => f.severity === "high" || f.severity === "critical");
+  const forcedIds = [];
+  for (const item of forced) {
+    if (existingIds.has(item.id)) continue;
+    existingMustAddress.push({
+      id: item.id,
+      severity: item.severity,
+      likelihood: "expected",
+      surface: item.surface,
+      summary: item.summary,
+      source: "mechanical",
+    });
+    existingIds.add(item.id);
+    forcedIds.push(item.id);
+    blockers.push(`mechanical red-team floor [${item.id}]: ${item.summary}`);
+  }
+  gate.must_address_before_peer_review = existingMustAddress;
+  if (forcedIds.length > 0) {
+    stamp.fields.push({ field: "must_address_before_peer_review", mechanical_forced: forcedIds });
+  }
+
+  const result = finalizeStamp(gate, gatePath, blockers, stamp);
+
+  // Reuse the existing pipeline/context.md consequence plumbing rather than
+  // duplicating it here — see core/gates/validator.js#injectRedTeamBlockers.
+  // Best-effort: this is an audit convenience, not part of the gate contract.
+  if (result.ok) {
+    try {
+      const { injectRedTeamBlockers } = require("../gates/validator");
+      injectRedTeamBlockers(result.gate, cwd);
+    } catch { /* best-effort */ }
+  }
+
+  return result;
 }
 
 // Stage-03b (Executable Spec): orchestrator stamps the spec-related gate
@@ -740,6 +844,7 @@ async function stamp(cwd, stageId) {
   switch (stageId) {
     case "stage-03b": return stampStage03b(cwd, gatePath);
     case "stage-04a": return stampStage04a(cwd, gatePath);
+    case "stage-04c": return stampStage04c(cwd, gatePath);
     case "stage-06":  return stampStage06(cwd, gatePath);
     default:          return { ok: false, error: `no orchestrator stamping defined for ${stageId}` };
   }
@@ -747,12 +852,13 @@ async function stamp(cwd, stageId) {
 
 // Stages this module knows how to verify. Callers can use this to
 // decide whether to invoke stamp() at all.
-const STAMPABLE_STAGES = new Set(["stage-03b", "stage-04a", "stage-06"]);
+const STAMPABLE_STAGES = new Set(["stage-03b", "stage-04a", "stage-04c", "stage-06"]);
 
 module.exports = {
   stamp,
   stampStage03b,
   stampStage04a,
+  stampStage04c,
   stampStage06,
   STAMPABLE_STAGES,
   // 31.1: multi-workstream (stage-04) per-role + merged stamping.

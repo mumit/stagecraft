@@ -320,6 +320,7 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #   lint_command: \"npm run lint\"   # override; defaults to package.json scripts.lint");
   lines.push("  #   test_command: \"npm test\"      # exclusive override; null disables auto-discovery");
   lines.push("  #   test_concurrency: 2           # 1 serializes suites; maximum is 8");
+  lines.push("  #   dependency_audit_command: \"npm audit --json\"  # stage-04c mechanical floor; null disables");
   lines.push("  #   receipts: true                # false disables content-addressed verification receipt reuse");
   lines.push("  #   test_suites:                  # optional replacement for auto-discovered suites");
   lines.push("  #     - id: unit");

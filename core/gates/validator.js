@@ -831,4 +831,9 @@ if (require.main === module) {
   runMain();
 }
 
-module.exports = { main, runMain, VALID_TRACKS };
+// injectRedTeamBlockers is exported for core/verify/stamp.js (31.2): the
+// mechanical red-team floor merges findings into the stage-04c gate
+// in-process (not via the SubagentStop hook this file is normally invoked
+// as), so it needs to trigger the same pipeline/context.md consequence
+// plumbing directly rather than duplicating it.
+module.exports = { main, runMain, VALID_TRACKS, injectRedTeamBlockers };
