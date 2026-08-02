@@ -28,6 +28,9 @@ const ROLE_TOOLS = {
   pm:         "Read, Write, Glob",
   principal:  "Read, Write, Glob, Grep, Bash",
   reviewer:   "Read, Write, Glob, Grep",
+  // 31.3: adversarial mode's critic — same read-only-on-code profile as
+  // reviewer; writes only its own by-critic.md.
+  critic:     "Read, Write, Glob, Grep",
   security:   "Read, Write, Glob, Grep, Bash",
   backend:    "Read, Write, Edit, Glob, Grep, Bash",
   frontend:   "Read, Write, Edit, Glob, Grep, Bash",

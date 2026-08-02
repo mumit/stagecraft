@@ -88,6 +88,15 @@ const DEFAULTS = {
     // alignment with the query," the natural cutoff before any tuning.
     inject_similarity_floor: 0,
   },
+  // 31.3: stage-05 (peer-review) dispatch shape. "panel" is today's four-area
+  // reviewer matrix — byte-identical default, no behavior change without
+  // opt-in. "adversarial" dispatches a single reviewer then a critic whose
+  // brief is to attack the review itself (plans/phase-31-verification-depth.md
+  // §31.3 — 2026 evidence cited there says review panels underperform and are
+  // collusion-prone relative to an adversarial reviewer/critic pair).
+  review: {
+    mode: "panel",
+  },
 };
 
 function configPath(cwd) {
@@ -160,6 +169,11 @@ function loadConfig(cwd = process.cwd()) {
           ? parsed.memory.inject_similarity_floor
           : DEFAULTS.memory.inject_similarity_floor,
       },
+      review: {
+        // An unrecognized value falls back to "panel" rather than throwing —
+        // a typo'd config must never silently disable the whole stage.
+        mode: parsed.review?.mode === "adversarial" ? "adversarial" : "panel",
+      },
       _source: "file",
       _path: p,
       _raw: parsed,
@@ -169,10 +183,36 @@ function loadConfig(cwd = process.cwd()) {
   return result;
 }
 
+// The set of host names this project's config actually references —
+// default_host plus every value in routing.roles/routing.stages, deduped.
+// Used only to decide whether there is any host diversity to route the
+// critic away from (below); not a general "installed hosts" inventory.
+function configuredHosts(routing) {
+  const set = new Set();
+  if (routing.default_host) set.add(routing.default_host);
+  if (routing.roles) for (const h of Object.values(routing.roles)) if (h) set.add(h);
+  if (routing.stages) for (const h of Object.values(routing.stages)) if (h) set.add(h);
+  return set;
+}
+
 function resolveHost(config, stage, role) {
   const routing = config.routing || DEFAULTS.routing;
   if (routing.stages && routing.stages[stage]) return routing.stages[stage];
   if (routing.roles && routing.roles[role]) return routing.roles[role];
+  // 31.3: the critic's whole point is independence from the reviewer —
+  // default it to a different host when the project has ≥2 hosts configured
+  // and nothing explicitly routed it (checked above). Collusion counter-
+  // measure cited in plans/phase-31-verification-depth.md §31.3. A single
+  // configured host has no diversity to offer, so it falls through to the
+  // same default_host as every other role.
+  if (role === "critic" && stage === "stage-05") {
+    const hosts = configuredHosts(routing);
+    if (hosts.size >= 2) {
+      const reviewerHost = resolveHost(config, stage, "reviewer");
+      const alt = [...hosts].sort().find((h) => h !== reviewerHost);
+      if (alt) return alt;
+    }
+  }
   return routing.default_host;
 }
 

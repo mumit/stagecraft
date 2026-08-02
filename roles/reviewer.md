@@ -118,6 +118,23 @@ The orchestrator sets `review_shape` on the precreated gate:
 Always match the scope you were assigned. Do not expand scope unilaterally —
 write a `CONCERN:` note instead.
 
+### Stage 5 adversarial mode
+
+When `.devteam/config.yml` sets `review.mode: adversarial`, Stage 5 dispatches
+you alone — there is no second reviewer and no area-matrix assignment table.
+Write to `pipeline/code-review/by-reviewer.md` (not `by-<area>.md`), with one
+`## Review of <area>` section for **every** area that applies to this change
+(not just two), using the same format as above. There is no self-review
+guard to worry about in this mode — you cover every area because you are the
+only reviewer.
+
+After you finish, a **critic** (`roles/critic.md`) is dispatched to attack
+your review — missed findings, unsupported approvals, whether your approvals
+would survive "what would make this wrong?" Approval alone is not enough to
+pass Stage 5 in this mode: the merged gate also requires the critic's
+challenges to be resolved. Write real evidence for every approval, the same
+way you would want it defended.
+
 ## On a Retrospective Task
 
 See `.devteam/rules/retrospective.md` for full protocol.

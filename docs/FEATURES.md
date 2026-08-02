@@ -612,6 +612,17 @@ When `routing.review_fanout` is configured, Stage 5 (peer-review) duplicates eac
 - Each reviewer applies the same four-principles rubric; the cross-model signal is the value of fanout.
 - This is execution-diversity, not method-diversity. For adversarial method, see the Red-team stage below.
 
+### Adversarial peer review — reviewer/critic pair (31.3, opt-in)
+
+`review.mode: adversarial` (default stays `panel`) replaces the four-area matrix with two sequential workstreams instead of duplicating it across hosts.
+
+- Reviewer covers every applicable area in one pass (`pipeline/code-review/by-reviewer.md`); critic is dispatched only after the reviewer's gate lands and attacks the review itself in `pipeline/code-review/by-critic.md` — missed findings, unsupported approvals, "what would make this approval wrong?"
+- Every challenge requires file:line evidence (`roles/critic.md`); a challenge with unparseable evidence is mechanically forced to `unresolved`
+- Merged stage-05 gate PASSes only when the reviewer approves AND the critic's `challenges_resolved` is `true` — an unresolved challenge blocks merge regardless of the reviewer's own verdict
+- With ≥2 hosts configured, the critic defaults to a different host than the reviewer (`routing.roles.critic` overrides) — same collusion counter-measure as red-team's host-diversity convention below
+- Mutually exclusive with `routing.review_fanout` per run (adversarial mode wins if both are set)
+- Motivated by 2026 evidence that review panels underperform, and are collusion-prone relative to, an adversarial reviewer/critic pair — see `plans/phase-31-verification-depth.md` §31.3
+
 ### Closed-loop acceptance criteria → spec → tests — drift caught structurally
 
 The PM writes numbered acceptance criteria (`AC-N`) in `pipeline/brief.md`. The chain is enforced end-to-end:
