@@ -9,6 +9,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, cleanup, runCLI } = require("./_helpers");
 const { runStageHeadless } = require(path.join(REPO_ROOT, "core", "orchestrator"));
+const { computePromptPackVersion } = require(path.join(REPO_ROOT, "core", "prompt-pack"));
 const corpus = require(path.join(REPO_ROOT, "core", "corpus"));
 const { loadCorpusFrom } = require(path.join(REPO_ROOT, "scripts", "routing-suggest"));
 const { aggregatePerformance, summarize } = require(path.join(REPO_ROOT, "scripts", "performance"));
@@ -108,6 +109,11 @@ describe("corpus: recordDispatch via runStageHeadless (28.5)", () => {
     assert.equal(req.stage, "stage-01");
     assert.equal(req.role, "pm");
     assert.equal(req.host, "codex");
+    // 33.3: prompt_pack_version is stamped onto every headless dispatch's
+    // gate (core/orchestrator.js patchGateWithPromptPackVersion) and read
+    // straight off it here — same value on both dispatches (the prompt
+    // surface doesn't change mid-test-run).
+    assert.equal(req.prompt_pack_version, computePromptPackVersion());
     assert.equal(req.track, "full");
     assert.equal(req.run_id, "run-abc");
     assert.match(req.prompt_hash, /^[0-9a-f]{64}$/, "prompt_hash is a sha256 hex digest");
@@ -174,6 +180,29 @@ describe("corpus: recordDispatch via runStageHeadless (28.5)", () => {
 
     const [req] = readCorpusLines(cwd);
     assert.equal(req.model_requested, "gpt-5-mini");
+  });
+
+  // 33.3: recordDispatch reads prompt_pack_version straight off the gate
+  // (already stamped by patchGateWithPromptPackVersion before recordDispatch
+  // runs), same as model_requested above — no independent computation here.
+  it("33.3: records prompt_pack_version from the gate, and null when absent", () => {
+    const cwd = track(makeTargetProject());
+    const gatesDir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(gatesDir, { recursive: true });
+    const withVersion = path.join(gatesDir, "stage-01.json");
+    fs.writeFileSync(withVersion, JSON.stringify({
+      stage: "stage-01", status: "PASS", prompt_pack_version: "abc123def456",
+    }, null, 2));
+
+    corpus.recordDispatch(cwd, { stage: "stage-01", role: "pm", host: "codex", gatePath: withVersion });
+
+    const noVersion = path.join(gatesDir, "stage-02.json");
+    fs.writeFileSync(noVersion, JSON.stringify({ stage: "stage-02", status: "PASS" }, null, 2));
+    corpus.recordDispatch(cwd, { stage: "stage-02", role: "pm", host: "codex", gatePath: noVersion });
+
+    const [withV, withoutV] = readCorpusLines(cwd);
+    assert.equal(withV.prompt_pack_version, "abc123def456");
+    assert.equal(withoutV.prompt_pack_version, null);
   });
 
   it("--skip-completed no-op dispatches are not recorded as corpus dispatches", async () => {

@@ -4,8 +4,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
-const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage, patchGateForEstimatedUsage, patchGateWithRequestedModel } =
+const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage, patchGateForEstimatedUsage, patchGateWithRequestedModel, patchGateWithPromptPackVersion } =
   require(path.join(REPO_ROOT, "core", "orchestrator"));
+const { computePromptPackVersion } = require(path.join(REPO_ROOT, "core", "prompt-pack"));
 const { listArchives } = require(path.join(REPO_ROOT, "core", "gates", "archive"));
 const { STAGES, getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 const { isAllowed } = require(path.join(REPO_ROOT, "core", "guards", "write-audit"));
@@ -237,6 +238,9 @@ describe("orchestrator: mergeWorkstreamGates aggregation", () => {
     assert.equal(r.merged, true);
     assert.equal(r.gate.status, "PASS");
     assert.equal(r.gate.workstreams.length, 4);
+    // 33.3: the merged stage gate carries its own prompt_pack_version too
+    // (unlike dispatched_tool_budget, which stays workstream-only).
+    assert.equal(r.gate.prompt_pack_version, computePromptPackVersion());
   });
 
   it("PASS + WARN → WARN", () => {
@@ -1129,6 +1133,67 @@ describe("orchestrator: runStageHeadless stamps model_requested (32.3)", () => {
     fs.writeFileSync = () => { throw new Error("simulated disk-full"); };
     try {
       assert.doesNotThrow(() => patchGateWithRequestedModel(gateFile, "haiku", null));
+    } finally {
+      fs.writeFileSync = original;
+    }
+  });
+});
+
+describe("orchestrator: runStageHeadless stamps prompt_pack_version (33.3)", () => {
+  it("stamps prompt_pack_version matching computePromptPackVersion() on a headless dispatch", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n",
+    }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-prompt-pack-stub-"));
+    _dirs.push(dir);
+    const script = writeSimpleGateStub32_3(dir, "stub.js");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      assert.equal(r.exitCode, 0);
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate.prompt_pack_version, computePromptPackVersion());
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("does not overwrite a prompt_pack_version the gate already carries", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS", prompt_pack_version: "deadbeef0000" });
+    patchGateWithPromptPackVersion(gateFile);
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+    assert.equal(gate.prompt_pack_version, "deadbeef0000");
+  });
+
+  // Rule 6 (fire-and-forget contract): a write failure here must never fail
+  // the run, same discipline as patchGateWithRequestedModel above.
+  it("fire-and-forget: never throws when the gate file does not exist", () => {
+    const cwd = track(makeTargetProject());
+    const missing = path.join(cwd, "pipeline", "gates", "stage-99.json");
+    assert.doesNotThrow(() => patchGateWithPromptPackVersion(missing));
+  });
+
+  it("fire-and-forget: never throws when the gate file is unreadable JSON", () => {
+    const cwd = track(makeTargetProject());
+    const dir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(dir, { recursive: true });
+    const gateFile = path.join(dir, "stage-01.json");
+    fs.writeFileSync(gateFile, "{ not valid json");
+    assert.doesNotThrow(() => patchGateWithPromptPackVersion(gateFile));
+    assert.equal(fs.readFileSync(gateFile, "utf8"), "{ not valid json");
+  });
+
+  it("fire-and-forget: never throws when the write itself fails (simulated disk-full)", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    const original = fs.writeFileSync;
+    fs.writeFileSync = () => { throw new Error("simulated disk-full"); };
+    try {
+      assert.doesNotThrow(() => patchGateWithPromptPackVersion(gateFile));
     } finally {
       fs.writeFileSync = original;
     }

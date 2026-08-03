@@ -142,7 +142,7 @@ factory), both evidence-gated pending real dispatch history — see
 Each record:
 
 ```json
-{"ts":"2026-07-31T00:00:00.000Z","run_id":"2026-07-31T00:00:00.000Z","stage":"stage-04","role":"backend","host":"claude-code","model_observed":"claude-sonnet-5","track":"full","prompt_hash":"a1b2...","prompt_bytes":4213,"tokens_in":1234,"tokens_out":56,"cost_usd":0.0456,"cost_basis":"observed","duration_ms":18234,"queue_ms":0,"gate_status":"PASS","blockers":null,"retry_of":null,"framework_version":"0.9.0"}
+{"ts":"2026-07-31T00:00:00.000Z","run_id":"2026-07-31T00:00:00.000Z","stage":"stage-04","role":"backend","host":"claude-code","model_observed":"claude-sonnet-5","model_requested":"claude-sonnet-5","prompt_pack_version":"32419bc9c408","track":"full","prompt_hash":"a1b2...","prompt_bytes":4213,"tokens_in":1234,"tokens_out":56,"cost_usd":0.0456,"cost_basis":"observed","duration_ms":18234,"queue_ms":0,"gate_status":"PASS","blockers":null,"retry_of":null,"framework_version":"0.9.0"}
 ```
 
 Fields missing for a given dispatch are `null`, never omitted, so consumers can rely on a stable shape.
@@ -159,6 +159,12 @@ Fields missing for a given dispatch are `null`, never omitted, so consumers can 
 - `retry_of` is sourced from the gate's model-written `retry_number` — a
   claim, not an orchestrator observation, since there's no orchestrator-
   tracked per-dispatch retry-chain id today.
+- `prompt_pack_version` (phase-33 item 33.3) is a content-hash version of
+  the prompt surface (`core/prompt-pack.js` — sha256 over roles/ + rules/ +
+  templates/), orchestrator-computed and read straight off the dispatch's
+  gate. `devteam evals compare --pack <A> --pack <B>` filters this corpus
+  by the field to report per-stage pass-rate deltas between two prompt-pack
+  versions — see [`docs/reproducibility.md`](reproducibility.md).
 - Writes are fire-and-forget: an unwritable `.devteam/corpus/` directory
   logs one warning and never fails the run (`core/corpus.js`
   `appendDispatchRecord`).

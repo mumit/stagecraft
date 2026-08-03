@@ -31,6 +31,7 @@ const { isAllowed } = require("./guards/write-audit");
 const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
 const corpus = require("./corpus");
 const evalsCapture = require("./evals/capture");
+const { computePromptPackVersion } = require("./prompt-pack");
 
 // C1: patch a gate file to record write-audit violations and flip status to FAIL.
 // Called after headless invoke when the adapter reported unauthorized writes.
@@ -200,6 +201,24 @@ function patchGateForEstimatedUsage(gatePath, promptBytes) {
     },
   };
   fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
+}
+
+// Phase-33 item 33.3: patch a gate file with prompt_pack_version — a
+// content hash of the prompt surface (core/prompt-pack.js), never something
+// the model could self-report. Mirrors patchGateWithRequestedModel's "add a
+// distinct orchestrator-owned field" discipline and dispatched_tool_budget's
+// dual-path convention (patchGateForToolBudget here; auto-injected by the
+// gate validator for user-driven runs — core/gates/validator.js
+// autoInjectMetadata). Idempotent: never overwrites a value already present.
+function patchGateWithPromptPackVersion(gatePath) {
+  if (!fs.existsSync(gatePath)) return;
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error || !gate) return;
+  if ("prompt_pack_version" in gate) return; // already stamped; don't overwrite
+  const patched = { ...gate, prompt_pack_version: computePromptPackVersion() };
+  try {
+    fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
+  } catch { /* fire-and-forget: telemetry writes must never fail the run */ }
 }
 
 // D7: patch a single-role gate to surface the same unpriced-model WARN that
@@ -1064,6 +1083,22 @@ async function runStageHeadless(stageName, opts = {}) {
       if (ws.model) {
         patchGateWithRequestedModel(r.gatePath || wsGatePathExpected, ws.model, ws.modelEscalated);
       }
+      // 33.3: record the prompt-pack version for every dispatch, regardless
+      // of routing/usage telemetry availability — but only when the headless
+      // command actually wrote (or rewrote) the gate this run. Same mtime
+      // guard as the tool-budget patch above: without it, a no-op command
+      // (e.g. `devteam replay` against an empty command) would still get its
+      // pre-existing gate touched here, corrupting replay's "was a new gate
+      // written" mtime check.
+      {
+        const ppvGatePath = r.gatePath || wsGatePathExpected;
+        let ppvPostMtime = null;
+        try { ppvPostMtime = fs.statSync(ppvGatePath).mtimeMs; } catch { ppvPostMtime = null; }
+        const ppvGateWasWrittenThisRun = ppvPostMtime !== null && (preInvokeMtime === null || ppvPostMtime > preInvokeMtime);
+        if (ppvGateWasWrittenThisRun) {
+          patchGateWithPromptPackVersion(ppvGatePath);
+        }
+      }
       // 31.1: per-role orchestrator stamping for multi-workstream stampable
       // stages (stage-04 build) — stamps THIS workstream's own gate as it
       // completes, mirroring the single-role stamp step below but scoped to
@@ -1324,6 +1359,12 @@ function mergeWorkstreamGates(stageName, opts = {}) {
       stage: stageDef.stage,
       status: aggregate,
       orchestrator: ORCHESTRATOR_ID,
+      // 33.3: the merged stage gate carries its own prompt_pack_version too
+      // (unlike dispatched_tool_budget, which is per-role and stays workstream-
+      // only) — it's stage-identity information, the same value regardless of
+      // which workstream you'd read it from, so a merged gate shouldn't force
+      // a reader back to a workstream gate just to learn it.
+      prompt_pack_version: computePromptPackVersion(),
       // Fall back to the locally-resolved track when a workstream gate omits
       // it (model forgot the field). Without the fallback, merged.track is
       // undefined and the validator flags a gate the orchestrator itself wrote.
@@ -2196,6 +2237,7 @@ module.exports = {
   patchGateForObservedUsage,
   patchGateForEstimatedUsage,
   patchGateWithRequestedModel,
+  patchGateWithPromptPackVersion,
   ORCHESTRATOR_ID,
   rolesPath,
   templatesPath,

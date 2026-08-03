@@ -336,18 +336,20 @@ Summarize the run corpus (.devteam/corpus/dispatches.jsonl): total dispatches, p
 | --cwd  | string | Target project directory |
 | --json | bool   | JSON output              |
 
-### `devteam evals <gc|run> [options]`
+### `devteam evals <gc|run|compare> [options]`
 
-Eval flywheel. `gc` removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references (cases are captured automatically on gate FAIL/ESCALATE and stamp overrides, plans/phase-33-eval-flywheel.md item 33.1). `run` replays captured cases against the CURRENT framework — --stub (default) scores structurally, free; --headless-host <h> dispatches for real and flags a resolved case that fails again as a regression (item 33.2).
+Eval flywheel. `gc` removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references (cases are captured automatically on gate FAIL/ESCALATE and stamp overrides, plans/phase-33-eval-flywheel.md item 33.1). `run` replays captured cases against the CURRENT framework — --stub (default) scores structurally, free; --headless-host <h> dispatches for real and flags a resolved case that fails again as a regression (item 33.2). `compare --pack <A> --pack <B>` reports per-stage pass-rate deltas between two prompt_pack_version values from the run corpus, refusing a stage below --min-n dispatches on either pack (item 33.3).
 
-| Flag            | Type   | Description                                                   |
-| --------------- | ------ | ------------------------------------------------------------- |
-| --cwd           | string | Target project directory                                      |
-| --stub          | bool   | run: structural-only replay (default; free, no model)         |
-| --headless-host | string | run: dispatch for real against this host's headless machinery |
-| --filter        | string | run: only replay cases matching this stage id or case id      |
-| --budget-usd    | number | run: required cost cap before a --headless-host sweep         |
-| --json          | bool   | JSON output (run: JSONL, one line per case)                   |
+| Flag            | Type   | Description                                                                |
+| --------------- | ------ | -------------------------------------------------------------------------- |
+| --cwd           | string | Target project directory                                                   |
+| --stub          | bool   | run: structural-only replay (default; free, no model)                      |
+| --headless-host | string | run: dispatch for real against this host's headless machinery              |
+| --filter        | string | run: only replay cases matching this stage id or case id                   |
+| --budget-usd    | number | run: required cost cap before a --headless-host sweep                      |
+| --pack          | list   | compare: prompt_pack_version to compare — pass twice (--pack A --pack B)   |
+| --min-n         | number | compare: minimum dispatches required per cell before comparing (default 5) |
+| --json          | bool   | JSON output (run: JSONL, one line per case)                                |
 
 ### `devteam architecture <subcommand> [options]`
 

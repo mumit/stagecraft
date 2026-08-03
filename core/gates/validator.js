@@ -180,6 +180,21 @@ function autoInjectMetadata(gate, gateFilePath) {
     }
   }
 
+  // Phase-33 item 33.3: inject prompt_pack_version for user-driven gates —
+  // the headless path stamps it via core/orchestrator.js
+  // patchGateWithPromptPackVersion (same dual-path convention as
+  // dispatched_tool_budget above). Orchestrator-computed, never model-
+  // asserted, so it's injected here rather than added to REQUIRED_FIELDS.
+  if (!("prompt_pack_version" in gate)) {
+    try {
+      const { computePromptPackVersion } = require("../prompt-pack");
+      gate.prompt_pack_version = computePromptPackVersion();
+      modified = true;
+    } catch {
+      // Injection failed — leave field absent; gate is still valid.
+    }
+  }
+
   if (modified) {
     fs.writeFileSync(gateFilePath, JSON.stringify(gate, null, 2) + "\n", "utf8");
     console.log(

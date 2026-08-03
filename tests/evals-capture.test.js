@@ -92,6 +92,28 @@ describe("evals/capture: captureEvalCase — unit", () => {
     assert.ok(fs.existsSync(path.join(blobsDir(cwd), `${manifest[0].sha256}.blob`)));
   });
 
+  // 33.3: prompt_pack_version round-trips from the gate into the eval case,
+  // the same way the run corpus reads it (core/corpus.js recordDispatch) —
+  // and is recorded as null, never omitted, when the gate doesn't carry one.
+  it("records prompt_pack_version from the gate, and null when the gate doesn't carry one", () => {
+    const cwd = track(makeTargetProject());
+    const withVersion = seedGate(cwd, "stage-01", {
+      stage: "stage-01", status: "FAIL", host: "claude-code", track: "full",
+      blockers: ["nope"], warnings: [], prompt_pack_version: "abc123def456",
+    });
+    const r1 = captureEvalCase(cwd, { config: loadConfig(cwd), gatePath: withVersion, stage: "stage-01" });
+    const case1 = JSON.parse(fs.readFileSync(path.join(r1.dir, "case.json"), "utf8"));
+    assert.equal(case1.prompt_pack_version, "abc123def456");
+
+    const noVersion = seedGate(cwd, "stage-02", {
+      stage: "stage-02", status: "FAIL", host: "claude-code", track: "full",
+      blockers: ["nope"], warnings: [],
+    });
+    const r2 = captureEvalCase(cwd, { config: loadConfig(cwd), gatePath: noVersion, stage: "stage-02" });
+    const case2 = JSON.parse(fs.readFileSync(path.join(r2.dir, "case.json"), "utf8"));
+    assert.equal(case2.prompt_pack_version, null);
+  });
+
   it("captures on stamp status_overridden (model-lied class), recording capture_reason: stamp-override", async () => {
     const cwd = track(makeTargetProject({
       config: "routing:\n  default_host: generic\npipeline:\n  default_track: full\n  verify:\n    lint_command: \"false\"\n    test_command: \"true\"\n",

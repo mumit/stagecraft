@@ -224,6 +224,12 @@ function captureEvalCase(cwd, opts = {}) {
       capture_reason: captureReasonFor(gate),
       prompt_hash: opts.promptHash || null,
       reproducibility: reproducibilityFingerprint(gate),
+      // Phase-33 item 33.3: content-hash version of the prompt surface at
+      // capture time (core/prompt-pack.js), read off the gate the same way
+      // the run corpus does (core/corpus.js recordDispatch) — lets
+      // `devteam evals run` report drift between the pack version a case
+      // was captured under and the pack replaying it today.
+      prompt_pack_version: (typeof gate.prompt_pack_version === "string") ? gate.prompt_pack_version : null,
       framework_version: FRAMEWORK_VERSION,
       stamper_version: (gate._orchestrator_stamped && gate._orchestrator_stamped.stamper_version) || null,
       gate: sanitizeGateForCapture(gate),
