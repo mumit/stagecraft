@@ -15,6 +15,10 @@ const {
 } = require(path.join(__dirname, "..", "..", "evidence", "identity"));
 const { analyzePortfolio } = require(path.join(__dirname, "..", "..", "evidence", "portfolio"));
 const { appendAcceptedResolution } = require(path.join(__dirname, "..", "..", "evidence", "resolutions"));
+const {
+  createAttestation, readAttestation, writeAttestation, signAttestation,
+  assertExportDestination: assertAttestationDestination,
+} = require(path.join(__dirname, "..", "..", "evidence", "attestation"));
 
 const name = "evidence";
 const flags = {
@@ -27,6 +31,10 @@ const flags = {
   rotate: { type: "boolean", description: "Rotate the local project identity" },
   delete: { type: "boolean", description: "Delete the local project identity" },
   yes: { type: "boolean", description: "Confirm identity mutation or resolution acceptance" },
+  attestation: { type: "boolean", description: "Export an in-toto-shaped, per-stage attestation instead of the aggregate bundle" },
+  track: { type: "string", description: "Override the pipeline track for --attestation chain verification" },
+  "allow-unverified": { type: "boolean", description: "Attest even when the gate chain is broken, stamping the bundle as unverified" },
+  sign: { type: "boolean", description: "Sign the --attestation bundle with cosign sign-blob (must be on PATH)" },
   help: { type: "boolean", description: "Show this help" },
 };
 
@@ -108,9 +116,10 @@ function runStatus(commandFlags) {
 }
 
 function runExport(commandFlags) {
+  if (commandFlags.attestation) return runExportAttestation(commandFlags);
   if (!commandFlags.out) throw new Error("evidence export requires --out <new-file.json>");
   if (!commandFlags.consent) throw new Error("evidence export requires --consent");
-  rejectFlags(commandFlags, ["bundle", "rotate", "delete", "yes"], "export");
+  rejectFlags(commandFlags, ["bundle", "rotate", "delete", "yes", "track", "sign", "allowUnverified"], "export");
   const destination = assertExportDestination(commandFlags.out);
   const { cwd, report } = localReport(commandFlags);
   const identity = getOrCreateIdentity(cwd);
@@ -126,6 +135,91 @@ function runExport(commandFlags) {
     process.stdout.write(`Evidence bundle written: ${destination}\n`);
     process.stdout.write(`Project reference: ${identity.project_ref}\n`);
     process.stdout.write(`${bundle.suppressed_observations} sparse observation(s) suppressed. Inspect before sharing; retention and deletion are operator-owned.\n`);
+  }
+}
+
+// devteam evidence export --attestation: full per-stage-fidelity, in-toto-shaped
+// bundle for ONE run/commit (unlike the aggregate above, which is a privacy-
+// preserving cross-run summary). Refuses on a broken gate chain unless
+// --allow-unverified explicitly accepts an unverified bundle.
+function runExportAttestation(commandFlags) {
+  if (!commandFlags.out) throw new Error("evidence export --attestation requires --out <new-file.json>");
+  rejectFlags(commandFlags, ["consent", "bundle", "rotate", "delete", "yes"], "export --attestation");
+  const destination = assertAttestationDestination(commandFlags.out);
+  const cwd = path.resolve(commandFlags.cwd || process.cwd());
+  const config = loadConfig(cwd);
+  checkBoundedFence(config, name);
+  const changeId = resolveChangeId(commandFlags, config);
+  const track = commandFlags.track
+    || (Array.isArray(config.pipeline.custom_stages) ? config.pipeline.custom_stages : null)
+    || config.pipeline.default_track || "full";
+  let attestation;
+  try {
+    attestation = createAttestation(cwd, changeId, track, { allowUnverified: commandFlags.allowUnverified });
+  } catch (error) {
+    if (error.chainResult) {
+      const r = error.chainResult;
+      const details = [];
+      for (const b of r.breaks) details.push(`  break: ${b.stage} recorded prev_hash for ${b.prev_stage || "(genesis)"} != recomputed`);
+      if (r.unstamped.length) details.push(`  unstamped: ${r.unstamped.join(", ")}`);
+      if (r.unsigned.length) details.push(`  unsigned: ${r.unsigned.join(", ")}`);
+      if (r.invalid_macs.length) details.push(`  invalid macs: ${r.invalid_macs.map((m) => m.stage).join(", ")}`);
+      throw new Error(`${error.message}\n${details.join("\n")}`);
+    }
+    throw error;
+  }
+  writeAttestation(destination, attestation);
+  const signaturePath = commandFlags.sign ? signAttestation(destination) : null;
+  const result = {
+    written: destination,
+    signature: signaturePath,
+    project_ref: attestation.predicate.project_ref,
+    unverified: attestation.predicate.unverified,
+    stages: attestation.predicate.stages.length,
+    resolutions: attestation.predicate.resolutions.length,
+  };
+  if (commandFlags.json) console.log(JSON.stringify(result, null, 2));
+  else {
+    process.stdout.write(`Attestation bundle written: ${destination}\n`);
+    if (signaturePath) process.stdout.write(`Signature written: ${signaturePath}\n`);
+    process.stdout.write(`Project reference: ${attestation.predicate.project_ref}\n`);
+    process.stdout.write(`${result.stages} stage(s), ${result.resolutions} accepted resolution(s).\n`);
+    if (result.unverified) {
+      process.stdout.write("WARNING: gate chain verification failed; this bundle is stamped unverified (--allow-unverified).\n");
+    }
+  }
+}
+
+// devteam evidence verify-attestation <bundle>: offline re-check of the
+// bundle's internal hashes + schema. Never touches the live pipeline —
+// it only reads the file named on the command line.
+function runVerifyAttestation(positional, commandFlags) {
+  rejectFlags(commandFlags, ["feature", "out", "consent", "bundle", "rotate", "delete", "yes", "track", "sign", "allowUnverified"], "verify-attestation");
+  const file = positional[1];
+  if (!file) throw new Error("Usage: devteam evidence verify-attestation <bundle> [--json]");
+  let attestation;
+  try {
+    attestation = readAttestation(path.resolve(file));
+  } catch (error) {
+    if (commandFlags.json) {
+      console.log(JSON.stringify({ ok: false, error: error.message }, null, 2));
+    } else {
+      console.error(`devteam evidence verify-attestation: ${error.message}`);
+    }
+    process.exit(1);
+  }
+  const result = {
+    ok: true,
+    unverified: attestation.predicate.unverified,
+    stages: attestation.predicate.stages.length,
+    resolutions: attestation.predicate.resolutions.length,
+    subject: attestation.subject.map((s) => s.digest.sha1),
+  };
+  if (commandFlags.json) console.log(JSON.stringify(result, null, 2));
+  else {
+    process.stdout.write(`✅ attestation valid — ${result.stages} stage(s), ${result.resolutions} accepted resolution(s)\n`);
+    process.stdout.write(`Subject commit(s): ${result.subject.join(", ")}\n`);
+    if (result.unverified) process.stdout.write("WARNING: bundle is stamped unverified (chain was broken at export time).\n");
   }
 }
 
@@ -177,18 +271,24 @@ function runAcceptResolution(commandFlags) {
   else process.stdout.write(`Accepted ${output.stage}/${output.failure_class} resolution (${output.derivable ? "derivable" : "not derivable"}).\n`);
 }
 
+const USAGE = "devteam evidence <status|export|identity|accept-resolution|verify-attestation> [options]";
+
 function run(positional, commandFlags) {
   if (commandFlags.help) {
-    console.log(generateHelp("devteam evidence <status|export|identity|accept-resolution> [options]", flags));
+    console.log(generateHelp(USAGE, flags));
     process.exit(0);
   }
-  if (positional.length !== 1 || !["status", "export", "identity", "accept-resolution"].includes(positional[0])) {
-    process.stderr.write("Usage: devteam evidence <status|export|identity|accept-resolution> [options]\n");
+  const sub = positional[0];
+  const validSubs = ["status", "export", "identity", "accept-resolution", "verify-attestation"];
+  const expectedPositionals = sub === "verify-attestation" ? 2 : 1;
+  if (!validSubs.includes(sub) || positional.length !== expectedPositionals) {
+    process.stderr.write(`Usage: ${USAGE}\n`);
     process.exit(2);
   }
-  if (positional[0] === "status") return runStatus(commandFlags);
-  if (positional[0] === "export") return runExport(commandFlags);
-  if (positional[0] === "identity") return runIdentity(commandFlags);
+  if (sub === "status") return runStatus(commandFlags);
+  if (sub === "export") return runExport(commandFlags);
+  if (sub === "identity") return runIdentity(commandFlags);
+  if (sub === "verify-attestation") return runVerifyAttestation(positional, commandFlags);
   return runAcceptResolution(commandFlags);
 }
 
