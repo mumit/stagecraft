@@ -104,7 +104,7 @@ npm link
 
 # 3. In your target project
 cd ~/projects/my-app
-devteam init --host claude-code        # or codex / antigravity / gemini-cli / omnigent / openai-compat
+devteam init --host claude-code        # or codex / antigravity / gemini-cli / omnigent / openai-compat / acp
 ```
 
 `devteam init` lays down:
@@ -1035,9 +1035,47 @@ The command to clear a gate and restart a stage is `devteam restart <stage>`, no
 devteam restart build && devteam run
 ```
 
+### Using ACP (Agent Client Protocol)
+
+`acp` is Stagecraft's client-side adapter for the [Agent Client Protocol](https://agentclientprotocol.com) (Zed, JetBrains, Google, GitHub, 25+ agents — protocol version 1, pinned in `hosts/acp/capabilities.json`'s `acpProtocolVersion`). Any agent that speaks ACP as a server becomes a Stagecraft host with zero adapter code — the whole point of the protocol is that Stagecraft doesn't need to hand-write a `hosts/<agent>/adapter.js` for each one.
+
+```bash
+devteam init --host acp
+```
+
+Installs:
+
+- `.acp/stagecraft/roles/` — role prompts in markdown format
+- `.acp/stagecraft/skills/` — Stagecraft skills in markdown format
+
+There is no single default ACP binary the way there is for `claude`/`codex`/`gemini` — you tell Stagecraft which agent command to run. Highest precedence first:
+
+1. `DEVTEAM_HEADLESS_COMMAND` (universal override; same env var every other headless host respects)
+2. The routing value itself, using the `acp:<agent-command>` form — the launch command travels with the route, since different roles may reasonably use different ACP agents:
+   ```yaml
+   routing:
+     default_host: claude-code
+     roles:
+       backend: "acp:claude-agent-acp"
+       qa: "acp:my-other-acp-agent --experimental"
+   ```
+3. `hosts.acp.command` in `.devteam/config.yml` — a project-wide default when you route to `acp` without an inline command:
+   ```yaml
+   routing:
+     default_host: acp
+   hosts:
+     acp:
+       command: claude-agent-acp
+   ```
+4. `hosts/acp/capabilities.json`'s `headlessCommand` — a runnable reference default (`npx -y @agentclientprotocol/claude-agent-acp`, the official ACP bridge for Claude Code); install and configure your own agent for anything else.
+
+**Enforcement is call-time, not post-hoc.** Every ACP tool call is a `session/request_permission` round-trip *before* it executes, so the adapter checks the dispatch's real `allowedWrites` list and a claude-code-parity dangerous-command stoplist (`rm -rf`, `git push --force`/`-f`) on every call and denies in real time — the first non-claude-code host with tool-call-time enforcement (every other CLI host here is post-hoc-audit or prompt-only). See `hosts/acp/permissions.js` for the exact rules.
+
+**Current posture:** no hooks, no Stagecraft-managed subagent fan-out, no slash commands, and no worktree mapping — same conservative stance as Omnigent/openai-compat. `telemetry: "estimated"` — ACP has no standardized usage field, so cost falls back to the promptBytes/4 estimate every non-native host uses.
+
 ### Multi-host in headless mode
 
-Headless mode (`--headless`) works normally in multi-host setups. Each workstream spawns its own host process or native adapter invocation; they run concurrently within a stage. Every host you route work to must support headless (`claude-code`, `codex`, `antigravity`, `gemini-cli`, `omnigent`, and `openai-compat` do; `generic` does not). In an unattended pipeline loop, mixed-host stages produce gates through the same contract and advance the pipeline normally.
+Headless mode (`--headless`) works normally in multi-host setups. Each workstream spawns its own host process or native adapter invocation; they run concurrently within a stage. Every host you route work to must support headless (`claude-code`, `codex`, `antigravity`, `gemini-cli`, `omnigent`, `acp`, and `openai-compat` do; `generic` does not). In an unattended pipeline loop, mixed-host stages produce gates through the same contract and advance the pipeline normally.
 
 ### When single-host is the right call
 

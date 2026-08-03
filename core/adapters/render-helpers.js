@@ -50,10 +50,18 @@ function renderPatchBlock(ctx, lines) {
 // catches violations post-hoc) vs post-hoc-audit (similar). Each
 // adapter declares its level in capabilities.enforces.allowed_writes;
 // this helper just renders the right caption.
-function allowedWritesCaption(enforcementLevel, hostDisplayName) {
+//
+// `mechanism` names the tool-call-time gate itself — claude-code's is
+// "hooks" (the historical, still-default wording); 34.1's ACP host is the
+// first non-claude-code tool-call-time host and enforces via ACP's
+// session/request_permission flow, not hooks, so it passes "permission
+// requests" via capabilities.enforcementMechanismLabel (see
+// core/adapters/markdown-host.js). Callers that omit it keep the
+// pre-34.1 "hooks" wording byte-identical.
+function allowedWritesCaption(enforcementLevel, hostDisplayName, mechanism = "hooks") {
   switch (enforcementLevel) {
     case "tool-call-time":
-      return `## Allowed writes (enforced by ${hostDisplayName} hooks at tool-call time)`;
+      return `## Allowed writes (enforced by ${hostDisplayName} ${mechanism} at tool-call time)`;
     case "post-hoc-audit":
       return `## Allowed writes (enforced post-hoc by the orchestrator write-audit: unauthorized writes flip the gate to FAIL)`;
     case "prompt-only":

@@ -225,13 +225,35 @@ function loadConfig(cwd = process.cwd()) {
 // falls through to the next precedence level rather than throwing — a
 // typo'd config must never silently disable the whole stage (same
 // philosophy as review.mode above).
+//
+// 34.1: a string value of the form "acp:<agent-command>" routes to the acp
+// host AND carries the ACP agent's launch command inline — there is no
+// single default ACP binary the way there is for claude/codex/gemini, so
+// the command has to travel with the route itself. Returned as an
+// `agentCommand` key, added ONLY when non-empty, so every pre-34.1 shape
+// ({host, model} or the returned object when agentCommand is absent) stays
+// byte-identical — existing deepEqual-based tests (tests/config.test.js)
+// never see the new key.
+const ACP_ROUTE_PREFIX = "acp:";
+
 function normalizeRouteValue(value) {
-  if (typeof value === "string" && value) return { host: value, model: undefined };
+  if (typeof value === "string" && value) {
+    if (value.startsWith(ACP_ROUTE_PREFIX)) {
+      const agentCommand = value.slice(ACP_ROUTE_PREFIX.length).trim();
+      return agentCommand
+        ? { host: "acp", model: undefined, agentCommand }
+        : { host: "acp", model: undefined };
+    }
+    return { host: value, model: undefined };
+  }
   if (value && typeof value === "object" && !Array.isArray(value) && typeof value.host === "string" && value.host) {
-    return {
+    const base = {
       host: value.host,
       model: typeof value.model === "string" && value.model ? value.model : undefined,
     };
+    return (typeof value.agentCommand === "string" && value.agentCommand)
+      ? { ...base, agentCommand: value.agentCommand }
+      : base;
   }
   return null;
 }
@@ -259,12 +281,27 @@ function configuredHosts(routing) {
 // pass. Precedence unchanged from the pre-32.3 resolveHost: stages[stage] →
 // roles[role] → critic/reviewer diversity (31.3) → default_host. Returns
 // { hostName, model } — model is undefined when nothing configured one.
+// 34.1: also surfaces `agentCommand` (only present when normalizeRouteValue
+// resolved one from an "acp:<command>" route) so callers that need it don't
+// have to re-parse routing config themselves.
 function resolveRoute(config, stage, role) {
   const routing = config.routing || DEFAULTS.routing;
   const fromStages = routing.stages && normalizeRouteValue(routing.stages[stage]);
-  if (fromStages) return { hostName: fromStages.host, model: fromStages.model };
+  if (fromStages) {
+    return {
+      hostName: fromStages.host,
+      model: fromStages.model,
+      ...(fromStages.agentCommand ? { agentCommand: fromStages.agentCommand } : {}),
+    };
+  }
   const fromRoles = routing.roles && normalizeRouteValue(routing.roles[role]);
-  if (fromRoles) return { hostName: fromRoles.host, model: fromRoles.model };
+  if (fromRoles) {
+    return {
+      hostName: fromRoles.host,
+      model: fromRoles.model,
+      ...(fromRoles.agentCommand ? { agentCommand: fromRoles.agentCommand } : {}),
+    };
+  }
   // 31.3: the critic's whole point is independence from the reviewer —
   // default it to a different host when the project has ≥2 hosts configured
   // and nothing explicitly routed it (checked above). Collusion counter-

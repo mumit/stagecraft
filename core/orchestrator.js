@@ -591,7 +591,7 @@ function runStage(stageName, opts = {}) {
     }, () => {
       // For fanout entries the host is fixed by the fanout list; for
       // normal entries the router resolves via precedence.
-      let hostName, adapter, model, modelEscalated = null;
+      let hostName, adapter, model, agentCommand, modelEscalated = null;
       if (entry.hostName) {
         hostName = entry.hostName;
         const { loadAdapter } = require("./router");
@@ -601,6 +601,7 @@ function runStage(stageName, opts = {}) {
         hostName = resolved.hostName;
         adapter = resolved.adapter;
         model = resolved.model;
+        agentCommand = resolved.agentCommand;
         // 32.3: escalate-on-retry — a fix-and-retry of a dispatch whose
         // route pinned a model bumps it one tier up routing.tiers[host].
         // Never applies to fanout entries (handled above) since those
@@ -629,7 +630,9 @@ function runStage(stageName, opts = {}) {
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature
       // change — undefined when routing didn't pin one for this dispatch.
-      const descriptor = { ...baseDescriptor, knownPatterns, model };
+      // 34.1: agentCommand rides the same way — only ever set when routing
+      // used the "acp:<command>" form; every other host ignores it.
+      const descriptor = { ...baseDescriptor, knownPatterns, model, agentCommand };
       const prompt = withSpan("adapter.renderStagePrompt", {
         "devteam.host": hostName,
         "devteam.stage": stageDef.stage,

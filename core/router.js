@@ -88,7 +88,7 @@ function listHosts() {
 }
 
 function resolveAdapter(config, stage, role) {
-  const { hostName, model } = resolveRoute(config, stage, role);
+  const { hostName, model, agentCommand } = resolveRoute(config, stage, role);
   if (!hostName) {
     throw new Error(
       `Routing did not resolve a host for stage="${stage}" role="${role}". ` +
@@ -99,7 +99,10 @@ function resolveAdapter(config, stage, role) {
   // routing.roles/stages pinned one via the {host, model} object form.
   // Undefined when nothing pinned one — adapters treat that as "use your
   // own default."
-  return { hostName, model, adapter: loadAdapter(hostName) };
+  // 34.1: agentCommand is the routing-resolved ACP agent launch command,
+  // present only when the route used the "acp:<command>" string form.
+  // Undefined for every other host and every other route shape.
+  return { hostName, model, agentCommand, adapter: loadAdapter(hostName) };
 }
 
 module.exports = { resolveAdapter, loadAdapter, listHosts };

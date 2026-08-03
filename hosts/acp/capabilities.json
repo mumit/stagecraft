@@ -1,0 +1,25 @@
+{
+  "name": "acp",
+  "displayName": "Agent Client Protocol",
+  "version": "1",
+  "acpProtocolVersion": 1,
+  "hooks": false,
+  "subagents": false,
+  "slashCommands": false,
+  "worktrees": false,
+  "headless": true,
+  "headlessCommand": "npx -y @agentclientprotocol/claude-agent-acp",
+  "enforcementMechanismLabel": "permission requests",
+  "telemetry": "estimated",
+  "goalLoop": false,
+  "skillFormat": "markdown",
+  "rolePromptsDir": ".acp/stagecraft/roles",
+  "skillsDir": ".acp/stagecraft/skills",
+  "enforces": {
+    "allowed_writes": "tool-call-time",
+    "stoplist": "tool-call-time",
+    "shell": true,
+    "network": true,
+    "tool_budget": "prompt-only"
+  }
+}

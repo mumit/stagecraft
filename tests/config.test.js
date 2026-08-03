@@ -233,6 +233,79 @@ describe("config: resolveRoute (32.3 object-form routing)", () => {
   });
 });
 
+// Phase-34 item 34.1: routing.roles/routing.stages also accept the string
+// form "acp:<agent-command>" — there is no single default ACP binary the
+// way there is for claude/codex/gemini, so the launch command travels with
+// the route itself (hosts/acp/adapter.js resolveAgentCommand consumes the
+// resulting `agentCommand`). Back-compat is the point of every test here:
+// every pre-34.1 shape (bare string, {host, model}) must keep returning
+// exactly what it did before — deepEqual against the ORIGINAL {hostName,
+// model} shape (no extra key at all) proves the new `agentCommand` key
+// never leaks onto a route that didn't ask for it.
+describe("config: resolveRoute (34.1 acp:<command> routing)", () => {
+  it('"acp:<command>" resolves host "acp" and surfaces the command as agentCommand', () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: "acp:claude-agent-acp" },
+        stages: { "stage-08": "acp:my-acp-agent --flag value" },
+      },
+    };
+    assert.deepEqual(
+      resolveRoute(cfg, "stage-04", "backend"),
+      { hostName: "acp", model: undefined, agentCommand: "claude-agent-acp" },
+    );
+    assert.deepEqual(
+      resolveRoute(cfg, "stage-08", "platform"),
+      { hostName: "acp", model: undefined, agentCommand: "my-acp-agent --flag value" },
+    );
+  });
+
+  it('bare "acp" (no command suffix) resolves like any other bare host string — no agentCommand key at all', () => {
+    const cfg = { routing: { default_host: "generic", roles: { backend: "acp" }, stages: {} } };
+    assert.deepEqual(resolveRoute(cfg, "stage-04", "backend"), { hostName: "acp", model: undefined });
+  });
+
+  it('"acp:" with nothing after the colon resolves host "acp" with no agentCommand (falls back to config/default in the adapter)', () => {
+    const cfg = { routing: { default_host: "generic", roles: { backend: "acp:" }, stages: {} } };
+    assert.deepEqual(resolveRoute(cfg, "stage-04", "backend"), { hostName: "acp", model: undefined });
+  });
+
+  it("object-form routes may also carry agentCommand explicitly", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: { host: "acp", agentCommand: "claude-agent-acp --experimental" } },
+        stages: {},
+      },
+    };
+    assert.deepEqual(
+      resolveRoute(cfg, "stage-04", "backend"),
+      { hostName: "acp", model: undefined, agentCommand: "claude-agent-acp --experimental" },
+    );
+  });
+
+  it("back-compat: ordinary bare-string and {host, model} routes never gain an agentCommand key", () => {
+    const cfg = {
+      routing: {
+        default_host: "generic",
+        roles: {
+          backend: "codex",
+          qa: { host: "claude-code", model: "claude-haiku-4-5-20251001" },
+        },
+        stages: {},
+      },
+    };
+    assert.deepEqual(resolveRoute(cfg, "stage-04", "backend"), { hostName: "codex", model: undefined });
+    assert.deepEqual(resolveRoute(cfg, "stage-06", "qa"), { hostName: "claude-code", model: "claude-haiku-4-5-20251001" });
+  });
+
+  it("resolveHost stays a byte-identical wrapper for acp:<command> routes", () => {
+    const cfg = { routing: { default_host: "generic", roles: { backend: "acp:claude-agent-acp" }, stages: {} } };
+    assert.equal(resolveHost(cfg, "stage-04", "backend"), "acp");
+  });
+});
+
 describe("config: escalateModel (32.3)", () => {
   const cfg = {
     routing: {

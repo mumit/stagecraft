@@ -3,13 +3,14 @@
 
 # Host Capability Reference
 
-Derived from `hosts/*/capabilities.json`. 7 host adapters.
+Derived from `hosts/*/capabilities.json`. 8 host adapters.
 Run `npm run docs:generate` to regenerate after editing capabilities files.
 
 ### Capabilities
 
 | Host          | Display name                           | headless | hooks | subagents | slashCommands | worktrees | goalLoop | telemetry |
 | ------------- | -------------------------------------- | -------- | ----- | --------- | ------------- | --------- | -------- | --------- |
+| acp           | Agent Client Protocol                  | yes      | no    | no        | no            | no        | no       | estimated |
 | antigravity   | Antigravity CLI                        | yes      | no    | no        | no            | yes       | no       | estimated |
 | claude-code   | Claude Code                            | yes      | yes   | yes       | yes           | yes       | yes      | native    |
 | codex         | Codex CLI                              | yes      | no    | no        | no            | yes       | yes      | native    |
@@ -26,6 +27,7 @@ How each host enforces the framework's core rules:
 
 | Host          | allowed_writes | stoplist       | shell        | network      | tool_budget |
 | ------------- | -------------- | -------------- | ------------ | ------------ | ----------- |
+| acp           | tool-call-time | tool-call-time | enforced     | enforced     | prompt-only |
 | antigravity   | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
 | claude-code   | tool-call-time | tool-call-time | enforced     | enforced     | native      |
 | codex         | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
@@ -40,6 +42,7 @@ Command the orchestrator spawns in `--headless` mode:
 
 | Host          | headlessCommand                                                                     |
 | ------------- | ----------------------------------------------------------------------------------- |
+| acp           | npx -y @agentclientprotocol/claude-agent-acp                                        |
 | antigravity   | agy --print --dangerously-skip-permissions                                          |
 | claude-code   | claude --dangerously-skip-permissions --print --output-format stream-json --verbose |
 | codex         | codex exec --sandbox workspace-write --json                                         |
