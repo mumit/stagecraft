@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-08-03T18:13:20.539Z",
+  "stage": "stage-04a",
+  "role": "platform",
+  "host": "claude-code",
+  "track": "full",
+  "run_id": "run-fixture-a",
+  "capture_reason": "gate-fail",
+  "prompt_hash": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "reproducibility": {
+    "model": null,
+    "model_version": null,
+    "temperature": null,
+    "seed": null,
+    "max_tokens": null,
+    "system_prompt_hash": null,
+    "tools_hash": null,
+    "stage": "stage-04a",
+    "workstream": null,
+    "host": null,
+    "timestamp": "2026-07-20T10:00:00Z",
+    "orchestrator": "devteam@test"
+  },
+  "framework_version": "0.9.0",
+  "stamper_version": null,
+  "gate": {
+    "stage": "stage-04a",
+    "orchestrator": "devteam@test",
+    "track": "full",
+    "timestamp": "2026-07-20T10:00:00Z",
+    "status": "FAIL",
+    "blockers": [
+      "lint: 3 errors in src/widgets.js"
+    ],
+    "warnings": [],
+    "lint_passed": false,
+    "tests_passed": true,
+    "dependency_review_passed": true,
+    "license_check_passed": true,
+    "license_findings": [],
+    "security_review_required": false,
+    "migration_safety_required": false
+  }
+}

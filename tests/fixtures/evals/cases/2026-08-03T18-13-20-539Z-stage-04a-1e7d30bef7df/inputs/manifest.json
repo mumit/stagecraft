@@ -1,0 +1,12 @@
+[
+  {
+    "path": "pipeline/context.md",
+    "sha256": "c9573bb9cdf377fa701907d30034f47c22ded29445ec71787ad10ffc1e9ed0b5",
+    "bytes": 58
+  },
+  {
+    "path": "pipeline/build-plan.md",
+    "sha256": "2a9a1ffc5b72e33845fc80d84ae468dd393c9981655305a46b8329659820857d",
+    "bytes": 51
+  }
+]

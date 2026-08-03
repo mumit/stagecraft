@@ -336,14 +336,18 @@ Summarize the run corpus (.devteam/corpus/dispatches.jsonl): total dispatches, p
 | --cwd  | string | Target project directory |
 | --json | bool   | JSON output              |
 
-### `devteam evals gc [options]`
+### `devteam evals <gc|run> [options]`
 
-Eval flywheel blob GC. Removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references. Cases are captured automatically on gate FAIL/ESCALATE and stamp overrides (plans/phase-33-eval-flywheel.md item 33.1).
+Eval flywheel. `gc` removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references (cases are captured automatically on gate FAIL/ESCALATE and stamp overrides, plans/phase-33-eval-flywheel.md item 33.1). `run` replays captured cases against the CURRENT framework — --stub (default) scores structurally, free; --headless-host <h> dispatches for real and flags a resolved case that fails again as a regression (item 33.2).
 
-| Flag   | Type   | Description              |
-| ------ | ------ | ------------------------ |
-| --cwd  | string | Target project directory |
-| --json | bool   | JSON output              |
+| Flag            | Type   | Description                                                   |
+| --------------- | ------ | ------------------------------------------------------------- |
+| --cwd           | string | Target project directory                                      |
+| --stub          | bool   | run: structural-only replay (default; free, no model)         |
+| --headless-host | string | run: dispatch for real against this host's headless machinery |
+| --filter        | string | run: only replay cases matching this stage id or case id      |
+| --budget-usd    | number | run: required cost cap before a --headless-host sweep         |
+| --json          | bool   | JSON output (run: JSONL, one line per case)                   |
 
 ### `devteam architecture <subcommand> [options]`
 

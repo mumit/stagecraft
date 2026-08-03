@@ -1,0 +1,10 @@
+{
+  "resolved_at": "2026-07-21T11:00:00Z",
+  "stage": "stage-06",
+  "cleared_by_retry": {
+    "ts": "2026-07-21T10:55:00Z",
+    "attempt": 1,
+    "cleared_gates": 1,
+    "derivable": true
+  }
+}

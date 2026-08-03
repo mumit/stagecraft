@@ -161,8 +161,8 @@ const COMMANDS = [
   },
   {
     name:        "evals",
-    synopsis:    "devteam evals gc [options]",
-    description: "Eval flywheel blob GC. Removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references. Cases are captured automatically on gate FAIL/ESCALATE and stamp overrides (plans/phase-33-eval-flywheel.md item 33.1).",
+    synopsis:    "devteam evals <gc|run> [options]",
+    description: "Eval flywheel. `gc` removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references (cases are captured automatically on gate FAIL/ESCALATE and stamp overrides, plans/phase-33-eval-flywheel.md item 33.1). `run` replays captured cases against the CURRENT framework — --stub (default) scores structurally, free; --headless-host <h> dispatches for real and flags a resolved case that fails again as a regression (item 33.2).",
   },
   {
     name:        "architecture",

@@ -1,6 +1,6 @@
 # Phase 33 — Eval Flywheel & Prompt Optimization
 
-Status: **in progress** (2026-08-02) — 33.1 shipped; 33.2/33.3/33.4 not started
+Status: **in progress** (2026-08-03) — 33.1/33.2 shipped; 33.3/33.4 not started
 (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.6;
 BACKLOG bet #3 "evals are the rate-limit" made concrete).
 Depends on: Phase 28 (corpus), Phase 30 (learning loop) recommended first.
@@ -9,7 +9,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §33
 | Item | Status |
 |---|---|
 | 33.1 Failed gates become eval cases | ✅ complete — `core/evals/capture.js`, `.devteam/evals/cases/` + `blobs/`, run-end resolution-linker, `devteam evals gc` |
-| 33.2 `devteam evals run` — the replay harness | not started |
+| 33.2 `devteam evals run` — the replay harness | ✅ complete — `core/evals/run.js`, `devteam evals run [--stub \| --headless-host <h>]`, CI job over `tests/fixtures/evals/` |
 | 33.3 Prompt-pack versioning | not started |
 | 33.4 GEPA-style offline prompt optimization | not started |
 

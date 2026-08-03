@@ -42,6 +42,35 @@ jobs:
           node bin/devteam init --host generic --cwd $target
           node bin/devteam doctor --cwd $target
 
+  evals-stub:
+    name: evals structural regression check (33.2)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # plans/phase-33-eval-flywheel.md item 33.2: replay the checked-in
+      # fixture corpus's cases (tests/fixtures/evals/) against THIS repo's
+      # current framework — free, no model. Catches a role brief/rules/
+      # render-helpers change that silently breaks prompt rendering for a
+      # stage/role the corpus covers, independent of the full test suite.
+      - name: Run devteam evals run --stub over the fixture corpus
+        run: |
+          TARGET=$(mktemp -d)
+          mkdir -p "$TARGET/.devteam/evals"
+          cp -R tests/fixtures/evals/cases "$TARGET/.devteam/evals/cases"
+          cp -R tests/fixtures/evals/blobs "$TARGET/.devteam/evals/blobs"
+          ./bin/devteam evals run --stub --cwd "$TARGET"
+
   test:
     name: node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
