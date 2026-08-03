@@ -6,8 +6,10 @@
 // file I/O capability (write_file, read_file, list_files).
 //
 // Configuration is resolved in priority order:
-//   1. .devteam/config.yml → hosts.openai-compat.*
-//   2. Environment variables (OPENAI_COMPAT_BASE_URL, _API_KEY, _MODEL)
+//   1. routing.roles/routing.stages {host, model} (phase-32 item 32.3 —
+//      descriptor.model, set by core/orchestrator.js's resolveAdapter)
+//   2. .devteam/config.yml → hosts.openai-compat.*
+//   3. Environment variables (OPENAI_COMPAT_BASE_URL, _API_KEY, _MODEL)
 //
 // Per-role model selection (config.yml):
 //   hosts:
@@ -121,7 +123,12 @@ async function callAPI(url, apiKey, model, messages, tools, timeoutMs) {
 
 async function invoke(descriptor, ctx, preRenderedPrompt) {
   const role = descriptor.role;
-  const { baseUrl, apiKey, model, verbose, cachingEnabled } = resolveConfig(ctx, role);
+  const { baseUrl, apiKey, model: configModel, verbose, cachingEnabled } = resolveConfig(ctx, role);
+  // Phase-32 item 32.3: routing.roles/routing.stages' {host, model} form
+  // (descriptor.model) takes precedence over this adapter's own
+  // hosts.openai-compat.models[role]/OPENAI_COMPAT_MODEL fallback — the
+  // same precedence direction as every other adapter (routing wins).
+  const model = (typeof descriptor.model === "string" && descriptor.model) || configModel;
 
   if (!apiKey) {
     throw new Error(

@@ -646,6 +646,80 @@ hosts:
     delete process.env.OPENAI_COMPAT_TEST_KEY;
   });
 
+  it("32.3: descriptor.model (routing-resolved) overrides hosts.openai-compat.models config", async () => {
+    const cwd = makeProject(`
+routing:
+  default_host: openai-compat
+pipeline:
+  default_track: full
+hosts:
+  openai-compat:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENAI_COMPAT_TEST_KEY
+    models:
+      default: test/model
+      pm: test/config-model
+`);
+    process.env.OPENAI_COMPAT_TEST_KEY = "sk-stub";
+    let capturedBody = null;
+    const savedFetch = global.fetch;
+    global.fetch = async (_url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Done." } }] }),
+        text: async () => "",
+      };
+    };
+    try {
+      const { invoke } = require(invokePath);
+      const desc = fixtureDescriptor({ model: "routing/pinned-model" });
+      const ctx = fixtureContext(cwd);
+      await invoke(desc, ctx, "test prompt");
+      assert.equal(capturedBody.model, "routing/pinned-model");
+    } finally {
+      global.fetch = savedFetch;
+      delete process.env.OPENAI_COMPAT_TEST_KEY;
+    }
+  });
+
+  it("32.3: falls back to hosts.openai-compat.models when descriptor.model is absent (back-compat)", async () => {
+    const cwd = makeProject(`
+routing:
+  default_host: openai-compat
+pipeline:
+  default_track: full
+hosts:
+  openai-compat:
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENAI_COMPAT_TEST_KEY
+    models:
+      default: test/model
+      pm: test/config-model
+`);
+    process.env.OPENAI_COMPAT_TEST_KEY = "sk-stub";
+    let capturedBody = null;
+    const savedFetch = global.fetch;
+    global.fetch = async (_url, opts) => {
+      capturedBody = JSON.parse(opts.body);
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Done." } }] }),
+        text: async () => "",
+      };
+    };
+    try {
+      const { invoke } = require(invokePath);
+      const desc = fixtureDescriptor(); // no .model — pre-32.3 shape
+      const ctx = fixtureContext(cwd);
+      await invoke(desc, ctx, "test prompt");
+      assert.equal(capturedBody.model, "test/config-model");
+    } finally {
+      global.fetch = savedFetch;
+      delete process.env.OPENAI_COMPAT_TEST_KEY;
+    }
+  });
+
   it("throws when no API key is configured", async () => {
     const cwd = makeProject(null);
     const savedKey = process.env.OPENAI_COMPAT_API_KEY;

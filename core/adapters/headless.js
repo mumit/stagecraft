@@ -146,6 +146,15 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     return Promise.reject(new Error(`invalid headlessCommand "${cmdString}": ${err.message}`));
   }
 
+  // Phase-32 item 32.3: routing-resolved model (descriptor.model, set by
+  // core/orchestrator.js from routing.roles/routing.stages' {host, model}
+  // form) reaches the CLI via a `--model <value>` flag — verified identical
+  // syntax across every runHeadless-driven host today (claude, codex,
+  // gemini, agy). Absent when routing didn't pin a model for this dispatch.
+  if (typeof descriptor.model === "string" && descriptor.model) {
+    args = [...args, "--model", descriptor.model];
+  }
+
   // C1: post-hoc write audit for adapters that declare enforces.allowed_writes = "post-hoc-audit".
   // Snapshot dirty state before spawn; diff after close to find unauthorized writes.
   const shouldAudit = adapter.capabilities?.enforces?.allowed_writes === "post-hoc-audit";

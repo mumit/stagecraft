@@ -36,8 +36,8 @@ const CORPUS_FILE_NAME = "dispatches.jsonl";
 // null, never omitted — downstream consumers (devteam corpus stats,
 // scripts/routing-suggest.js) can rely on a stable shape.
 const RECORD_FIELDS = [
-  "ts", "run_id", "stage", "role", "host", "model_observed", "track",
-  "prompt_hash", "prompt_bytes", "tokens_in", "tokens_out", "cost_usd",
+  "ts", "run_id", "stage", "role", "host", "model_observed", "model_requested",
+  "track", "prompt_hash", "prompt_bytes", "tokens_in", "tokens_out", "cost_usd",
   "cost_basis", "duration_ms", "queue_ms", "gate_status", "blockers",
   "retry_of", "framework_version",
 ];
@@ -156,6 +156,9 @@ function recordDispatch(cwd, opts = {}) {
   const { cost_usd, cost_basis } = observedOrAssertedCost(gate);
   const { tokens_in, tokens_out } = observedOrAssertedTokens(gate);
   const modelObserved = (gate && gate._orchestrator_observed && gate._orchestrator_observed.model_observed) || null;
+  // 32.3: what routing asked for (orchestrator-set at dispatch time), as
+  // opposed to modelObserved (what the host actually reported serving).
+  const modelRequested = (gate && typeof gate.model_requested === "string") ? gate.model_requested : null;
   const gateStatus = (gate && typeof gate.status === "string") ? gate.status : null;
   const retryOf = (gate && typeof gate.retry_number === "number") ? gate.retry_number : null;
   const track = Array.isArray(opts.track) ? opts.track.join(",") : (opts.track || null);
@@ -167,6 +170,7 @@ function recordDispatch(cwd, opts = {}) {
     role: opts.role || null,
     host: opts.host || null,
     model_observed: modelObserved,
+    model_requested: modelRequested,
     track,
     prompt_hash: opts.promptHash || null,
     prompt_bytes: nonNegativeNumber(opts.promptBytes),
@@ -262,7 +266,11 @@ function corpusRecordsToWorkstreams(records) {
       status: r.gate_status || undefined,
       cost_usd: typeof r.cost_usd === "number" ? r.cost_usd : undefined,
       duration_ms: typeof r.duration_ms === "number" ? r.duration_ms : undefined,
-      model: r.model_observed || undefined,
+      // 32.3: prefer the observed model (what actually served the dispatch);
+      // fall back to what routing requested so hosts with no native usage
+      // telemetry (gemini-cli, generic, omnigent) still contribute a model
+      // to per-(role,host,model) aggregation instead of "(unspecified)".
+      model: r.model_observed || r.model_requested || undefined,
       stage: r.stage || undefined,
       timestamp: r.ts || undefined,
     }));

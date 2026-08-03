@@ -18,7 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const yaml = require("js-yaml");
 const { loadGatesFrom, filterSince } = require("./dashboard");
-const { aggregatePerformance, summarize, formatDuration } = require("./performance");
+const { aggregatePerformance, aggregatePerformanceByModel, summarize, formatDuration } = require("./performance");
 const { formatUsd } = require("../core/pricing");
 const { readCorpus, corpusRecordsToWorkstreams } = require("../core/corpus");
 
@@ -196,6 +196,46 @@ function buildRecommendations(summaries, currentRouting, opts) {
   return recs;
 }
 
+// Phase-32 item 32.3: per-(role, host, model) cost deltas — "does a pinned
+// tier change actually cost/perform differently for this role?" Reported
+// only for roles with ≥2 distinct (host, model) pairs meeting the same
+// --min-dispatches floor as the host-level recommendations above (nothing
+// to compare against otherwise). Advisory only — no config is ever proposed
+// from this data, unlike buildRecommendations' host-level suggestions.
+function buildTierDeltas(modelSummaries, opts) {
+  const byRole = new Map();
+  for (const s of modelSummaries) {
+    if (!byRole.has(s.role)) byRole.set(s.role, []);
+    byRole.get(s.role).push(s);
+  }
+  const deltas = [];
+  for (const [role, perRole] of byRole) {
+    const eligible = perRole.filter((s) => s.total_dispatches >= opts.minDispatches);
+    if (eligible.length < 2) continue;
+    const sorted = [...eligible].sort((a, b) => {
+      const aCost = a.cost_per_pass_usd === null ? Infinity : a.cost_per_pass_usd;
+      const bCost = b.cost_per_pass_usd === null ? Infinity : b.cost_per_pass_usd;
+      return aCost - bCost;
+    });
+    const cheapest = sorted[0];
+    deltas.push({
+      role,
+      tiers: sorted.map((s) => ({
+        host: s.host,
+        model: s.model,
+        dispatches: s.total_dispatches,
+        pass_rate_first_try: s.pass_rate_first_try,
+        cost_per_pass_usd: s.cost_per_pass_usd,
+        p95_duration_ms: s.p95_duration_ms ?? null,
+        cost_delta_vs_cheapest_usd: (s.cost_per_pass_usd === null || cheapest.cost_per_pass_usd === null)
+          ? null
+          : s.cost_per_pass_usd - cheapest.cost_per_pass_usd,
+      })),
+    });
+  }
+  return deltas;
+}
+
 function loadCurrentConfig(cwd) {
   const cfgPath = path.join(cwd, ".devteam", "config.yml");
   if (!fs.existsSync(cfgPath)) return { path: cfgPath, routing: {}, raw: "" };
@@ -204,7 +244,30 @@ function loadCurrentConfig(cwd) {
   return { path: cfgPath, routing: parsed.routing || {}, raw, full: parsed };
 }
 
-function renderRecommendations(recs) {
+function renderTierDeltas(tierDeltas) {
+  const out = [];
+  if (tierDeltas.length === 0) return out;
+  out.push(`## Per-tier cost deltas (role, host, model)`);
+  out.push("");
+  out.push(`Roles seen under ≥2 distinct (host, model) pairs with sufficient data. Advisory only — no config change proposed here.`);
+  out.push("");
+  for (const d of tierDeltas) {
+    out.push(`### ${d.role}`);
+    out.push("");
+    out.push(`| Host | Model | Dispatches | First-try pass | Cost/pass | Δ vs cheapest | p95 duration |`);
+    out.push(`|---|---|---:|---:|---:|---:|---:|`);
+    for (const t of d.tiers) {
+      const delta = t.cost_delta_vs_cheapest_usd === null || t.cost_delta_vs_cheapest_usd === 0
+        ? "—"
+        : `+${formatUsd(t.cost_delta_vs_cheapest_usd)}`;
+      out.push(`| ${t.host} | ${t.model} | ${t.dispatches} | ${t.pass_rate_first_try.toFixed(0)}% | ${formatUsd(t.cost_per_pass_usd)} | ${delta} | ${formatDuration(t.p95_duration_ms)} |`);
+    }
+    out.push("");
+  }
+  return out;
+}
+
+function renderRecommendations(recs, tierDeltas = []) {
   const out = [];
   out.push("# devteam routing suggest");
   out.push("");
@@ -269,6 +332,8 @@ function renderRecommendations(recs) {
     }
     out.push("");
   }
+
+  out.push(...renderTierDeltas(tierDeltas));
 
   return out.join("\n");
 }
@@ -391,6 +456,8 @@ function main() {
   if (args.intent) process.stderr.write(`[routing-suggest] intent filter: ${args.intent}\n`);
 
   const summaries = [...aggregatePerformance(all).values()].map(summarize);
+  const modelSummaries = [...aggregatePerformanceByModel(all).values()].map(summarize);
+  const tierDeltas = buildTierDeltas(modelSummaries, { minDispatches: args.minDispatches });
   const cfg = loadCurrentConfig(args.cwd);
   const recs = buildRecommendations(summaries, cfg.routing, {
     minDispatches: args.minDispatches,
@@ -410,9 +477,10 @@ function main() {
       min_delta: args.minDelta,
       current_routing: cfg.routing,
       recommendations: recs,
+      tier_deltas: tierDeltas,
     }, null, 2));
   } else {
-    console.log(renderRecommendations(recs));
+    console.log(renderRecommendations(recs, tierDeltas));
   }
 }
 
@@ -420,7 +488,9 @@ if (require.main === module) main();
 
 module.exports = {
   buildRecommendations,
+  buildTierDeltas,
   renderRecommendations,
+  renderTierDeltas,
   scoreFor,
   compareScores,
   loadCurrentConfig,

@@ -137,6 +137,60 @@ describe("omnigent adapter", () => {
     }
   });
 
+  // Phase-32 item 32.3: routing.roles/routing.stages' {host, model} form
+  // (descriptor.model) takes precedence over hosts.omnigent.model.
+  it("32.3: descriptor.model overrides hosts.omnigent.model", () => {
+    const cwd = makeTargetProject({
+      config: [
+        "routing:",
+        "  default_host: omnigent",
+        "pipeline:",
+        "  default_track: full",
+        "hosts:",
+        "  omnigent:",
+        "    model: claude-sonnet-4",
+        "",
+      ].join("\n"),
+    });
+    const original = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      const descriptor = { workstreamId: "stage-01", model: "routing/pinned-model" };
+      const built = adapter.buildOmnigentInvocation("stage prompt", { cwd }, descriptor);
+      assert.ok(built.args.includes("--model"));
+      assert.equal(built.args[built.args.indexOf("--model") + 1], "routing/pinned-model");
+    } finally {
+      if (original !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = original;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      cleanup(cwd);
+    }
+  });
+
+  it("32.3: falls back to hosts.omnigent.model when no descriptor.model is set (back-compat)", () => {
+    const cwd = makeTargetProject({
+      config: [
+        "routing:",
+        "  default_host: omnigent",
+        "pipeline:",
+        "  default_track: full",
+        "hosts:",
+        "  omnigent:",
+        "    model: claude-sonnet-4",
+        "",
+      ].join("\n"),
+    });
+    const original = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      const built = adapter.buildOmnigentInvocation("stage prompt", { cwd }, { workstreamId: "stage-01" });
+      assert.equal(built.args[built.args.indexOf("--model") + 1], "claude-sonnet-4");
+    } finally {
+      if (original !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = original;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      cleanup(cwd);
+    }
+  });
+
   it("supports stdin prompt transport without putting prompt text in arguments", () => {
     const cwd = makeTargetProject({
       config: [

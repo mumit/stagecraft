@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
-const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage, patchGateForEstimatedUsage } =
+const { runStage, runStageHeadless, mergeWorkstreamGates, buildDescriptor, summary, renderOmnigentDirectorPrompt, patchGateForUnpricedModel, patchGateForObservedUsage, patchGateForEstimatedUsage, patchGateWithRequestedModel } =
   require(path.join(REPO_ROOT, "core", "orchestrator"));
 const { listArchives } = require(path.join(REPO_ROOT, "core", "gates", "archive"));
 const { STAGES, getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
@@ -1001,6 +1001,190 @@ process.stdout.write("plain text output, no --output-format support\\n");
       const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
       assert.equal("_orchestrator_observed" in gate, false);
       assert.equal(gate.status, "PASS");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+});
+
+// ─── Phase-32 item 32.3: model-tier routing ────────────────────────────────
+function writeSimpleGateStub32_3(dir, name) {
+  const script = path.join(dir, name);
+  fs.writeFileSync(script, `const fs = require("node:fs");
+const path = require("node:path");
+const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
+fs.writeFileSync(gateFile, JSON.stringify({
+  stage: "stage-01", host: "claude-code", status: "PASS", track: "full",
+  blockers: [], warnings: [], orchestrator: "devteam@test",
+  timestamp: "2026-07-02T00:00:00.000Z"
+}, null, 2) + "\\n");
+`, "utf8");
+  return script;
+}
+
+describe("orchestrator: runStageHeadless stamps model_requested (32.3)", () => {
+  it("stamps model_requested from routing.roles' {host, model} object form", async () => {
+    const cwd = track(makeTargetProject({
+      config: [
+        "routing:",
+        "  default_host: generic",
+        "  roles:",
+        "    pm:",
+        "      host: claude-code",
+        "      model: claude-haiku-4-5-20251001",
+        "pipeline:",
+        "  default_track: full",
+        "",
+      ].join("\n"),
+    }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-model-requested-stub-"));
+    _dirs.push(dir);
+    const script = writeSimpleGateStub32_3(dir, "stub.js");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      assert.equal(r.exitCode, 0);
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate.model_requested, "claude-haiku-4-5-20251001");
+      assert.equal("_orchestrator_escalated" in gate, false);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("omits model_requested entirely when routing didn't pin a model (back-compat)", async () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n",
+    }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-model-requested-stub-"));
+    _dirs.push(dir);
+    const script = writeSimpleGateStub32_3(dir, "stub.js");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd });
+      const [r] = result.results;
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal("model_requested" in gate, false);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  // Rule 6 (fire-and-forget contract): a write failure here must never fail
+  // the run, same discipline as patchGateForObservedUsage above.
+  it("fire-and-forget: never throws when the gate file does not exist", () => {
+    const cwd = track(makeTargetProject());
+    const missing = path.join(cwd, "pipeline", "gates", "stage-99.json");
+    assert.doesNotThrow(() => patchGateWithRequestedModel(missing, "haiku", null));
+  });
+
+  it("fire-and-forget: never throws when the gate file is unreadable JSON", () => {
+    const cwd = track(makeTargetProject());
+    const dir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(dir, { recursive: true });
+    const gateFile = path.join(dir, "stage-01.json");
+    fs.writeFileSync(gateFile, "{ not valid json");
+    assert.doesNotThrow(() => patchGateWithRequestedModel(gateFile, "haiku", null));
+    assert.equal(fs.readFileSync(gateFile, "utf8"), "{ not valid json");
+  });
+
+  it("fire-and-forget: never throws when the write itself fails (simulated disk-full)", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    // A valid, readable gate (loadGateSafe succeeds) but writeFileSync
+    // throws — exercises the try/catch around the write itself, not just
+    // the read-side loadGateSafe guard the two tests above cover.
+    const original = fs.writeFileSync;
+    fs.writeFileSync = () => { throw new Error("simulated disk-full"); };
+    try {
+      assert.doesNotThrow(() => patchGateWithRequestedModel(gateFile, "haiku", null));
+    } finally {
+      fs.writeFileSync = original;
+    }
+  });
+});
+
+describe("orchestrator: escalate_on_retry bumps a pinned model one tier (32.3)", () => {
+  function baseConfig(escalate) {
+    return [
+      "routing:",
+      "  default_host: generic",
+      `  escalate_on_retry: ${escalate}`,
+      "  roles:",
+      "    pm:",
+      "      host: claude-code",
+      "      model: haiku",
+      "  tiers:",
+      "    claude-code:",
+      "      - haiku",
+      "      - sonnet",
+      "      - opus",
+      "pipeline:",
+      "  default_track: full",
+      "",
+    ].join("\n");
+  }
+
+  it("bumps the model one tier when isRetry is true and escalate_on_retry is true", async () => {
+    const cwd = track(makeTargetProject({ config: baseConfig(true) }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-escalate-stub-"));
+    _dirs.push(dir);
+    const script = writeSimpleGateStub32_3(dir, "stub.js");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd, isRetry: true });
+      const [r] = result.results;
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate.model_requested, "sonnet");
+      assert.equal(gate._orchestrator_escalated.from_model, "haiku");
+      assert.equal(gate._orchestrator_escalated.to_model, "sonnet");
+      assert.equal(gate._orchestrator_escalated.reason, "escalate_on_retry");
+      assert.ok(typeof gate._orchestrator_escalated.at === "string" && gate._orchestrator_escalated.at.length > 0);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("does not escalate on a first dispatch (isRetry: false)", async () => {
+    const cwd = track(makeTargetProject({ config: baseConfig(true) }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-escalate-stub-"));
+    _dirs.push(dir);
+    const script = writeSimpleGateStub32_3(dir, "stub.js");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd, isRetry: false });
+      const [r] = result.results;
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate.model_requested, "haiku");
+      assert.equal("_orchestrator_escalated" in gate, false);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("does not escalate on retry when escalate_on_retry is false (default)", async () => {
+    const cwd = track(makeTargetProject({ config: baseConfig(false) }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-escalate-stub-"));
+    _dirs.push(dir);
+    const script = writeSimpleGateStub32_3(dir, "stub.js");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
+    try {
+      const result = await runStageHeadless("requirements", { cwd, isRetry: true });
+      const [r] = result.results;
+      const gate = JSON.parse(fs.readFileSync(r.gatePath, "utf8"));
+      assert.equal(gate.model_requested, "haiku");
+      assert.equal("_orchestrator_escalated" in gate, false);
     } finally {
       if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
       else process.env.DEVTEAM_HEADLESS_COMMAND = previous;

@@ -145,6 +145,37 @@ describe("corpus: recordDispatch via runStageHeadless (28.5)", () => {
     assert.equal(design.run_id, "run-abc");
   });
 
+  // Phase-32 item 32.3: model_requested (orchestrator-set at dispatch time,
+  // from routing.roles' {host, model} form) round-trips through the gate
+  // into the corpus record — the substrate scripts/routing-suggest.js's
+  // per-tier cost-delta section reads.
+  it("32.3: records model_requested from the gate's orchestrator-stamped field", async () => {
+    const cwd = track(makeTargetProject({
+      config: [
+        "routing:",
+        "  default_host: generic",
+        "  roles:",
+        "    pm:",
+        "      host: codex",
+        "      model: gpt-5-mini",
+        "pipeline:",
+        "  default_track: full",
+        "",
+      ].join("\n"),
+    }));
+    const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-corpus-stub-"));
+    _dirs.push(stubDir);
+    const failScript = makeCodexFailStub(stubDir);
+
+    await withHeadlessCommand(`"${process.execPath}" "${failScript}"`, async () => {
+      const result = await runStageHeadless("requirements", { cwd, runId: "run-model-req" });
+      assert.equal(result.results[0].exitCode, 0);
+    });
+
+    const [req] = readCorpusLines(cwd);
+    assert.equal(req.model_requested, "gpt-5-mini");
+  });
+
   it("--skip-completed no-op dispatches are not recorded as corpus dispatches", async () => {
     const cwd = track(makeTargetProject({ config: codexConfig() }));
     // Pre-seed the gate so the dispatch is skipped entirely.

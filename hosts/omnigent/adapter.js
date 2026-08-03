@@ -124,7 +124,7 @@ function safeExtraArgs(value) {
   });
 }
 
-function resolveLaunchProfile(ctx = {}) {
+function resolveLaunchProfile(ctx = {}, descriptor = null) {
   let raw = {};
   try {
     raw = loadConfig(ctx.cwd || process.cwd())?._raw?.hosts?.omnigent || {};
@@ -159,7 +159,9 @@ function resolveLaunchProfile(ctx = {}) {
     agentSpecPath: configuredAgentSpecPath || AGENT_SPEC_REL,
     usesDefaultAgentSpec: !configuredAgentSpecPath,
     harness: optionalString(raw.harness),
-    model: optionalString(raw.model),
+    // 32.3: routing.roles/routing.stages' {host, model} form (descriptor.model)
+    // takes precedence over this host's own hosts.omnigent.model.
+    model: (descriptor && typeof descriptor.model === "string" && descriptor.model) || optionalString(raw.model),
     serverUrl: optionalString(raw.server_url),
     sessionMode,
     sessionId: optionalString(raw.session_id),
@@ -318,7 +320,7 @@ function buildOmnigentInvocation(prompt, ctx = {}, descriptor = null) {
       promptTransport: "argument",
     };
   }
-  const profile = resolveLaunchProfile(ctx);
+  const profile = resolveLaunchProfile(ctx, descriptor);
   if (profile.usesDefaultAgentSpec) ensureDefaultAgentSpecBundle(ctx.cwd);
   const command = attachPolicyFile(buildOmnigentCommandFromProfile(profile), descriptor, profile.policyMode);
   return {
