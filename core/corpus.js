@@ -37,9 +37,9 @@ const CORPUS_FILE_NAME = "dispatches.jsonl";
 // scripts/routing-suggest.js) can rely on a stable shape.
 const RECORD_FIELDS = [
   "ts", "run_id", "stage", "role", "host", "model_observed", "model_requested",
-  "track", "prompt_hash", "prompt_bytes", "tokens_in", "tokens_out", "cost_usd",
-  "cost_basis", "duration_ms", "queue_ms", "gate_status", "blockers",
-  "retry_of", "framework_version",
+  "prompt_pack_version", "track", "prompt_hash", "prompt_bytes", "tokens_in",
+  "tokens_out", "cost_usd", "cost_basis", "duration_ms", "queue_ms",
+  "gate_status", "blockers", "retry_of", "framework_version",
 ];
 
 function corpusDir(cwd) {
@@ -159,6 +159,11 @@ function recordDispatch(cwd, opts = {}) {
   // 32.3: what routing asked for (orchestrator-set at dispatch time), as
   // opposed to modelObserved (what the host actually reported serving).
   const modelRequested = (gate && typeof gate.model_requested === "string") ? gate.model_requested : null;
+  // 33.3: prompt_pack_version is orchestrator-computed and stamped onto the
+  // gate before recordDispatch runs (see core/orchestrator.js
+  // patchGateWithPromptPackVersion) — read straight off the gate like
+  // model_requested above, no independent computation needed here.
+  const promptPackVersion = (gate && typeof gate.prompt_pack_version === "string") ? gate.prompt_pack_version : null;
   const gateStatus = (gate && typeof gate.status === "string") ? gate.status : null;
   const retryOf = (gate && typeof gate.retry_number === "number") ? gate.retry_number : null;
   const track = Array.isArray(opts.track) ? opts.track.join(",") : (opts.track || null);
@@ -171,6 +176,7 @@ function recordDispatch(cwd, opts = {}) {
     host: opts.host || null,
     model_observed: modelObserved,
     model_requested: modelRequested,
+    prompt_pack_version: promptPackVersion,
     track,
     prompt_hash: opts.promptHash || null,
     prompt_bytes: nonNegativeNumber(opts.promptBytes),

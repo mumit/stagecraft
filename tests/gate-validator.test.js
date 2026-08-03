@@ -744,3 +744,32 @@ describe("gate-validator: dispatched_tool_budget auto-injection (G10)", () => {
       "validator must not change status when injecting tool-budget");
   });
 });
+
+// 33.3: the validator auto-injects prompt_pack_version for user-driven gates
+// (the interactive-hook path) — the headless path stamps it via
+// core/orchestrator.js#patchGateWithPromptPackVersion, same dual-path
+// convention as dispatched_tool_budget above.
+describe("gate-validator: prompt_pack_version auto-injection (33.3)", () => {
+  it("injects prompt_pack_version matching core/prompt-pack.js's computed value", () => {
+    const { computePromptPackVersion } = require(path.join(REPO_ROOT, "core", "prompt-pack"));
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+
+    runValidator(cwd);
+
+    const after = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+    assert.equal(after.prompt_pack_version, computePromptPackVersion(),
+      "validator must inject prompt_pack_version matching core/prompt-pack.js");
+  });
+
+  it("does not overwrite a prompt_pack_version already present in the gate", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS", prompt_pack_version: "deadbeef0000" });
+
+    runValidator(cwd);
+
+    const after = JSON.parse(fs.readFileSync(gateFile, "utf8"));
+    assert.equal(after.prompt_pack_version, "deadbeef0000",
+      "validator must not overwrite a prompt_pack_version already stamped");
+  });
+});

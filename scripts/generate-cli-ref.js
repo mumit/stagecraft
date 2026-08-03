@@ -161,8 +161,8 @@ const COMMANDS = [
   },
   {
     name:        "evals",
-    synopsis:    "devteam evals <gc|run> [options]",
-    description: "Eval flywheel. `gc` removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references (cases are captured automatically on gate FAIL/ESCALATE and stamp overrides, plans/phase-33-eval-flywheel.md item 33.1). `run` replays captured cases against the CURRENT framework — --stub (default) scores structurally, free; --headless-host <h> dispatches for real and flags a resolved case that fails again as a regression (item 33.2).",
+    synopsis:    "devteam evals <gc|run|compare> [options]",
+    description: "Eval flywheel. `gc` removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references (cases are captured automatically on gate FAIL/ESCALATE and stamp overrides, plans/phase-33-eval-flywheel.md item 33.1). `run` replays captured cases against the CURRENT framework — --stub (default) scores structurally, free; --headless-host <h> dispatches for real and flags a resolved case that fails again as a regression (item 33.2). `compare --pack <A> --pack <B>` reports per-stage pass-rate deltas between two prompt_pack_version values from the run corpus, refusing a stage below --min-n dispatches on either pack (item 33.3).",
   },
   {
     name:        "architecture",

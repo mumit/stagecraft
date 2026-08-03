@@ -11,6 +11,7 @@ This is the **C4** BACKLOG item. It pairs with **E6** (`devteam replay <stage>`,
 - [Replay readiness levels](#replay-readiness-levels)
 - [What this enables now vs later](#what-this-enables-now-vs-later)
 - [Replay (E6)](#replay-e6)
+- [Prompt-pack version (C4's consumer)](#prompt-pack-version-c4s-consumer)
 - [Caveats](#caveats--be-honest-about-whats-recorded)
 - [See also](#see-also)
 
@@ -215,7 +216,39 @@ Replay captures the original gate file's mtime before invoking the host, then re
 Original gate stays at `pipeline/gates/<stage-id>.json` (restored after the headless run overwrites it).
 Replay gates land at `pipeline/gates/replay/<stage-id>.<iso-timestamp>.json`. The replay subdirectory is outside what the validator scans; replay gates do not participate in normal pipeline-state decisions.
 
-## Caveats — be honest about what's recorded
+## Prompt-pack version (C4's consumer)
+
+`system_prompt_hash` (above) tells you a *single dispatch's* rendered prompt drifted. It says nothing about whether the drift was good or bad, and it's per-dispatch — there's no single value you can compare across a whole run, or across two different runs taken weeks apart, to ask "did the last round of role-brief edits actually help?"
+
+`prompt_pack_version` (phase-33 item 33.3, [`plans/phase-33-eval-flywheel.md`](../plans/phase-33-eval-flywheel.md) §33.3) is that value: a short content-hash version of the whole prompt surface — every file under `roles/`, `rules/`, and `templates/` (stable sorted ordering), sha256'd and truncated to 12 hex chars ([`core/prompt-pack.js`](../core/prompt-pack.js)). It changes if and only if a role brief, rule file, or template changes; it's identical across every stage and role dispatched from the same framework checkout.
+
+Unlike the reproducibility fields in the table above, `prompt_pack_version` is never model-asserted — it's orchestrator-computed, the same "add a distinct orchestrator-owned field, never let the model touch it" discipline as `_orchestrator_observed`. It lands on a gate two ways, mirroring `dispatched_tool_budget`'s dual-path convention:
+
+- **Headless runs:** `core/orchestrator.js`'s `patchGateWithPromptPackVersion` patches it onto the workstream gate right after dispatch (and the merged stage gate carries its own copy too).
+- **User-driven runs:** `core/gates/validator.js`'s `autoInjectMetadata` injects it into the SubagentStop hook's gate the same way it injects `orchestrator`/`host`.
+
+It's recorded identically in three places, so the same value is queryable from wherever you're looking:
+
+| Where | Field | Written by |
+|---|---|---|
+| Every gate | `prompt_pack_version` | `core/gates/schemas/gate.schema.json` (optional, additive) |
+| Every run-corpus row | `prompt_pack_version` | `core/corpus.js` (28.5 — `.devteam/corpus/dispatches.jsonl`) |
+| Every eval case | `prompt_pack_version` | `core/evals/capture.js` (33.1 — `.devteam/evals/cases/*/case.json`) |
+
+### `devteam evals compare --pack <A> --pack <B>`
+
+Turns "did the new principal brief help?" into a query instead of a feeling: per-stage pass-rate deltas between two pack versions, computed from the run corpus.
+
+```
+$ devteam evals compare --pack a1b2c3d4e5f6 --pack 32419bc9c408
+Prompt-pack compare: a1b2c3d4e5f6 vs 32419bc9c408 (min-n: 5)
+  stage-04         A: 6 dispatches, 83.3% pass   B: 9 dispatches, 88.9% pass   Δ +5.6pp
+  stage-06         refused — fewer than 5 dispatches on 32419bc9c408 for this stage (a1b2c3d4e5f6: 7, 32419bc9c408: 2)
+```
+
+Honesty rule: a stage is refused (never assigned a delta) when either pack has fewer than `--min-n` dispatches for that stage — default 5, the same floor D5 uses elsewhere in the corpus (`core/corpus.js`#`computeStats`). `--json` emits the same comparison as structured data for tooling. This is local-only, like the rest of the corpus — there is no cross-project pack comparison.
+
+
 
 - **Cached prompt segments.** Anthropic and OpenAI both support prompt caching; cached portions bill differently. `system_prompt_hash` covers the full prompt but does not reflect cache state. Two runs with identical hashes may have different cache hits and different cost profiles. Cost (D6) and prompt hash (C4) are independent dimensions.
 - **Multimodal inputs.** If a stage's prompt includes images (G5, not yet shipped), the hash treats them as opaque base64. Re-encoding the same image differently would change the hash.
@@ -225,6 +258,8 @@ Replay gates land at `pipeline/gates/replay/<stage-id>.<iso-timestamp>.json`. Th
 ## See also
 
 - [`core/reproducibility.js`](../core/reproducibility.js) — implementation.
+- [`core/prompt-pack.js`](../core/prompt-pack.js) — `prompt_pack_version` content hash (33.3).
+- [`core/evals/compare.js`](../core/evals/compare.js) — `devteam evals compare` (33.3).
 - [`core/gates/schemas/gate.schema.json`](../core/gates/schemas/gate.schema.json) — the optional fields.
 - [`docs/cost.md`](cost.md) — D6 cost telemetry, the sibling "recorded on the gate" feature.
 - [`docs/observability.md`](observability.md) — OTel spans, the runtime-side complement.

@@ -146,6 +146,11 @@
       "items": { "type": "string" },
       "description": "Optional (G10 tool budgets). Tool names the orchestrator declared available to this role at dispatch time, drawn from the host-neutral table in core/roles.js. null means no budget was declared (full host surface). Stamped by the orchestrator for headless runs; auto-injected by the gate validator for user-driven runs. Present on workstream gates; absent on merged stage gates."
     },
+    "prompt_pack_version": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{12}$",
+      "description": "Optional (phase-33 item 33.3). Short content-hash version of the prompt surface — sha256 over every file under roles/ + rules/ + templates/ (stable sorted ordering), truncated to 12 hex chars (core/prompt-pack.js). Changes iff any role brief, rule file, or template changes. Orchestrator-computed, never model-asserted: stamped by the orchestrator for headless runs (core/orchestrator.js patchGateWithPromptPackVersion) and auto-injected by the gate validator for user-driven runs (core/gates/validator.js autoInjectMetadata) — same dual-path convention as dispatched_tool_budget above. Recorded identically on the run corpus (core/corpus.js) and eval cases (core/evals/capture.js) so `devteam evals compare --pack <A> --pack <B>` can filter corpus outcomes by pack version (docs/reproducibility.md, C4's consumer)."
+    },
     "chain": {
       "type": "object",
       "description": "Optional (C6 tamper-evident chain). Stamped by the orchestrator onto stage-level gates: a hash of the predecessor stage gate, so mutating an earlier gate breaks the chain. Verified by `devteam verify-chain`. Stamped automatically by mergeWorkstreamGates (multi-role) and runStageHeadless (single-role); see core/gates/chain.js.",
