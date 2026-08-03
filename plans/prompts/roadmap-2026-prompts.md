@@ -13,7 +13,7 @@ Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see 
 | 29 | Scale-adaptive ceremony | 29.1–29.5 | ✅ complete (29.2 landed ADR-016) |
 | 30 | Closed learning loop | 30.1–30.5 | ✅ complete |
 | 31 | Verification depth | 31.1–31.5 | ✅ complete |
-| 32 | Performance & parallelism | 32.1–32.5 | 🔲 32.1 in progress; **32.2 needs ADR-017** (not 016) |
+| 32 | Performance & parallelism | 32.1–32.5 | ⚠️ 32.1 ✅ · 32.2 ⏸ ADR-017 drafted only (status Proposed), wave execution not built · 32.3 ✅ · 32.4 ⏸ deferred, no host adapter exposes worktree-isolation capability · 32.5 ✅ |
 | 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ⏸ 33.3 after 28.5 (done); 33.4 after 33.1–33.3 |
 | 34 | Interop & auditable SDLC | 34.1–34.4 | 🔲 34.4 after 28.6 ships one release |
 | 35 | Existing-codebase mode | 35.1–35.5 | 🔲 all ready |
@@ -624,7 +624,7 @@ the merge untouched; unparseable file handled as its own mismatch class.
 
 ## Phase 32 — Performance & Parallelism
 
-### 32.1 Cache-first prompt assembly 🔲
+### 32.1 Cache-first prompt assembly ✅ (PR #360)
 
 ```
 TASK: Implement plans/phase-32-performance-parallelism.md item 32.1 — stable-prefix
@@ -655,7 +655,7 @@ Tests: prefix-stability test; cache_control emission fixture; budget doc regener
 full suite green.
 ```
 
-### 32.2 Stage DAG waves ⏸ (ADR first)
+### 32.2 Stage DAG waves ⏸ (ADR-017 drafted, status Proposed — not Accepted; wave execution not built, PR #361 was ADR-only)
 
 ```
 TASK: Implement plans/phase-32-performance-parallelism.md item 32.2 — ADR-017 stage
@@ -683,7 +683,7 @@ failure class without corrupting siblings' gates; chain verify green; wave accou
 in run-log.
 ```
 
-### 32.3 Model-tier routing 🔲
+### 32.3 Model-tier routing ✅ (PR #362)
 
 ```
 TASK: Implement plans/phase-32-performance-parallelism.md item 32.3 — per-role/per-stage
@@ -708,7 +708,7 @@ Tests: back-compat string form; object form reaches each adapter's command/body;
 escalate-on-retry records provenance; suggest groups by model.
 ```
 
-### 32.4 Gate-verified best-of-N 🔲
+### 32.4 Gate-verified best-of-N ⏸ deferred — no host adapter declares `worktrees: true`, so this item's own precondition can't be met (attempted 2026-08-01, no ADR/code/branch resulted)
 
 ```
 TASK: Implement plans/phase-32-performance-parallelism.md item 32.4 — opt-in parallel
@@ -732,7 +732,7 @@ Tests: stubbed best-of-3, one pass → selection + archive + worktree cleanup; a
 collapse; cost summation; non-worktree host refusal; N=1 ≡ today.
 ```
 
-### 32.5 context.md diet 🔲
+### 32.5 context.md diet ✅ (PR #363)
 
 ```
 TASK: Implement plans/phase-32-performance-parallelism.md item 32.5 — context budget with

@@ -1,10 +1,19 @@
 # Phase 32 — Performance & Parallelism
 
-Status: **proposed** (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.5;
+Status: **mostly complete** (2026-08-02) — 32.1, 32.3, 32.5 shipped; 32.2 partial; 32.4 deferred.
+From [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.5;
 supersedes the analysis-only [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md)
-items #1, #5, #10).
+items #1, #5, #10.
 Depends on: Phase 28 (telemetry proves where time/money go; corpus feeds routing evidence).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §32.
+
+| Item | Status |
+|---|---|
+| 32.1 Cache-first prompt assembly | ✅ complete (PR #360) |
+| 32.2 Stage DAG waves | ⏸ partial — ADR-017 drafted (`docs/adr/017-dag-wave-execution.md`), still status `Proposed` (not Accepted); no wave-execution code (`dependsOn`, `max_parallel_stages`, `wave_id`, critical-path reporting) exists |
+| 32.3 Model-tier routing | ✅ complete (PR #362) |
+| 32.4 Gate-verified best-of-N | ⏸ deferred — no host adapter (`hosts/*/adapter.js`) declares worktree-isolation capability, so the item's own precondition ("hosts with `worktrees: true`") can't be satisfied; nothing to build against yet |
+| 32.5 context.md diet | ✅ complete (PR #363) |
 
 ## Why
 
