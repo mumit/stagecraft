@@ -82,6 +82,28 @@ describe("config: loadConfig", () => {
     assert.equal(loadConfig(cwd).pipeline.loop_build_role, "frontend");
   });
 
+  // 32.5: pipeline.context_budget_bytes — byte budget for pipeline/context.md,
+  // enforced by core/context-budget.js. See DEFAULTS.pipeline's comment.
+  it("defaults context_budget_bytes to 8192 when absent", () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: generic\n" }));
+    assert.equal(loadConfig(cwd).pipeline.context_budget_bytes, 8192);
+    assert.equal(DEFAULTS.pipeline.context_budget_bytes, 8192);
+  });
+
+  it("parses an explicit context_budget_bytes override", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  context_budget_bytes: 4096\n",
+    }));
+    assert.equal(loadConfig(cwd).pipeline.context_budget_bytes, 4096);
+  });
+
+  it("falls back to the default for a non-positive or non-integer context_budget_bytes", () => {
+    const cwd = track(makeTargetProject({
+      config: "pipeline:\n  context_budget_bytes: -1\n",
+    }));
+    assert.equal(loadConfig(cwd).pipeline.context_budget_bytes, 8192);
+  });
+
   // Phase 30 item 30.4 — memory.inject / inject_top_k / inject_similarity_floor.
   it("defaults memory.inject to true and inject_top_k to 3 when absent", () => {
     const cwd = track(makeTargetProject({ config: "routing:\n  default_host: generic\n" }));

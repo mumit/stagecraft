@@ -356,7 +356,7 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? ROLE_FRONTMATTER[descriptor.subagent]
     : ROLE_FRONTMATTER[descriptor.role];
   const agentName = fm ? fm.name : (descriptor.subagent || descriptor.role);
-  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -388,6 +388,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   for (const f of rest) lines.push(`- ${f}`);
   lines.push("");
   renderContextManifest(lines, descriptor);
+  renderContextDelta(lines, descriptor);
   lines.push(allowedWritesCaption(capabilities.enforces.allowed_writes, capabilities.displayName));
   for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
   lines.push("");

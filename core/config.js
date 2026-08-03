@@ -52,6 +52,12 @@ const DEFAULTS = {
     // unrecognized value falls back to the default rather than erroring.
     // See loopBuildRole() in core/pipeline/stages.js.
     loop_build_role: "backend",
+    // 32.5: byte budget for pipeline/context.md, enforced by
+    // core/context-budget.js whenever a devteam:* marker section is written.
+    // Over budget, the oldest RESOLVED marker section compacts to a one-line
+    // digest archived under pipeline/context-archive/; unresolved/active
+    // sections are never auto-compacted regardless of budget pressure.
+    context_budget_bytes: 8192,
   },
   autonomy: {
     // ADR-003 / H1: retry budget before `next()` escalates a still-FAIL stage
@@ -159,6 +165,9 @@ function loadConfig(cwd = process.cwd()) {
         loop_build_role: typeof parsed.pipeline?.loop_build_role === "string"
           ? parsed.pipeline.loop_build_role
           : DEFAULTS.pipeline.loop_build_role,
+        context_budget_bytes: Number.isInteger(parsed.pipeline?.context_budget_bytes) && parsed.pipeline.context_budget_bytes > 0
+          ? parsed.pipeline.context_budget_bytes
+          : DEFAULTS.pipeline.context_budget_bytes,
       },
       autonomy: {
         max_retries: Number.isInteger(parsed.autonomy?.max_retries) && parsed.autonomy.max_retries >= 0

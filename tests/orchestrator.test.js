@@ -44,6 +44,31 @@ describe("orchestrator: runStage decomposition", () => {
     assert.ok(backend.descriptor.contextManifest.files.some((file) => file.path === "src/backend/hello.js"));
   });
 
+  it("32.5(b): stage prompts include a context-changes delta derived from run-log.jsonl", () => {
+    const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, "pipeline", "run-log.jsonl"),
+      [
+        { ts: "2026-08-01T00:00:00.000Z", type: "workstream-started", workstream_id: "stage-04.backend" },
+        { ts: "2026-08-01T00:01:00.000Z", event: "context-section-change", action: "added", section: "run-blockers" },
+      ].map((e) => JSON.stringify(e)).join("\n") + "\n",
+    );
+    const r = runStage("build", { cwd });
+    const backend = r.workstreams.find((w) => w.role === "backend");
+    assert.deepEqual(backend.descriptor.contextDelta.added, ["run-blockers"]);
+    assert.match(backend.prompt, /## Context changes since your last dispatch/);
+    assert.match(backend.prompt, /added: devteam:run-blockers/);
+  });
+
+  it("32.5(b): omits the delta section on a workstream's first-ever dispatch", () => {
+    const cwd = track(makeTargetProject());
+    const r = runStage("build", { cwd });
+    const backend = r.workstreams.find((w) => w.role === "backend");
+    assert.equal(backend.descriptor.contextDelta, null);
+    assert.doesNotMatch(backend.prompt, /## Context changes since your last dispatch/);
+  });
+
   it("each workstream carries its own descriptor with role-specific id", () => {
     const cwd = track(makeTargetProject());
     const r = runStage("build", { cwd });

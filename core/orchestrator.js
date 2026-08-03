@@ -24,6 +24,7 @@ const { pricingFor } = require("./pricing");
 const { getRecipe } = require("./pipeline/fix-recipes");
 const { deterministicSkipForStage } = require("./pipeline/right-sizing");
 const { collectChangedFileManifest } = require("./context-manifest");
+const { computeContextDelta } = require("./context-delta");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
@@ -376,6 +377,10 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // null means the adapter declared no budget (full host surface applies).
     toolBudget: opts.toolBudget ?? null,
     contextManifest: opts.contextManifest || null,
+    // 32.5(b): marker sections added/removed/compacted in pipeline/context.md
+    // since this workstream's previous dispatch (core/context-delta.js).
+    // null on a workstream's first-ever dispatch — nothing to diff against.
+    contextDelta: opts.contextDelta || null,
     knownPatterns: Array.isArray(opts.knownPatterns) ? opts.knownPatterns : [],
     // 30.4: pre-fetched by runStageHeadless() (embedding is async; this
     // function is not) — see core/memory/inject.js's module header.
@@ -596,7 +601,10 @@ function runStage(stageName, opts = {}) {
       // on codex, gemini-cli, and generic dispatches.
       const toolBudget = require("./roles").toolBudgetFor(entry.role);
       warnIfToolBudgetDegraded(toolBudget, entry.role, hostName, adapter);
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
+      // 32.5(b): computed per workstream at plan time — null on a
+      // workstream's first-ever dispatch (nothing to diff against yet).
+      const contextDelta = computeContextDelta({ cwd: ctx.cwd, changeId: ctx.changeId, workstreamId: entry.workstreamId });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature

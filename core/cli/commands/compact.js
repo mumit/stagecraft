@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { pipelineRoot }  = require(path.join(__dirname, "..", "..", "paths"));
+const { parseSections } = require(path.join(__dirname, "..", "..", "markers"));
 
 const name = "compact";
 
@@ -14,27 +15,6 @@ const flags = {
   cwd:       { type: "string",  description: "Target project directory" },
   help:      { type: "boolean", description: "Show this help" },
 };
-
-// Matches any devteam-managed marker section:
-//   <!-- devteam:<name>:begin --> ... <!-- devteam:<name>:end -->
-// Non-greedy so adjacent sections are captured individually.
-const SECTION_RE = /<!--\s*devteam:([a-z-]+):begin\s*-->[\s\S]*?<!--\s*devteam:[a-z-]+:end\s*-->/g;
-
-// Parse all devteam marker sections from content. Returns sections in
-// document order with their byte offsets so callers can strip in reverse.
-function parseSections(content) {
-  const found = [];
-  SECTION_RE.lastIndex = 0;
-  let match;
-  while ((match = SECTION_RE.exec(content)) !== null) {
-    found.push({
-      sectionName: match[1],
-      start:       match.index,
-      end:         match.index + match[0].length,
-    });
-  }
-  return found;
-}
 
 // Remove all devteam marker sections from content.
 // Strips in reverse order so earlier offsets stay valid.

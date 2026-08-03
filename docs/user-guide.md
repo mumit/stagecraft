@@ -1744,7 +1744,7 @@ pipeline:
 
 Three factors you control drive most of the token cost per stage:
 
-**1. `pipeline/context.md` size.** This file is in the `readFirst` list for almost every stage. Every question, answer, and concern you append accumulates. On a long project it can exceed 200 lines and add thousands of tokens across a full run. Run `devteam compact` to strip all machine-written marker sections at once, then prune any remaining human-authored stale content before starting a new feature.
+**1. `pipeline/context.md` size.** This file is in the `readFirst` list for almost every stage. Every question, answer, and concern you append accumulates. On a long project it can exceed 200 lines and add thousands of tokens across a full run. Run `devteam compact` to strip all machine-written marker sections at once, then prune any remaining human-authored stale content before starting a new feature. `pipeline.context_budget_bytes` (default 8 KB) gives you automatic *partial* relief in between manual compacts: once a resolved section (right-sizing, deploy-target, red-team-blockers, qa-build-blockers) pushes the file over budget, it's compacted in place to a one-line digest pointing at the full text under `pipeline/context-archive/` — see the FAQ's [context.md growth entry](faq.md#pipelinecontextmd-keeps-growing--is-that-a-problem) for what is and isn't covered. Every rendered prompt also gets a "Context changes since your last dispatch" section so a retried workstream can see what changed without re-reading the whole file.
 
 What to keep vs. cut:
 
