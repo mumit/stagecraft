@@ -1869,6 +1869,23 @@ async function run(opts = {}) {
           } catch (err) {
             process.stderr.write(`[devteam] orchestrator merged-stamp failed: ${err.message}\n`);
           }
+          // Phase-33 item 33.1: capture a replayable eval case for the
+          // merged gate — the stage's true final status for multi-role
+          // stages (single-role stages are captured in
+          // core/orchestrator.js's runStageHeadless instead; see its
+          // comment). Fire-and-forget — see core/evals/capture.js.
+          try {
+            require("./evals/capture").captureEvalCase(cwd, {
+              config,
+              gatePath: m.file,
+              stage: r.stage,
+              track: effectiveTrack,
+              runId: state.started_at,
+              readFirst: STAGES[r.name] && STAGES[r.name].readFirst,
+            });
+          } catch (err) {
+            process.stderr.write(`[devteam] evals: merged-gate capture failed: ${err.message}\n`);
+          }
         }
         const mergeDurationMs = Date.now() - mergeStart;
         logEvent(cwd, changeId, {
@@ -1996,6 +2013,21 @@ async function run(opts = {}) {
       logEvent(cwd, changeId, { outcome: "memory-ingest", artifacts: result.artifacts, chunks: result.chunks });
     } catch (err) {
       logEvent(cwd, changeId, { outcome: "memory-ingest-failed", error: String((err && err.message) || err) });
+    }
+  }
+
+  // Phase-33 item 33.1: resolution-linker pass at run end. Runs whenever this
+  // run wrote at least one gate (same condition as pattern auto-collection
+  // above) regardless of completed/halted — a fix-retry can clear a
+  // previously-captured eval case within the same run that later halts on
+  // something unrelated. Fire-and-forget: never affects summary or exit code.
+  if (gateOnDisk && config.evals.capture !== false) {
+    try {
+      const { linkResolutions } = require("./evals/capture");
+      const result = linkResolutions(cwd, { changeId });
+      if (result.linked > 0) logEvent(cwd, changeId, { outcome: "evals-resolution-linked", linked: result.linked });
+    } catch (err) {
+      logEvent(cwd, changeId, { outcome: "evals-resolution-link-failed", error: String((err && err.message) || err) });
     }
   }
 

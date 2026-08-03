@@ -60,6 +60,7 @@ const COMMAND_MODULES = Object.freeze({
   performance: "performance",
   patterns: "patterns",
   corpus: "corpus",
+  evals: "evals",
 });
 
 const commandCache = Object.create(null);

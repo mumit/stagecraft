@@ -9,6 +9,7 @@ Stagecraft emits [OpenTelemetry](https://opentelemetry.io) spans for every pipel
 - [What's NOT traced (yet)](#whats-not-traced-yet)
 - [Pipeline log JSON](#pipeline-log-json)
 - [Run corpus](#run-corpus)
+- [Eval flywheel capture](#eval-flywheel-capture)
 - [Next roadmap](#next-roadmap)
 - [Backend-specific cookbooks](#backend-specific-cookbooks)
 - [Testing your instrumentation](#testing-your-instrumentation)
@@ -178,6 +179,45 @@ automatically (privacy model: local-only).
 `scripts/routing-suggest.js` (D5) reads the corpus as an additional data
 source alongside `pipeline/gates/` archives, so dispatch history survives
 gate archiving/pruning.
+
+## Eval flywheel capture
+
+Every gate FAIL/ESCALATE, and every orchestrator stamp `status_overridden`
+(the model-lied class — always captured, since it's already a FAIL), writes
+a replayable case under `.devteam/evals/cases/<ts>-<stage>-<hash>/`
+(phase-33 item 33.1,
+[`plans/phase-33-eval-flywheel.md`](../plans/phase-33-eval-flywheel.md)
+§33.1). Local-only and project-scoped — same privacy model as the run
+corpus above.
+
+Each case directory:
+
+- `case.json` — stage/role/host/track, the orchestrator-computed
+  `prompt_hash`, the gate's C4 reproducibility fields
+  (`core/reproducibility.js`), a sanitized gate snapshot (blockers/warnings
+  run through the same secret-scan path as the run corpus), and
+  framework/stamper versions.
+- `inputs/manifest.json` — the stage's `readFirst` artifact set,
+  content-addressed by sha256 into `.devteam/evals/blobs/` and deduped
+  across every case that snapshots the same content. A file that scans
+  positive for a secret (`core/hooks/secret-scan.js`, the same path the
+  stage-04c mechanical red-team floor uses) is excluded — never written to
+  a blob — and the manifest records the exclusion reason instead.
+- `resolution.json` — appended later by a run-end resolution-linker pass
+  (fire-and-forget, alongside pattern auto-collection/reflector/
+  memory-ingest in `core/driver.js`): once a `fix-retry` run-log event for
+  the same stage is followed by that stage's gate no longer being
+  FAIL/ESCALATE, the retry that cleared it is recorded here.
+
+Config: `evals.capture` (default `true`) in `.devteam/config.yml` — set to
+`false` to opt a proprietary-source project out entirely.
+
+```
+devteam evals gc [--json]
+```
+
+Removes `.devteam/evals/blobs/` entries no case's `inputs/manifest.json`
+references anymore (e.g. after manually deleting a case directory).
 
 ## Next roadmap
 

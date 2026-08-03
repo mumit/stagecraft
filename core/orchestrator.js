@@ -30,6 +30,7 @@ const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
 const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
 const corpus = require("./corpus");
+const evalsCapture = require("./evals/capture");
 
 // C1: patch a gate file to record write-audit violations and flip status to FAIL.
 // Called after headless invoke when the adapter reported unauthorized writes.
@@ -1204,6 +1205,26 @@ async function runStageHeadless(stageName, opts = {}) {
         queueMs: result.queueMs,
         gatePath: result.gatePath,
       });
+      // Phase-33 item 33.1: capture a replayable eval case for single-role
+      // stage gates that FAIL/ESCALATE (or carry a stamp status_overridden).
+      // Only single-role stages — plan.workstreams.length === 1 — write
+      // their FINAL gate here; multi-role stages' per-workstream gates
+      // aren't the stage's true final status until mergeWorkstreamGates +
+      // stampMerged run, so those are captured in core/driver.js's merge
+      // branch instead. Fire-and-forget — see core/evals/capture.js.
+      if (plan.workstreams.length === 1) {
+        evalsCapture.captureEvalCase(plan.ctx.cwd, {
+          config,
+          gatePath: result.gatePath,
+          stage: plan.stage,
+          role: result.role,
+          host: result.host,
+          track: plan.ctx.track,
+          runId: opts.runId || null,
+          promptHash: result.promptHash,
+          readFirst: result.descriptor && result.descriptor.readFirst,
+        });
+      }
     }
 
     return { stage: plan.stage, name: stageName, roles: plan.roles, results, ctx: plan.ctx };
