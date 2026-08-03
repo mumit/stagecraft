@@ -1,0 +1,3 @@
+# Design spec
+
+GET /widgets returns a paginated list.

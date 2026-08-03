@@ -1,0 +1,22 @@
+[
+  {
+    "path": "pipeline/context.md",
+    "sha256": "c9573bb9cdf377fa701907d30034f47c22ded29445ec71787ad10ffc1e9ed0b5",
+    "bytes": 58
+  },
+  {
+    "path": "pipeline/brief.md",
+    "sha256": "70e2f8eb5f4f4855c4081cbb1b520e2bbe8cccb6c40b6968b35881fd5fcf0c90",
+    "bytes": 40
+  },
+  {
+    "path": "pipeline/design-spec.md",
+    "sha256": "102342a49d5f7d96d8d34c367bf73185ebc7fe3c1fb016a59e67351bf6058ced",
+    "bytes": 54
+  },
+  {
+    "path": "pipeline/spec.feature",
+    "sha256": "f7afe9d236df37ad9c90f22ab08d245d0eb46bea1ca1a7a18e2d750e851994d7",
+    "bytes": 69
+  }
+]

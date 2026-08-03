@@ -1,0 +1,3 @@
+Feature: widgets
+  Scenario: list widgets
+    Then a 200 is returned
