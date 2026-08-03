@@ -113,6 +113,13 @@ const DEFAULTS = {
   review: {
     mode: "panel",
   },
+  // 33.1: replayable eval-case capture on gate FAIL/ESCALATE and stamp
+  // status_overridden (core/evals/capture.js). On by default — capture is
+  // local-only (.devteam/evals/, gitignored) and fire-and-forget; a project
+  // with proprietary-source concerns opts out with `evals: { capture: false }`.
+  evals: {
+    capture: true,
+  },
 };
 
 function configPath(cwd) {
@@ -199,6 +206,9 @@ function loadConfig(cwd = process.cwd()) {
         // An unrecognized value falls back to "panel" rather than throwing —
         // a typo'd config must never silently disable the whole stage.
         mode: parsed.review?.mode === "adversarial" ? "adversarial" : "panel",
+      },
+      evals: {
+        capture: parsed.evals?.capture !== false,
       },
       _source: "file",
       _path: p,
@@ -465,6 +475,10 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #                                 # + run-end auto-ingest; false disables both");
   lines.push("  # inject_top_k: 3                # results queried per stage dispatch");
   lines.push("  # inject_similarity_floor: 0     # drop results below this cosine similarity");
+  lines.push("");
+  lines.push("# evals:");
+  lines.push("  # capture: true   # phase-33 item 33.1 — replayable case on gate FAIL/ESCALATE");
+  lines.push("  #                 # + stamp overrides, under .devteam/evals/; false opts out");
   lines.push("");
   if (opts.adapter) {
     lines.push("deploy:");

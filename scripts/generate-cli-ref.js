@@ -160,6 +160,11 @@ const COMMANDS = [
     description: "Summarize the run corpus (.devteam/corpus/dispatches.jsonl): total dispatches, per-stage pass rates, per-(role, host) dispatch counts — the D5/H3 evidence-gate questions in docs/BACKLOG.md.",
   },
   {
+    name:        "evals",
+    synopsis:    "devteam evals gc [options]",
+    description: "Eval flywheel blob GC. Removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references. Cases are captured automatically on gate FAIL/ESCALATE and stamp overrides (plans/phase-33-eval-flywheel.md item 33.1).",
+  },
+  {
     name:        "architecture",
     synopsis:    "devteam architecture <subcommand> [options]",
     description: "Query the org-shared store for prior ADRs and lessons learned. Principal consults this before designing.",

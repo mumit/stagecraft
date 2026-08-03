@@ -3,7 +3,7 @@
 
 # CLI Reference
 
-Full `devteam` command reference. 39 commands.
+Full `devteam` command reference. 40 commands.
 Derived from the per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
@@ -330,6 +330,15 @@ Project-local pattern learning. Collect sanitized observations, review candidate
 ### `devteam corpus stats [options]`
 
 Summarize the run corpus (.devteam/corpus/dispatches.jsonl): total dispatches, per-stage pass rates, per-(role, host) dispatch counts — the D5/H3 evidence-gate questions in docs/BACKLOG.md.
+
+| Flag   | Type   | Description              |
+| ------ | ------ | ------------------------ |
+| --cwd  | string | Target project directory |
+| --json | bool   | JSON output              |
+
+### `devteam evals gc [options]`
+
+Eval flywheel blob GC. Removes .devteam/evals/blobs/ entries no captured case's inputs/manifest.json references. Cases are captured automatically on gate FAIL/ESCALATE and stamp overrides (plans/phase-33-eval-flywheel.md item 33.1).
 
 | Flag   | Type   | Description              |
 | ------ | ------ | ------------------------ |

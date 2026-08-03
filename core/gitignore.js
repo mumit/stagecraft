@@ -34,6 +34,7 @@ pipeline/changes/*/changed-files.txt
 .devteam/patterns/
 .devteam/evidence-project-id
 .devteam/corpus/
+.devteam/evals/
 ${BLOCK_END}`;
 
 /**
