@@ -163,7 +163,11 @@ function makeMarkdownHostAdapter(capabilities) {
     lines.push("");
     renderContextManifest(lines, descriptor);
     renderContextDelta(lines, descriptor);
-    lines.push(allowedWritesCaption(capabilities.enforces.allowed_writes, capabilities.displayName || hostName));
+    lines.push(allowedWritesCaption(
+      capabilities.enforces.allowed_writes,
+      capabilities.displayName || hostName,
+      capabilities.enforcementMechanismLabel,
+    ));
     for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
     if (descriptor.allowedWrites.some((f) => f.includes("<"))) {
       lines.push("(Note: `<name>` tokens above are placeholders — substitute your actual value.");

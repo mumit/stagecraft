@@ -115,6 +115,29 @@ describe("router: resolveAdapter", () => {
     assert.equal(a.model, undefined);
   });
 
+  // Phase-34 item 34.1: "acp:<command>" routes surface both the resolved
+  // host ("acp") and the inline launch command as agentCommand, alongside
+  // the loaded adapter — same "rides alongside the adapter" shape as
+  // model (32.3) above.
+  it("34.1: resolves \"acp:<command>\" routes and surfaces agentCommand", () => {
+    const cfgWithAcp = {
+      routing: {
+        default_host: "generic",
+        roles: { backend: "acp:claude-agent-acp --experimental" },
+        stages: {},
+      },
+    };
+    const a = resolveAdapter(cfgWithAcp, "stage-04", "backend");
+    assert.equal(a.hostName, "acp");
+    assert.equal(a.agentCommand, "claude-agent-acp --experimental");
+    assert.equal(a.adapter.capabilities.name, "acp");
+  });
+
+  it("34.1: string-form and object-form routes without acp: keep agentCommand undefined", () => {
+    const a = resolveAdapter(cfg, "stage-04", "backend");
+    assert.equal(a.agentCommand, undefined);
+  });
+
   it("resolves routing to an external @devteam/host-* adapter", () => {
     const tmp = writeExternalAdapterFixture("acme-route");
     process.chdir(tmp);

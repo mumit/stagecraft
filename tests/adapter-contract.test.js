@@ -212,7 +212,7 @@ describe("adapter contract", () => {
 // (claude-code includes a subagent block + patch-mode framing); the
 // footer is the part the test pins.
 describe("adapter contract: cross-host gate-footer equivalence", () => {
-  const SHARING_HOSTS = ["claude-code", "codex", "gemini-cli", "antigravity"];
+  const SHARING_HOSTS = ["claude-code", "codex", "gemini-cli", "antigravity", "acp"];
 
   // The shared footer starts at the "## Gate to write" heading and runs
   // to end-of-prompt. That's where appendGateFooter (render-helpers)
@@ -278,7 +278,7 @@ describe("adapter contract: cross-host gate-footer equivalence", () => {
 // same scoping constraint as claude-code and generic.
 describe("adapter contract: PATCH MODE rendering", () => {
   // All hosts that expose renderStagePrompt.
-  const HOSTS_WITH_RENDER = ["claude-code", "generic", "codex", "gemini-cli", "omnigent", "openai-compat", "antigravity"];
+  const HOSTS_WITH_RENDER = ["claude-code", "generic", "codex", "gemini-cli", "omnigent", "openai-compat", "antigravity", "acp"];
 
   // The normalized PATCH MODE heading — we check presence/absence of
   // this sentinel rather than byte-pinning the full block, to allow for
@@ -463,7 +463,7 @@ describe("adapter contract: claude-code renderSettingsLocal portable hooks", () 
 // After 6.1 the budget comes from core/roles.toolBudgetFor (host-neutral);
 // descriptorWithBudget() uses that real value instead of a fabricated array.
 describe("adapter contract: tool budget section rendering", () => {
-  const PROMPT_ONLY_HOSTS = ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity"];
+  const PROMPT_ONLY_HOSTS = ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity", "acp"];
   const { toolBudgetFor: rolesBudgetFor } = require(path.join(REPO_ROOT, "core", "roles"));
 
   function descriptorWithBudget() {
@@ -531,7 +531,7 @@ describe("adapter contract: 6.1 host-neutral tool-budget resolution", () => {
 
   // ── 1. Advisory section rendered + budget in descriptor for non-claude hosts ──
 
-  for (const host of ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity"]) {
+  for (const host of ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity", "acp"]) {
     it(`${host}: descriptor.toolBudget populated from core/roles (pm role)`, () => {
       const plan = runStage("requirements", { cwd: cwd(host) });
       const ws = plan.workstreams[0];

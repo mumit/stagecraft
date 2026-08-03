@@ -131,6 +131,11 @@ stagecraft/
 │   │   ├── adapter.js
 │   │   ├── capabilities.json
 │   │   └── tools.js                 ← HTTP-native tool loop
+│   ├── acp/                         ← Agent Client Protocol client — any ACP agent
+│   │   ├── adapter.js               ← session lifecycle, logging, gate resolution
+│   │   ├── jsonrpc.js                ← newline-delimited JSON-RPC 2.0 over stdio
+│   │   ├── permissions.js           ← allowed-writes + stoplist → request_permission
+│   │   └── capabilities.json        ← acpProtocolVersion: 1; allowed_writes/stoplist: tool-call-time
 │   └── generic/                     ← plain CLI, no in-host integration
 │       ├── adapter.js
 │       └── capabilities.json
