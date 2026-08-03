@@ -18,6 +18,7 @@
     "performance": "node scripts/performance.js",
     "routing:suggest": "node scripts/routing-suggest.js",
     "budget": "node scripts/budget.js",
+    "prompt-optimize": "node scripts/prompt-optimize.js",
     "release:check": "node scripts/release.js check",
     "release:notes": "node scripts/release.js notes",
     "docs:generate": "node scripts/docs-generate.js"

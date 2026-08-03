@@ -1,6 +1,6 @@
 # Phase 33 — Eval Flywheel & Prompt Optimization
 
-Status: **in progress** (2026-08-03) — 33.1/33.2/33.3 shipped; 33.4 not started
+Status: **complete** (2026-08-03) — 33.1/33.2/33.3/33.4 shipped
 (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.6;
 BACKLOG bet #3 "evals are the rate-limit" made concrete).
 Depends on: Phase 28 (corpus), Phase 30 (learning loop) recommended first.
@@ -11,7 +11,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §33
 | 33.1 Failed gates become eval cases | ✅ complete — `core/evals/capture.js`, `.devteam/evals/cases/` + `blobs/`, run-end resolution-linker, `devteam evals gc` |
 | 33.2 `devteam evals run` — the replay harness | ✅ complete — `core/evals/run.js`, `devteam evals run [--stub \| --headless-host <h>]`, CI job over `tests/fixtures/evals/` |
 | 33.3 Prompt-pack versioning | ✅ complete — `core/prompt-pack.js`, `core/evals/compare.js`, `devteam evals compare --pack <A> --pack <B>` |
-| 33.4 GEPA-style offline prompt optimization | not started |
+| 33.4 GEPA-style offline prompt optimization | ✅ complete — `scripts/prompt-optimize.js` (out-of-band, not a `devteam` command) |
 
 ## Why
 
@@ -85,6 +85,15 @@ diff like any PR, and 33.3 versioning tracks the outcome in production. Budget-c
 - Acceptance: end-to-end on a fixture corpus with a scripted model produces a diff +
   evidence table; refuses to run without a budget cap; no file outside the target brief
   is proposed for change.
+- VERIFY-FIRST finding: every host adapter renders a role brief or rule file as a path
+  pointer, never inlined content (`core/adapters/markdown-host.js`,
+  `hosts/claude-code/adapter.js`) — so a candidate's content never changes the rendered
+  dispatch prompt, only what a real host reads from disk. "Within prompt budget" is
+  therefore checked via `scripts/prompt-budget.js`'s byte accounting (which the
+  candidate's size DOES change), not the rendered-prompt structural check (which is
+  content-invariant for this reason and is run once as a sanity floor). The candidate's
+  real behavioral effect is measured only by the bounded real-model subset, where it is
+  patched into a scratch project a live host CLI actually reads.
 
 ## Out of scope
 
