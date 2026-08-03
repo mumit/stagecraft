@@ -7,7 +7,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
-const { allowedWritesCaption, appendGateFooter, renderContextManifest, renderKnownPatterns } =
+const { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderKnownPatterns } =
   require(path.join(REPO_ROOT, "core", "adapters", "render-helpers"));
 
 describe("render-helpers: allowedWritesCaption", () => {
@@ -66,6 +66,36 @@ describe("render-helpers: renderContextManifest", () => {
     assert.match(out, /sha256:0123456789abcdef/);
     assert.match(out, /2 additional changed file/);
     assert.doesNotMatch(out, /console\.log|function|class/);
+  });
+});
+
+describe("render-helpers: renderContextDelta", () => {
+  it("omits the section on a workstream's first dispatch (contextDelta is null)", () => {
+    const lines = ["before"];
+    renderContextDelta(lines, { contextDelta: null });
+    assert.deepEqual(lines, ["before"]);
+  });
+
+  it("omits the section when nothing changed since the last dispatch", () => {
+    const lines = ["before"];
+    renderContextDelta(lines, { contextDelta: { added: [], removed: [], compacted: [] } });
+    assert.deepEqual(lines, ["before"]);
+  });
+
+  it("renders added, removed, and compacted sections", () => {
+    const lines = [];
+    renderContextDelta(lines, {
+      contextDelta: {
+        added: ["run-blockers"],
+        removed: ["red-team-blockers"],
+        compacted: ["right-sizing"],
+      },
+    });
+    const out = lines.join("\n");
+    assert.match(out, /## Context changes since your last dispatch/);
+    assert.match(out, /added: devteam:run-blockers/);
+    assert.match(out, /removed: devteam:red-team-blockers/);
+    assert.match(out, /compacted to a digest.*devteam:right-sizing/);
   });
 });
 

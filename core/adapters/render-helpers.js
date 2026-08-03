@@ -174,6 +174,25 @@ function renderPriorKnowledge(lines, descriptor) {
   lines.push("");
 }
 
+// Phase 32.5(b): renders which pipeline/context.md devteam:* marker sections
+// changed since this workstream's previous dispatch (descriptor.contextDelta,
+// computed by core/context-delta.js at plan time). Renders nothing on a
+// workstream's first-ever dispatch (contextDelta is null — nothing to diff
+// against) or when nothing changed since the last one.
+function renderContextDelta(lines, descriptor) {
+  const delta = descriptor.contextDelta;
+  if (!delta) return;
+  const { added = [], removed = [], compacted = [] } = delta;
+  if (added.length === 0 && removed.length === 0 && compacted.length === 0) return;
+
+  lines.push("## Context changes since your last dispatch");
+  lines.push("`pipeline/context.md` marker sections that changed since this workstream's previous dispatch — if you already have the rest of the file cached, these are what's new.");
+  for (const s of added) lines.push(`- added: devteam:${s}`);
+  for (const s of removed) lines.push(`- removed: devteam:${s}`);
+  for (const s of compacted) lines.push(`- compacted to a digest (pipeline/context-archive/): devteam:${s}`);
+  lines.push("");
+}
+
 // Append the gate footer to a partially-assembled prompt. This is the
 // last thing every adapter pushes before returning lines.join("\n").
 // It writes:
@@ -214,4 +233,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, splitReadFirst, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, splitReadFirst, toolBudgetSection };

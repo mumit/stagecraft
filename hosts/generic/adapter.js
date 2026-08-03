@@ -35,7 +35,7 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? fs.readFileSync(roleBriefPath, "utf8")
     : `(role brief missing at ${roleBriefPath})`;
 
-  const { renderPatchBlock, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -70,6 +70,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   for (const f of rest) lines.push(`- ${f}`);
   lines.push("");
   renderContextManifest(lines, descriptor);
+  renderContextDelta(lines, descriptor);
   lines.push(`## Allowed writes (advisory — host: generic enforces this in prompt only)`);
   for (const f of descriptor.allowedWrites) lines.push(`- ${f}`);
   lines.push("");

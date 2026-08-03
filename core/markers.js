@@ -20,6 +20,12 @@
  *       remainder (validator behavior — least-surprise for hook callers).
  *     Corrupt input (end missing, or end before begin):
  *       strips from the begin-marker to EOF and warns on stderr.
+ *
+ *   parseSections(content)
+ *     Finds every devteam:<name>:begin/end pair in document order, returning
+ *     { sectionName, start, end } byte offsets. Shared by `devteam compact`
+ *     (core/cli/commands/compact.js) and the context-budget auto-compactor
+ *     (core/context-budget.js, phase 32.5) so both walk the same section set.
  */
 "use strict";
 
@@ -77,4 +83,30 @@ function stripSection(text, begin, end) {
   return text.slice(0, startIdx) + after;
 }
 
-module.exports = { upsertSection, stripSection };
+// Matches any devteam-managed marker section:
+//   <!-- devteam:<name>:begin --> ... <!-- devteam:<name>:end -->
+// Non-greedy so adjacent sections are captured individually.
+const SECTION_RE = /<!--\s*devteam:([a-z-]+):begin\s*-->[\s\S]*?<!--\s*devteam:[a-z-]+:end\s*-->/g;
+
+/**
+ * Parse all devteam marker sections from content. Returns sections in
+ * document order with their byte offsets so callers can strip/replace
+ * in reverse (or, for the budget compactor, in forward "oldest first" order).
+ * @param {string} content
+ * @returns {Array<{sectionName: string, start: number, end: number}>}
+ */
+function parseSections(content) {
+  const found = [];
+  SECTION_RE.lastIndex = 0;
+  let match;
+  while ((match = SECTION_RE.exec(content)) !== null) {
+    found.push({
+      sectionName: match[1],
+      start:       match.index,
+      end:         match.index + match[0].length,
+    });
+  }
+  return found;
+}
+
+module.exports = { upsertSection, stripSection, parseSections };

@@ -32,6 +32,7 @@ const { loadConfig } = require("../config.js");
 const { TRACKS } = require("../pipeline/stages.js");
 const { stripSection, upsertSection } = require("../markers.js");
 const { logContextSectionEvent } = require("../context-log.js");
+const { enforceContextBudget } = require("../context-budget.js");
 
 // --strict mode: the validator exits 1 on unknown internal errors instead of
 // treating them as PASS. Also activated when the CI=true env var is set.
@@ -240,6 +241,7 @@ function injectRedTeamBlockers(gate, cwd) {
 
   fs.writeFileSync(contextPath, content, "utf8");
   logContextSectionEvent(cwd, null, { action: "added", section: "red-team-blockers", stage: gate.stage });
+  enforceContextBudget(cwd, null);
   console.log(
     `[gate-validator] ℹ️  red-team blockers (${items.length}) written to pipeline/context.md`,
   );
@@ -292,6 +294,7 @@ function injectQABuildBlockers(gate, cwd) {
 
   fs.writeFileSync(contextPath, content, "utf8");
   logContextSectionEvent(cwd, null, { action: "added", section: "qa-build-blockers", stage: gate.stage });
+  enforceContextBudget(cwd, null);
   console.log(
     `[gate-validator] ℹ️  QA build blockers (${items.length}) written to pipeline/context.md`,
   );
