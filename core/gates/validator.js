@@ -31,6 +31,7 @@ const path = require("node:path");
 const { loadConfig } = require("../config.js");
 const { TRACKS } = require("../pipeline/stages.js");
 const { stripSection, upsertSection } = require("../markers.js");
+const { logContextSectionEvent } = require("../context-log.js");
 
 // --strict mode: the validator exits 1 on unknown internal errors instead of
 // treating them as PASS. Also activated when the CI=true env var is set.
@@ -238,6 +239,7 @@ function injectRedTeamBlockers(gate, cwd) {
   );
 
   fs.writeFileSync(contextPath, content, "utf8");
+  logContextSectionEvent(cwd, null, { action: "added", section: "red-team-blockers", stage: gate.stage });
   console.log(
     `[gate-validator] ℹ️  red-team blockers (${items.length}) written to pipeline/context.md`,
   );
@@ -289,6 +291,7 @@ function injectQABuildBlockers(gate, cwd) {
   );
 
   fs.writeFileSync(contextPath, content, "utf8");
+  logContextSectionEvent(cwd, null, { action: "added", section: "qa-build-blockers", stage: gate.stage });
   console.log(
     `[gate-validator] ℹ️  QA build blockers (${items.length}) written to pipeline/context.md`,
   );
@@ -328,6 +331,7 @@ function stripRedTeamBlockers(gate, cwd) {
     "<!-- devteam:red-team-blockers:end -->",
   );
   if (stripped) {
+    logContextSectionEvent(cwd, null, { action: "removed", section: "red-team-blockers", stage: gate.stage });
     console.log("[gate-validator] ℹ️  red-team blockers section cleared from pipeline/context.md (red-team is now PASS/WARN)");
   }
 }
@@ -348,6 +352,7 @@ function stripQABuildBlockers(gate, cwd) {
     "<!-- devteam:qa-build-blockers:end -->",
   );
   if (stripped) {
+    logContextSectionEvent(cwd, null, { action: "removed", section: "qa-build-blockers", stage: gate.stage });
     console.log("[gate-validator] ℹ️  QA build-blockers section cleared from pipeline/context.md (QA is now PASS/WARN)");
   }
 }

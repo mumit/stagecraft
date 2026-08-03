@@ -38,6 +38,7 @@ const { runAdvise } = require("./advise");
 const { MAX_RETRIES_DEFAULT, MAX_TRANSIENT_RETRIES_DEFAULT } = require("./gates/classify");
 const { loadPrincipalOutputs, runRuling, runFixEscalation } = require("./escalation");
 const { archiveGate, pruneArchives } = require("./gates/archive");
+const { logContextSectionEvent } = require("./context-log");
 const { detectNoProgress, noProgressEvidence, detectNoSourceChange, noSourceChangeEvidence } = require("./gates/convergence");
 const { checkStoplist, explainMatches, STOPLIST_TRACKS } = require("./guards/stoplist");
 const { category: evidenceCategory } = require("./evidence/analyzer");
@@ -549,6 +550,7 @@ function seedRightSizingContext(cwd, changeId, candidates) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const existing = fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
   fs.writeFileSync(p, upsertSection(existing, RIGHT_SIZING_BEGIN, RIGHT_SIZING_END, lines.join("\n"), { insert: "prepend" }));
+  logContextSectionEvent(cwd, changeId, { action: "added", section: "right-sizing" });
 }
 
 // Cross-stage context propagation (ADR-003 §4.3): record WHY a stage is being
@@ -573,6 +575,7 @@ function writeRunBlockers(cwd, stageName, blockers, changeId) {
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, upsertSection(existing, RUN_BLOCKERS_BEGIN, RUN_BLOCKERS_END, section));
+    logContextSectionEvent(cwd, changeId, { action: "added", section: "run-blockers", stage: stageName });
   } catch { /* best-effort */ }
 }
 
@@ -611,6 +614,7 @@ function seedDeployContext(cwd, config, changeId, opts = {}) {
   try {
     fs.mkdirSync(path.dirname(contextPath), { recursive: true });
     fs.writeFileSync(contextPath, upsertSection(existing, DEPLOY_CONTEXT_BEGIN, DEPLOY_CONTEXT_END, section));
+    logContextSectionEvent(cwd, changeId, { action: "added", section: "deploy-target" });
     return true;
   } catch { return false; }
 }
