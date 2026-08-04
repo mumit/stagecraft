@@ -90,6 +90,7 @@ They document why certain capability gates remain shut and what would open them.
 | [phase-4-ground-truth.md](phase-4-ground-truth.md) | 4.0 — convergence vs. spec | — | Implementation matched spec; no gaps at Phase 4 entry |
 | [h3-ground-truth.md](h3-ground-truth.md) | 9.2a — H3 recipe factory corpus | #129 | Gate stays shut: zero run-logs, zero gate archives; re-escalate after ≥2 real projects with ≥5 autonomous runs each |
 | [adaptive-routing-evidence.md](adaptive-routing-evidence.md) | 9.4 — D5 adaptive routing | #133 | Gate stays shut: max 4 dispatches per role (sms-opt-in fixture only); re-escalate after ≥5 dispatches per (role, host) pair across ≥2 real user projects with cost telemetry |
+| [acp-read-scope.md](acp-read-scope.md) | 36.0 — ACP read-scope spike | — | Real agent confirms unsandboxed absolute-path reads outside session cwd; recommendation: absolute paths (no permission-layer change needed) for 36.2 |
 
 ## Strategic analyses
 
