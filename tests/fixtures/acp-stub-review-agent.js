@@ -14,14 +14,15 @@
 //   "Produce `<path>`."                            -> artifact path to write
 //   "Write to `<path>`. You provide:"              -> gate path to write
 //
-// Both paths are relative to the review workspace (ctx.cwd / stateRoot), but
-// this process's session cwd is the SUBJECT (ctx.processCwd / codeRoot,
-// review mode's whole point) — see the honest scope note in
-// tests/review-command.test.js about that gap for a *real* (non-scripted)
-// agent. This stub sidesteps it the same way tests/fixtures/acp-stub-agent.js
-// sidesteps path ambiguity generally: the test harness tells it the
-// workspace's absolute path directly, via ACP_STUB_WORKSPACE_ROOT, rather
-// than deriving it from context a real agent wouldn't have either.
+// Both paths render as absolute stateRoot paths in review mode
+// (core/adapters/render-helpers.js's resolveFrameworkPath, reused for these
+// two write targets as of the 36.4 fix-up — previously they were relative,
+// which would have resolved against this process's session cwd, the SUBJECT
+// per ctx.processCwd/codeRoot, review mode's whole point). ACP_STUB_WORKSPACE_ROOT
+// is kept as a fallback (resolveAgainstWorkspace() below) for a relative
+// path, matching how tests/fixtures/acp-stub-agent.js is told the workspace
+// path directly rather than deriving it — belt-and-suspenders, not load-
+// bearing for this fix.
 //
 // Gate content is a minimal PASS skeleton per stage id (mirrors
 // tests/review-workspace.test.js's passGateFor()) — this stub is testing the
@@ -37,6 +38,11 @@ if (!WORKSPACE_ROOT) {
   process.stderr.write("acp-stub-review-agent: ACP_STUB_WORKSPACE_ROOT is required\n");
   process.exit(1);
 }
+
+// PEER_REVIEW_SIZING.full's four review areas (core/pipeline/stages.js) —
+// review-only falls through to this sizing (see stages.js's why-comment on
+// the "review-only" track entry).
+const PEER_REVIEW_AREAS = ["backend", "frontend", "platform", "qa"];
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 let nextId = 1;
@@ -85,16 +91,9 @@ function gateSkeletonFor(stageId, role) {
       noted_for_followup: [],
     };
   }
-  if (stageId === "stage-05") {
-    return {
-      ...base,
-      review_shape: "matrix",
-      required_approvals: 2,
-      approvals: [role],
-      changes_requested: [],
-      escalated_to_principal: false,
-    };
-  }
+  // No stage-05 branch: that gate is derived (core/hooks/approval-derivation.js
+  // via the 36.4 fix-up in hosts/acp/adapter.js), never written directly —
+  // see the "session/prompt" handler below.
   return base;
 }
 
@@ -120,21 +119,30 @@ const handlers = {
     // (core/adapters/render-helpers.js's "Note: <name> tokens are
     // placeholders — substitute your actual value" instruction) — a real
     // agent substitutes them by hand; this stub does the same.
-    const artifactRelRaw = extractFirstMatch(text, /^Produce `([^`]+)`.*\.$/m);
-    const artifactRel = artifactRelRaw ? artifactRelRaw.replace(/<[^>]+>/g, role) : null;
-    const gateRel = extractFirstMatch(text, /^Write to `([^`]+)`\. You provide:$/m);
+    const artifactRaw = extractFirstMatch(text, /^Produce `([^`]+)`.*\.$/m);
+    const artifactPath = artifactRaw ? artifactRaw.replace(/<[^>]+>/g, role) : null;
+    const gatePathRaw = extractFirstMatch(text, /^Write to `([^`]+)`\. You provide:$/m);
 
-    if (!workstreamId || !gateRel) {
+    if (!workstreamId || !gatePathRaw) {
       respond(id, { stopReason: "refusal" });
       return;
     }
 
-    const artifactAbs = artifactRel ? path.join(WORKSPACE_ROOT, artifactRel) : null;
+    // 36.4's write-target fix-up (core/adapters/render-helpers.js's
+    // resolveFrameworkPath, reused for the gate/artifact lines) means these
+    // are already absolute stateRoot paths in review mode — resolveAgainstWorkspace
+    // only matters as a fallback for a relative single-root prompt (not this
+    // stub's use case, but cheap to keep correct either way).
+    function resolveAgainstWorkspace(p) {
+      return path.isAbsolute(p) ? p : path.join(WORKSPACE_ROOT, p);
+    }
+    const artifactAbs = artifactPath ? resolveAgainstWorkspace(artifactPath) : null;
+    const gateAbs = resolveAgainstWorkspace(gatePathRaw);
     const toolCallId = "tc-1";
     const toolCall = {
       toolCallId, kind: "edit", title: "edit artifact",
       status: "pending",
-      locations: [{ path: artifactAbs || path.join(WORKSPACE_ROOT, gateRel) }],
+      locations: [{ path: artifactAbs || gateAbs }],
     };
     notify("session/update", { sessionId: params.sessionId, update: { sessionUpdate: "tool_call", ...toolCall } });
     const permResult = await request("session/request_permission", {
@@ -152,21 +160,29 @@ const handlers = {
       const stageId = workstreamId.split(".")[0];
       if (artifactAbs) {
         fs.mkdirSync(path.dirname(artifactAbs), { recursive: true });
-        // stage-05's merge step independently re-derives approval state from
-        // this file's "## Review of <area>" + "REVIEW:" markers
-        // (core/hooks/approval-derivation.js's parseReviewFile()) and FAILs
-        // the gate if the workstream gate's approval claim isn't backed by
-        // one — trust boundary, item 10: the gate is a claim, this file (or
-        // rather, what the orchestrator re-parses from it) is what's
-        // verified. Every other stage's artifact has no such re-derivation.
+        // stage-05's gate is never written directly below — since the 36.4
+        // fix-up (out-of-scope finding #2), hosts/acp/adapter.js derives it
+        // itself from this file's "## Review of <area>" + "REVIEW:" markers
+        // (core/hooks/approval-derivation.js#deriveForProject), the same way
+        // core/adapters/headless.js already does for codex/openai-compat.
+        // Every other stage's artifact has no such derivation and gets a
+        // gate written directly below, same as before.
+        // deriveForProject() skips a "## Review of <area>" section when
+        // <area> === the reviewer's own workstream role ("Reviewers must
+        // come from a different area", .devteam/rules/pipeline.md §Stage
+        // 5) — self-review would never derive a gate at all. So each
+        // reviewer here reviews every OTHER area, giving each of the 4
+        // areas 3 external approvals (>= PEER_REVIEW_SIZING.full's
+        // required_approvals=2).
         const content = stageId === "stage-05"
-          ? `## Review of ${role}\n\nREVIEW: APPROVED\n`
+          ? PEER_REVIEW_AREAS.filter((a) => a !== role).map((a) => `## Review of ${a}\n\nREVIEW: APPROVED\n`).join("\n")
           : `# stub artifact for ${workstreamId}\n\nNo findings.\n`;
         fs.writeFileSync(artifactAbs, content, "utf8");
       }
-      const gateAbs = path.join(WORKSPACE_ROOT, gateRel);
-      fs.mkdirSync(path.dirname(gateAbs), { recursive: true });
-      fs.writeFileSync(gateAbs, JSON.stringify(gateSkeletonFor(stageId, role), null, 2), "utf8");
+      if (stageId !== "stage-05") {
+        fs.mkdirSync(path.dirname(gateAbs), { recursive: true });
+        fs.writeFileSync(gateAbs, JSON.stringify(gateSkeletonFor(stageId, role), null, 2), "utf8");
+      }
     }
 
     respond(id, { stopReason: allowed ? "end_turn" : "refusal" });

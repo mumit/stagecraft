@@ -141,3 +141,103 @@ describe("36.2: rendered prompt (acp host) framework-path resolution", () => {
     }
   });
 });
+
+// 36.4 fix-up (plans/phase-36-external-review-mode.md, out-of-scope finding
+// #1 from item 36.4's own review): the two write targets every dispatch
+// names — the gate path ("Write to `...`") and the artifact path ("Produce
+// `...`") — were still *relative* even with differing roots, unlike the
+// readFirst entries above. A real agent resolves a relative path against its
+// own session cwd, which review mode sets to codeRoot (the subject), not
+// stateRoot — so following the prompt literally would either get the write
+// denied (36.1's codeRoot check; safe but broken) or require the agent to
+// infer stateRoot's absolute path from context the prompt didn't give it.
+// core/adapters/render-helpers.js#appendGateFooter and
+// core/adapters/markdown-host.js's artifact line now both resolve through
+// the same resolveFrameworkPath() 36.2 already used for reads.
+describe("36.4 fix-up: rendered prompt gate/artifact write targets resolve into stateRoot", () => {
+  test("differing roots: the gate-to-write path is absolute and resolves into stateRoot, not codeRoot", () => {
+    const adapter = loadAdapter("acp");
+    const stateRoot = mkTmp("gate-state");
+    const codeRoot = mkTmp("gate-code");
+    try {
+      const stageDef = getStage("security-review");
+      const descriptor = buildDescriptor(stageDef, "security", { cwd: stateRoot, processCwd: codeRoot });
+      const ctx = { track: "review-only", orchestrator: "devteam@test", cwd: stateRoot, processCwd: codeRoot };
+
+      const prompt = adapter.renderStagePrompt(descriptor, ctx);
+      const gateMatch = prompt.match(/Write to `([^`]+)`\. You provide:/);
+      assert.ok(gateMatch, "expected a 'Write to `<path>`. You provide:' gate line in the rendered prompt");
+      const gatePath = gateMatch[1];
+      assert.ok(path.isAbsolute(gatePath), `gate path must be absolute when roots differ: ${gatePath}`);
+      assert.ok(gatePath.startsWith(path.resolve(stateRoot)), `gate path must resolve into stateRoot: ${gatePath}`);
+      assert.ok(!gatePath.startsWith(path.resolve(codeRoot)), `gate path must never point into the subject: ${gatePath}`);
+      assert.ok(gatePath.endsWith(path.join("pipeline", "gates", `${descriptor.workstreamId}.json`)));
+    } finally {
+      fs.rmSync(stateRoot, { recursive: true, force: true });
+      fs.rmSync(codeRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("differing roots: the artifact-to-produce path is absolute and resolves into stateRoot, not codeRoot", () => {
+    const adapter = loadAdapter("acp");
+    const stateRoot = mkTmp("artifact-state");
+    const codeRoot = mkTmp("artifact-code");
+    try {
+      const stageDef = getStage("security-review");
+      const descriptor = buildDescriptor(stageDef, "security", { cwd: stateRoot, processCwd: codeRoot });
+      const ctx = { track: "review-only", orchestrator: "devteam@test", cwd: stateRoot, processCwd: codeRoot };
+
+      const prompt = adapter.renderStagePrompt(descriptor, ctx);
+      const artifactMatch = prompt.match(/Produce `([^`]+)`/);
+      assert.ok(artifactMatch, "expected a 'Produce `<path>`' artifact line in the rendered prompt");
+      const artifactPath = artifactMatch[1];
+      assert.ok(path.isAbsolute(artifactPath), `artifact path must be absolute when roots differ: ${artifactPath}`);
+      assert.ok(artifactPath.startsWith(path.resolve(stateRoot)), `artifact path must resolve into stateRoot: ${artifactPath}`);
+      assert.ok(!artifactPath.startsWith(path.resolve(codeRoot)), `artifact path must never point into the subject: ${artifactPath}`);
+      assert.ok(artifactPath.endsWith(path.join("pipeline", "security-review.md")));
+    } finally {
+      fs.rmSync(stateRoot, { recursive: true, force: true });
+      fs.rmSync(codeRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("differing roots: a placeholder artifact token (peer-review's by-<reviewer>.md) survives absolute resolution unresolved", () => {
+    const adapter = loadAdapter("acp");
+    const stateRoot = mkTmp("placeholder-state");
+    const codeRoot = mkTmp("placeholder-code");
+    try {
+      const stageDef = getStage("peer-review");
+      const descriptor = buildDescriptor(stageDef, "backend", { cwd: stateRoot, processCwd: codeRoot });
+      const ctx = { track: "review-only", orchestrator: "devteam@test", cwd: stateRoot, processCwd: codeRoot };
+
+      const prompt = adapter.renderStagePrompt(descriptor, ctx);
+      const artifactMatch = prompt.match(/Produce `([^`]+)`/);
+      assert.ok(artifactMatch, "expected a 'Produce `<path>`' artifact line in the rendered prompt");
+      const artifactPath = artifactMatch[1];
+      assert.ok(path.isAbsolute(artifactPath), `artifact path must be absolute when roots differ: ${artifactPath}`);
+      assert.ok(artifactPath.startsWith(path.resolve(stateRoot)), `artifact path must resolve into stateRoot: ${artifactPath}`);
+      assert.ok(artifactPath.includes("<reviewer>"), `placeholder token must survive absolute resolution unresolved: ${artifactPath}`);
+    } finally {
+      fs.rmSync(stateRoot, { recursive: true, force: true });
+      fs.rmSync(codeRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("equal roots: gate/artifact lines stay relative — byte-identical to processCwd unset (covered generally above, asserted directly here too)", () => {
+    const adapter = loadAdapter("acp");
+    const cwd = mkTmp("gate-equal");
+    try {
+      const stageDef = getStage("security-review");
+      const descriptor = buildDescriptor(stageDef, "security", { cwd });
+      const ctx = { track: "review-only", orchestrator: "devteam@test", cwd };
+
+      const prompt = adapter.renderStagePrompt(descriptor, ctx);
+      const gateMatch = prompt.match(/Write to `([^`]+)`\. You provide:/);
+      const artifactMatch = prompt.match(/Produce `([^`]+)`/);
+      assert.ok(gateMatch && !path.isAbsolute(gateMatch[1]), `gate path must stay relative on a single-root run: ${gateMatch && gateMatch[1]}`);
+      assert.ok(artifactMatch && !path.isAbsolute(artifactMatch[1]), `artifact path must stay relative on a single-root run: ${artifactMatch && artifactMatch[1]}`);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});

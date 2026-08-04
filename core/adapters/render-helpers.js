@@ -110,18 +110,24 @@ function toolBudgetSection(toolBudget, enforcementLevel) {
 }
 
 // Phase 36.2 (plans/phase-36-external-review-mode.md §36.2): resolve a
-// framework-owned relative path (a rule file, role brief, or template — see
-// core/pipeline/stages.js#isFrameworkReadFirstPath) against the two-root
-// model 36.1 introduced (hosts/acp/adapter.js's codeRoot/stateRoot split).
-// `ctx.processCwd` is the subject (codeRoot) an agent's tool calls actually
-// run against; `ctx.cwd` is where state — and, per 36.3, the review
-// workspace's own copies of rules/roles/templates — lives (stateRoot).
-// When they're the same directory (every non-review run today, and any
-// future run where 34.1's ctx.processCwd is simply unset) this returns
-// `relPath` completely unchanged — the single-root byte-identical
-// regression this item's plan requires. Only when they genuinely differ
-// does a framework path need to become absolute: relative, it would resolve
-// against the agent's cwd (the subject), where it does not exist.
+// stateRoot-owned relative path against the two-root model 36.1 introduced
+// (hosts/acp/adapter.js's codeRoot/stateRoot split). `ctx.processCwd` is the
+// subject (codeRoot) an agent's tool calls actually run against; `ctx.cwd` is
+// where state lives (stateRoot) — 36.2 used this for *framework* reads (a
+// rule file, role brief, or template — core/pipeline/stages.js's
+// `isFrameworkReadFirstPath`, plus this same module's role-prompt/template
+// lines); 36.4's fix-up (plans/phase-36-external-review-mode.md, out-of-scope
+// finding #1) reuses it unchanged for the two *write* targets every dispatch
+// names — appendGateFooter's gate path below and markdown-host.js's artifact
+// line — since both are always stateRoot-owned (a gate or review artifact is
+// never subject content) exactly like a framework read, just in the other
+// direction. When codeRoot and stateRoot are the same directory (every
+// non-review run today, and any future run where 34.1's ctx.processCwd is
+// simply unset) this returns `relPath` completely unchanged — the
+// single-root byte-identical regression every caller here requires. Only
+// when they genuinely differ does a stateRoot-owned path need to become
+// absolute: relative, it would resolve against the agent's own session cwd
+// (the subject, in review mode), where it is not meant to land.
 function resolveFrameworkPath(relPath, ctx) {
   if (!ctx) return relPath;
   const path = require("node:path");
@@ -246,7 +252,13 @@ function renderContextDelta(lines, descriptor) {
 // `lines` is mutated in place. The function returns nothing.
 function appendGateFooter(lines, descriptor, ctx, hostName) {
   const { prefixPipelineRelative } = require("../paths");
-  const gatePath = prefixPipelineRelative(`pipeline/gates/${descriptor.workstreamId}.json`, descriptor.changeId || null);
+  const gatePathRel = prefixPipelineRelative(`pipeline/gates/${descriptor.workstreamId}.json`, descriptor.changeId || null);
+  // 36.4 fix-up (plans/phase-36-external-review-mode.md, out-of-scope finding
+  // #1): the gate always belongs under stateRoot (ctx.cwd), never the
+  // subject — same direction as resolveFrameworkPath's framework reads, just
+  // for a write target. Byte-identical to `gatePathRel` whenever
+  // ctx.processCwd is unset or equals ctx.cwd (every run before review mode).
+  const gatePath = resolveFrameworkPath(gatePathRel, ctx);
   lines.push(`## Gate to write`);
   lines.push(`Write to \`${gatePath}\`. You provide:`);
   lines.push("```json");
