@@ -25,6 +25,29 @@
 // stage's readFirst starts with it.
 const FRAMEWORK_READ_FIRST = ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md"];
 
+// Phase 36.2 (plans/phase-36-external-review-mode.md §36.2): which of the
+// above are Stagecraft's own content ("framework") versus the reviewed
+// repo's own content ("subject"). Derived from FRAMEWORK_READ_FIRST rather
+// than re-annotated on every one of the ~20 per-stage readFirst arrays
+// above, so this stays a one-place edit and every stage's plain-string
+// entries are untouched.
+//
+// AGENTS.md is deliberately excluded — left as "subject" on purpose. When a
+// review workspace's stateRoot differs from the subject's codeRoot
+// (hosts/acp/adapter.js's two-root model, 36.1), a reviewer must read the
+// SUBJECT's own AGENTS.md, not Stagecraft's init stub; the rules files below
+// are genuinely framework content and resolve into stateRoot instead.
+// core/orchestrator.js#buildDescriptor consults this to decide, per
+// readFirst entry, whether core/adapters/render-helpers.js#resolveFrameworkPath
+// should render an absolute stateRoot path or leave the relative form
+// untouched (the byte-identical single-root case). Do not "fix" this by
+// adding AGENTS.md here — see plans/phase-36-external-review-mode.md §36.2.
+const FRAMEWORK_ROOTED_READ_FIRST = new Set(FRAMEWORK_READ_FIRST.filter((p) => p !== "AGENTS.md"));
+
+function isFrameworkReadFirstPath(relPath) {
+  return typeof relPath === "string" && FRAMEWORK_ROOTED_READ_FIRST.has(relPath);
+}
+
 const STAGES = {
   requirements: {
     stage: "stage-01",
@@ -978,6 +1001,7 @@ function getStage(name) {
 module.exports = {
   STAGES,
   FRAMEWORK_READ_FIRST,
+  isFrameworkReadFirstPath,
   TRACKS,
   ORDERED_STAGE_NAMES,
   STAGES_BY_TRACK,

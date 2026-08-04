@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const { listRoles, ROLES_DIR } = require("../roles");
 const baseInstall = require("./base-install");
-const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderScopeLine, splitReadFirst, toolBudgetSection } = require("./render-helpers");
+const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection } = require("./render-helpers");
 
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -130,7 +130,11 @@ function makeMarkdownHostAdapter(capabilities) {
   // directly for the per-layer text.
   function renderStagePromptLayers(descriptor, ctx) {
     const promptRole = descriptor.subagent || descriptor.role;
-    const rolePromptPath = `${capabilities.rolePromptsDir}/${promptRole}.md`;
+    // 36.2: a role brief is always framework content — resolveFrameworkPath()
+    // rewrites it to an absolute stateRoot path only when ctx.processCwd
+    // (the subject) differs from ctx.cwd (the review workspace); every
+    // other run gets this string back unchanged.
+    const rolePromptPath = resolveFrameworkPath(`${capabilities.rolePromptsDir}/${promptRole}.md`, ctx);
     const lines = [];
 
     // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -178,8 +182,12 @@ function makeMarkdownHostAdapter(capabilities) {
     const budgetSection = toolBudgetSection(descriptor.toolBudget, capabilities.enforces.tool_budget);
     if (budgetSection) { lines.push(budgetSection); lines.push(""); }
     lines.push(`## Artifact`);
-    const templateRel = `.devteam/templates/${descriptor.template}`;
-    const templateExists = ctx.cwd && fs.existsSync(path.join(ctx.cwd, templateRel));
+    const templateRelPath = `.devteam/templates/${descriptor.template}`;
+    // Existence is always checked under stateRoot (ctx.cwd) — a review
+    // workspace's own template copy (36.3), same as today's single-root case.
+    const templateExists = ctx.cwd && fs.existsSync(path.join(ctx.cwd, templateRelPath));
+    // 36.2: templates are framework content too — see rolePromptPath above.
+    const templateRel = resolveFrameworkPath(templateRelPath, ctx);
     lines.push(templateExists
       ? `Produce \`${descriptor.artifact}\` using \`${templateRel}\`.`
       : `Produce \`${descriptor.artifact}\`.`);

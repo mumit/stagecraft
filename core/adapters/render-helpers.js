@@ -109,6 +109,29 @@ function toolBudgetSection(toolBudget, enforcementLevel) {
   ].join("\n");
 }
 
+// Phase 36.2 (plans/phase-36-external-review-mode.md §36.2): resolve a
+// framework-owned relative path (a rule file, role brief, or template — see
+// core/pipeline/stages.js#isFrameworkReadFirstPath) against the two-root
+// model 36.1 introduced (hosts/acp/adapter.js's codeRoot/stateRoot split).
+// `ctx.processCwd` is the subject (codeRoot) an agent's tool calls actually
+// run against; `ctx.cwd` is where state — and, per 36.3, the review
+// workspace's own copies of rules/roles/templates — lives (stateRoot).
+// When they're the same directory (every non-review run today, and any
+// future run where 34.1's ctx.processCwd is simply unset) this returns
+// `relPath` completely unchanged — the single-root byte-identical
+// regression this item's plan requires. Only when they genuinely differ
+// does a framework path need to become absolute: relative, it would resolve
+// against the agent's cwd (the subject), where it does not exist.
+function resolveFrameworkPath(relPath, ctx) {
+  if (!ctx) return relPath;
+  const path = require("node:path");
+  const codeRoot = ctx.processCwd || ctx.cwd;
+  const stateRoot = ctx.cwd;
+  if (!codeRoot || !stateRoot) return relPath;
+  if (path.resolve(codeRoot) === path.resolve(stateRoot)) return relPath;
+  return path.resolve(stateRoot, relPath);
+}
+
 // Phase 32.1 (cache-first prompt assembly): split a descriptor's readFirst
 // into the constant layer-1 "framework" prefix (core/pipeline/stages.js's
 // FRAMEWORK_READ_FIRST — AGENTS.md + the two always-loaded rule files) and
@@ -255,4 +278,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderScopeLine, splitReadFirst, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection };
