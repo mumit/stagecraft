@@ -1721,6 +1721,11 @@ async function run(opts = {}) {
             track: effectiveTrack,
             feature: opts.feature || "",
             scope: opts.scope, // Phase-35 item 35.1: --scope <path> (repeatable), review-only track
+            // Phase-36 item 36.3: opts.processCwd/opts.externalReviewMode thread
+            // through the same way opts.scope does — a review workspace run sets
+            // cwd to the workspace and processCwd to the subject being reviewed.
+            processCwd: opts.processCwd,
+            externalReviewMode: opts.externalReviewMode === true,
             intent,   // ADR-009 §Decision.7: propagate so adapters render repair prompts
             timeoutMs,
             skipCompleted: r.action === "continue-stage",

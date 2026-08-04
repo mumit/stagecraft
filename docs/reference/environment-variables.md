@@ -62,6 +62,7 @@ Resolution order: `.devteam/config.yml` → environment variables. When `api_key
 | `DEVTEAM_EMBEDDING_PROVIDER` | `local` | Embedding backend. Values: `local` (HuggingFace Transformers, downloads ~33 MB on first use), `openai` (OpenAI embeddings API), `stub` (zero-vectors — no network or model required, useful in CI). |
 | `DEVTEAM_EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID for `local` provider. Example alternative: `Xenova/bge-base-en-v1.5` (110 MB, 768-dim, higher accuracy). |
 | `STAGECRAFT_ORG_MEMORY_DIR` | `~/.stagecraft/memory/` | Root directory for the org-shared memory store. Override to isolate memory across clients or machines (e.g. `~/.stagecraft-client-A/memory/`). |
+| `STAGECRAFT_REVIEWS_DIR` | `~/.stagecraft/reviews/` | Root directory for external-review workspaces (phase-36, `core/review-workspace.js`) — each subject reviewed gets `<this>/<slug>/`. Override to isolate reviews across clients or machines, or in tests. |
 
 ---
 
