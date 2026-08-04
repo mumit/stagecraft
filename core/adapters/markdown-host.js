@@ -188,9 +188,19 @@ function makeMarkdownHostAdapter(capabilities) {
     const templateExists = ctx.cwd && fs.existsSync(path.join(ctx.cwd, templateRelPath));
     // 36.2: templates are framework content too — see rolePromptPath above.
     const templateRel = resolveFrameworkPath(templateRelPath, ctx);
+    // 36.4 fix-up (plans/phase-36-external-review-mode.md, out-of-scope
+    // finding #1): the artifact is always written under stateRoot, never the
+    // subject — resolveFrameworkPath's own doc comment covers why reusing it
+    // here for a write target (not a framework read) is still correct.
+    // descriptor.artifact may carry a literal `<name>` placeholder
+    // (peer-review's `pipeline/code-review/by-<reviewer>.md`) — path.resolve
+    // treats that as an ordinary path segment, so the placeholder survives
+    // unchanged inside the now-absolute path; the "substitute your actual
+    // value" note below still applies verbatim.
+    const artifactPath = resolveFrameworkPath(descriptor.artifact, ctx);
     lines.push(templateExists
-      ? `Produce \`${descriptor.artifact}\` using \`${templateRel}\`.`
-      : `Produce \`${descriptor.artifact}\`.`);
+      ? `Produce \`${artifactPath}\` using \`${templateRel}\`.`
+      : `Produce \`${artifactPath}\`.`);
     lines.push("");
     appendGateFooter(lines, descriptor, ctx, hostName);
 

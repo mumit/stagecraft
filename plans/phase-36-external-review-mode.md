@@ -202,22 +202,31 @@ review-list}.schema.json`, and `tests/review-command.test.js`.** Ack flag:
 convention (`evidence.js`'s `--allow-unverified`) — states what's being given up, not
 just that the operator consents.
 
-**Two gaps found while wiring the real (stubbed) ACP dispatch end-to-end, neither fixed
-here:**
+**Two gaps found while wiring the real (stubbed) ACP dispatch end-to-end — both fixed in a
+follow-up commit on this branch rather than left open, per operator decision:**
 1. `Produce <artifact>` / `Write to pipeline/gates/<id>.json` (`core/adapters/
-   render-helpers.js`) are still *relative* paths. A real ACP agent resolves them against
-   its own session cwd, which review mode sets to the subject (36.1's `processCwd`), not
-   the workspace — so a real agent following the prompt literally either gets the write
-   denied (safe) or must infer the workspace's absolute path from context the prompt
-   doesn't give it. 36.2 solved this for *read* targets (`readFirst` entries render
-   absolute when roots differ); the write side (artifact + gate paths) needs the same
-   treatment. The test's stub sidesteps it via `ACP_STUB_WORKSPACE_ROOT`, told directly by
-   the harness — proving the plumbing, not this case.
-2. `hosts/acp/adapter.js` never calls `core/hooks/approval-derivation.js#deriveForProject`
-   the way `core/adapters/headless.js` does for non-ACP headless hosts. A real ACP-routed
-   peer-review dispatch has no automatic path from `pipeline/code-review/by-<role>.md` to a
-   derived `stage-05.<role>.json` gate. The test stub writes that gate directly (a script,
-   not bound by the "never authored by an agent" contract stage-05's schema describes).
+   render-helpers.js`) were *relative* paths. A real ACP agent resolves them against its
+   own session cwd, which review mode sets to the subject (36.1's `processCwd`), not the
+   workspace — so a real agent following the prompt literally either got the write denied
+   (safe) or had to infer the workspace's absolute path from context the prompt didn't
+   give it. **Fixed**: `appendGateFooter` (`render-helpers.js`) and the artifact line
+   (`markdown-host.js`) now both resolve through the same `resolveFrameworkPath()` 36.2
+   already used for reads — byte-identical when roots are equal, absolute-into-stateRoot
+   when they differ. Placeholder tokens (peer-review's `by-<reviewer>.md`) survive
+   unresolved, same as before. Covered by four new tests in
+   `tests/external-framework-paths.test.js` (36.4 fix-up describe block), verified to fail
+   without the fix.
+2. `hosts/acp/adapter.js` never called `core/hooks/approval-derivation.js#deriveForProject`
+   the way `core/adapters/headless.js` does for non-ACP headless hosts, so a real
+   ACP-routed peer-review dispatch had no automatic path from `pipeline/code-review/
+   by-<role>.md` to a derived `stage-05.<role>.json` gate. **Fixed**: `hosts/acp/
+   adapter.js`'s dispatch-close handler now calls `deriveForProject` for every
+   `by-*.md` file written during the session, mirroring `headless.js`'s block verbatim
+   (idempotent, gated on `!timedOut`). Exercised by `tests/review-command.test.js`'s
+   end-to-end test, which now relies on real derivation (cross-review content in each
+   role's `by-<role>.md`) rather than a hand-written `stage-05.<role>.json` — surfaced and
+   fixed the self-review guard (`.devteam/rules/pipeline.md` §Stage 5: "reviewers must come
+   from a different area") along the way, since the stub originally reviewed its own area.
 
 ### 36.5 `devteam review-pr` without an initialised project
 

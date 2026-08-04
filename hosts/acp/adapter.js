@@ -299,6 +299,30 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
       clearTimer();
       endLog(timedOut ? "TIMED OUT" : protocolError ? `PROTOCOL ERROR: ${protocolError.error}` : String(exitCode));
 
+      // Derive peer-review gates from any by-*.md files written during this
+      // session. ACP declared clientCapabilities.fs = {readTextFile:false,
+      // writeTextFile:false} at initialize, so it has no claude-code-style
+      // PostToolUse hook either — same gap core/adapters/headless.js already
+      // closes for hooks:false CLI hosts (codex, openai-compat). Without
+      // this, an ACP-routed peer-review dispatch has no automatic path from
+      // a by-<role>.md review file to a derived stage-05.<role>.json gate
+      // (36.4 fix-up, out-of-scope finding #2,
+      // plans/phase-36-external-review-mode.md). Idempotent.
+      if (!timedOut) {
+        const codeReviewDir = path.join(ctx.cwd, "pipeline", "code-review");
+        if (fs.existsSync(codeReviewDir)) {
+          const { deriveForProject } = require("../../core/hooks/approval-derivation");
+          for (const f of fs.readdirSync(codeReviewDir)) {
+            if (/^by-[\w-]+\.md$/.test(f)) {
+              const abs = path.join(codeReviewDir, f);
+              if (fs.statSync(abs).mtimeMs >= start) {
+                deriveForProject(abs, ctx.cwd);
+              }
+            }
+          }
+        }
+      }
+
       const gateExists = fs.existsSync(gatePath);
       let isStub = false;
       if (gateExists) {
