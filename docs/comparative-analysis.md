@@ -68,11 +68,13 @@ The predecessor repositories bind the method to one host's native surfaces; Stag
 preserves those native experiences while owning the common pipeline once. This removes
 parity drift and enables one run to route different workstreams through different hosts.
 
-## 4. Stagecraft in June 2026
+## 4. Stagecraft in August 2026
 
-Stagecraft is v0.9.0: 18 ordered stages, 7 tracks, 6 first-party host adapters, 34 CLI
-command modules, 104 test files, and 2,203 passing runtime tests. The project has
-moved substantially beyond the v0.5 snapshot in the prior comparison.
+Stagecraft is v0.9.0: 18 ordered stages, 7 tracks, 7 first-party host adapters
+(claude-code, codex, antigravity, openai-compat, acp, omnigent, generic — gemini-cli
+moved to the `@devteam/host-gemini-cli` plugin package after Google deprecated it
+upstream), 42 CLI command modules, 132 test files, and 2,816 passing runtime tests. The
+project has moved substantially beyond the v0.5 snapshot in the prior comparison.
 
 Material capabilities added or matured since that snapshot include:
 

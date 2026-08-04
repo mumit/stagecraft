@@ -2,10 +2,14 @@
 
 Phase plans produced from the 2026-06-10 full-framework review and subsequent audits. Each phase is a set of
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
-written to be executed one item at a time. **Phases 1–20, 22, and 24 are
-complete. Phase 21, Phase 25, and Phase 26 are proposed for review and are not
-authorized for implementation. Real-project evidence collection and live-run
-observability remain the active capability priorities.**
+written to be executed one item at a time.
+
+**Current state (2026-08-03):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, and 34 are
+complete. Phase 32 is mostly complete with two open items. Phase 35 is written and ready
+to run. Phases 21, 25, and 26 are proposed and not authorized for implementation. See
+[What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
+Real-project evidence collection remains the priority that unblocks the capability gates
+listed under [Evidence reviews](#evidence-reviews).
 
 | Phase | Plan | Prompts | Theme | Status |
 |---|---|---|---|---|
@@ -35,19 +39,42 @@ observability remain the active capability priorities.**
 | 24 | [phase-24-omnigent-runtime.md](phase-24-omnigent-runtime.md) | — | Omnigent as a host runtime with policy/session bridge and experimental director prototype | ✅ complete (PRs #298–#304) |
 | 25 | [phase-25-omnigent-director-hardening.md](phase-25-omnigent-director-hardening.md) | — | Harden the Omnigent director prototype through dogfood, partial resume design, session evidence, policy conformance, and topology decisions | 📝 proposed and parked (#305) |
 | 26 | [phase-26-performance-observability-usability.md](phase-26-performance-observability-usability.md) | — | Performance, live-run observability, and operator usability overhaul | 📝 proposed (#312) |
-| 28 | [phase-28-ground-truth-telemetry.md](phase-28-ground-truth-telemetry.md) | [prompts](prompts/roadmap-2026-prompts.md) | Token/cost telemetry at the adapter layer, sanitized run corpus, Antigravity host continuity | 📝 proposed (2026-07 landscape review) |
-| 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | 📝 proposed (2026-07 landscape review) |
-| 30 | [phase-30-closed-learning-loop.md](phase-30-closed-learning-loop.md) | [prompts](prompts/roadmap-2026-prompts.md) | Auto-collect patterns, outcome-feedback counters, memory injection, ACE-lite reflector, SKILL.md export | 📝 proposed (2026-07 landscape review) |
-| 31 | [phase-31-verification-depth.md](phase-31-verification-depth.md) | [prompts](prompts/roadmap-2026-prompts.md) | Per-role stamping, mechanical red-team floor, adversarial review pair, mutation gate, quorum verification | 📝 proposed (2026-07 landscape review) |
+| 27 | [phase-27-pattern-learning.md](phase-27-pattern-learning.md) | — | D12 project-local pattern learning: `devteam patterns`, sanitized candidate collection, explicit promotion, bounded prompt injection | ✅ complete (PRs #333 plan · #334 implementation); the learning loop was closed later by phase 30 |
+| 28 | [phase-28-ground-truth-telemetry.md](phase-28-ground-truth-telemetry.md) | [prompts](prompts/roadmap-2026-prompts.md) | Token/cost telemetry at the adapter layer, sanitized run corpus, Antigravity host continuity | ✅ complete — 28.1 claude-code usage · 28.2 openai-compat usage · 28.3 codex usage + labelled estimates · 28.4 budget on observed cost · 28.5 run corpus + `devteam corpus stats` · 28.6 Antigravity adapter |
+| 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | ✅ complete — 29.1 `loop` track · 29.2 assess-by-default (ADR-016) · 29.3 ceremony cost preview · 29.4 compact QA fold (`stage-06x`) · 29.5 docs repositioning |
+| 30 | [phase-30-closed-learning-loop.md](phase-30-closed-learning-loop.md) | [prompts](prompts/roadmap-2026-prompts.md) | Auto-collect patterns, outcome-feedback counters, memory injection, reflector pass, SKILL.md export | ✅ complete — 30.1 auto-collect at run end · 30.2 injected/recurrence counters + demotion · 30.3 reflector pass · 30.4 memory retrieval into prompts · 30.5 SKILL.md export |
+| 31 | [phase-31-verification-depth.md](phase-31-verification-depth.md) | [prompts](prompts/roadmap-2026-prompts.md) | Per-role stamping, mechanical red-team floor, adversarial review pair, mutation gate, quorum verification | ✅ complete — 31.1 per-role stamping · 31.2 mechanical red-team floor · 31.3 adversarial reviewer+critic · 31.4 mutation smoke gate · 31.5 stage-05 quorum re-derivation |
 | 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | ⚠️ mostly complete — 32.1 ✅ cache-first prompts (PR #360) · 32.2 ⏸ ADR-017 drafted only, status Proposed, wave execution not built · 32.3 ✅ model-tier routing (PR #362) · 32.4 ⏸ deferred (no host adapter exposes worktree-isolated dispatch; the item's own precondition can't be met yet) · 32.5 ✅ context.md diet (PR #363) |
 | 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | ✅ complete — 33.1 eval capture · 33.2 `devteam evals run` · 33.3 `prompt_pack_version` · 33.4 `scripts/prompt-optimize.js` |
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | ✅ complete — 34.1 ACP adapter (PR #368) · 34.2 attestation export (PR #369) · 34.3 compliance mapping (PR #370) · 34.4 gemini-cli → plugin package |
 | 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | 📝 proposed (2026-08 brownfield capability review) |
 
-**Executing with Sonnet:** every work item has an exact paste-ready prompt in
-[prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md) (single source of truth, with status
-chips). Paste its §0 PREAMBLE plus the item prompt into a fresh Sonnet session — one
-item per session per branch.
+**Executing with Sonnet:** every work item has an exact paste-ready prompt. Phases 1–4
+and the documentation phase use [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md); phases
+28–35 use [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md). Paste the
+file's §0 PREAMBLE plus the item prompt into a fresh Sonnet session — one item per
+session per branch.
+
+---
+
+## What is not delivered yet
+
+Everything below is either written-but-unbuilt or deliberately parked. Verified against
+`git log` on 2026-08-03, not inferred from status chips.
+
+| Work | Where | Why it is open |
+|---|---|---|
+| **32.2 stage DAG waves** | [phase-32](phase-32-performance-parallelism.md) · [ADR-017](../docs/adr/017-dag-wave-execution.md) | ADR-017 is written but its status is **Proposed**, so wave execution was never built. This is the largest remaining wall-clock win (~18 sequential stage slots → ~13). Needs the ADR accepted first. |
+| **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred: the item requires a host adapter that exposes worktree-isolated dispatch, and none does today. Its own precondition cannot be met, so it was not attempted. |
+| **Phase 35 — existing-codebase mode** | [phase-35](phase-35-existing-codebase-mode.md) | All five items written and ready: review-only track, `devteam review-pr`, stage-06d stamping, findings report, refactor track. Not started. |
+| **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
+| **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
+| **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Proposed ([#312](https://github.com/telus-labs/stagecraft/issues/312)). Partly overtaken by phases 28 and 32, which delivered telemetry, the run corpus, and cache-first prompts. Worth re-scoping rather than running as written. |
+
+Capability gates that stay shut for lack of real-project data — not for lack of code —
+are listed under [Evidence reviews](#evidence-reviews). Phase 28 removed the telemetry
+blocker those gates cited, so the remaining requirement is dispatch volume across real
+projects.
 
 ---
 

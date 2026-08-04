@@ -1,8 +1,20 @@
 # Phase 30 — The Closed Learning Loop
 
-Status: **proposed** (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.3).
-Depends on: Phase 28 (corpus) for 30.3; items 30.1/30.2/30.4/30.5 are independent.
+Status: **complete** (2026-08-02) — all five items shipped
+(from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.3).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §30.
+
+| Item | Status |
+|---|---|
+| 30.1 auto-collect at run end | ✅ complete — driver collects on completion and on any halt that wrote a gate; retired keys suppressed |
+| 30.2 outcome-feedback counters | ✅ complete — `injected` and `recurrence_after_injection` now increment; `devteam patterns demote` added |
+| 30.3 reflector pass | ✅ complete — opt-in `learning.reflector`, proposes itemized candidate deltas; humans still promote |
+| 30.4 memory retrieval into prompts | ✅ complete — bounded "Prior Project Knowledge" section, auto-ingest at run end |
+| 30.5 SKILL.md export | ✅ complete — `devteam patterns export --skill`, portable across hosts |
+
+The gap this phase closed: the memory store was never read by a stage prompt, and the
+pattern-learning counters were written once at promotion and never updated, so nothing
+could decay or be demoted. Both loops now close without manual commands.
 
 ## Why
 

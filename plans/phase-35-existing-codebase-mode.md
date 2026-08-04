@@ -81,8 +81,8 @@ clear actionable error, never a silent skip.
 sent. `--post` publishes findings as PR review comments; it must (a) print exactly what
 will be posted and require interactive confirmation, (b) refuse in non-interactive
 contexts unless `--yes` is also passed, (c) never post on a FAIL-to-render or partial
-review. Posting to someone else's PR is an outward-facing, hard-to-retract action; treat
-the confirmation as load-bearing, not decorative.
+review. Posting to someone else's PR is public and hard to undo, so the confirmation has
+to actually stop the command — not a prompt that defaults to yes.
 
 - Acceptance: scripted `gh` stub drives an end-to-end review of a fixture PR producing a
   valid stage-05 gate; adversarial mode adds the critic; `--post` without confirmation
