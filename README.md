@@ -67,7 +67,7 @@ Goal: decision-ready in 30 minutes.
 | 2 | [docs/comparative-analysis.md](docs/comparative-analysis.md) | Stagecraft's Claude/Codex lineage and its position among delivery, specification, methodology, context, and agent-runtime systems |
 | 3 | [docs/adoption-guide.md](docs/adoption-guide.md) | Pilot script, common objections, and success criteria for the 2-week trial |
 
-Evaluating further (long-form): [docs/presentation-notes.md](docs/presentation-notes.md) · [docs/walkthroughs/soc2-evidence-collector.md](docs/walkthroughs/soc2-evidence-collector.md) · [docs/walkthroughs/stage-04-split-host.md](docs/walkthroughs/stage-04-split-host.md)
+Evaluating further (long-form): [docs/presentation-notes.md](docs/presentation-notes.md) · [docs/walkthroughs/soc2-evidence-collector.md](docs/walkthroughs/soc2-evidence-collector.md) · [docs/walkthroughs/stage-04-split-host.md](docs/walkthroughs/stage-04-split-host.md) · [docs/compliance.md](docs/compliance.md) — control mapping for auditors: which pipeline artifact and command backs each control family
 
 ### Operator — I run pipelines daily
 
