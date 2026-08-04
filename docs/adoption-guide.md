@@ -180,7 +180,7 @@ Mitigations:
 
 ### "We use [other AI tool] that isn't supported."
 
-Adding a host adapter is a self-contained task. See `CONTRIBUTING.md` recipe 1. Implement five methods (`install`, `renderStagePrompt`, `status`, `uninstall`, optional `invoke`) against the contract in `core/adapters/host-adapter.md`. The Gemini CLI adapter (`hosts/gemini-cli/`) is a suitable template for IDE-embedded tools; the Codex adapter (`hosts/codex/`) works for prompt-based tools without hooks.
+Adding a host adapter is a self-contained task. See `CONTRIBUTING.md` recipe 1. Implement five methods (`install`, `renderStagePrompt`, `status`, `uninstall`, optional `invoke`) against the contract in `core/adapters/host-adapter.md`. The Gemini CLI adapter (`packages/host-gemini-cli/` — a plugin package since phase 34.4, see that directory's README.md) is a suitable template for IDE-embedded tools; the Codex adapter (`hosts/codex/`) works for prompt-based tools without hooks.
 
 Typical effort: ~200 lines of JavaScript, half a day for someone familiar with the target tool. The `generic` adapter exists as a minimal case (zero in-host integration) to demonstrate the contract is genuinely host-neutral.
 

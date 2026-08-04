@@ -108,21 +108,25 @@ function run(positional, _flags) {
   const { listHosts, loadAdapter } = require(path.join(FRAMEWORK_ROOT, "core", "router"));
   const available = new Set(listHosts());
   for (const h of referencedHosts) {
+    // Phase-28 item 28.6: Gemini CLI stopped serving free/Pro/Ultra requests
+    // 2026-06-18 in favor of Antigravity CLI. Phase 34.4 moved the adapter
+    // itself out to the @devteam/host-gemini-cli plugin package, so this
+    // check runs BEFORE the availability gate below — routing to gemini-cli
+    // is the deprecation signal, independent of whether the plugin happens
+    // to be installed.
+    if (h === "gemini-cli") {
+      check("  gemini-cli is deprecated upstream", "warn",
+        "Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18 — migrate with: devteam init --host antigravity");
+    }
     if (!available.has(h)) {
-      check(`host "${h}" available`, false, `no adapter at hosts/${h}/`);
+      check(`host "${h}" available`, false, h === "gemini-cli"
+        ? "moved to a plugin package — install: npm install @devteam/host-gemini-cli"
+        : `no adapter at hosts/${h}/`);
       continue;
     }
     const adapter = loadAdapter(h);
     const status = adapter.status(cwd);
     check(`host "${h}" install`, status.ok, status.ok ? null : `${status.missing.length} missing file(s)`);
-    // Phase-28 item 28.6: Gemini CLI stopped serving free/Pro/Ultra requests
-    // 2026-06-18 in favor of Antigravity CLI. gemini-cli stays installed and
-    // functional for one release (retirement is item 34.4) but every doctor
-    // run flags routing that still points at it.
-    if (h === "gemini-cli") {
-      check("  gemini-cli is deprecated upstream", "warn",
-        "Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18 — migrate with: devteam init --host antigravity");
-    }
     if (adapter.capabilities && adapter.capabilities.headless && adapter.capabilities.headlessCommand) {
       let bin;
       try {

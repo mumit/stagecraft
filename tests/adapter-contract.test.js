@@ -15,7 +15,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
-const { listHosts, loadAdapter } = require(path.join(REPO_ROOT, "core", "router"));
+// 34.4: listHosts/loadAdapter routed through ./_host-plugins so tests below
+// that name "gemini-cli" keep exercising the real adapter code, now living
+// at packages/host-gemini-cli/ (see that module's header comment).
+const { listHosts, loadAdapter } = require("./_host-plugins");
 
 const REQUIRED_METHODS = ["install", "renderStagePrompt", "status", "uninstall"];
 
@@ -531,7 +534,13 @@ describe("adapter contract: 6.1 host-neutral tool-budget resolution", () => {
 
   // ── 1. Advisory section rendered + budget in descriptor for non-claude hosts ──
 
-  for (const host of ["codex", "gemini-cli", "generic", "omnigent", "openai-compat", "antigravity", "acp"]) {
+  // 34.4: no "gemini-cli" here — this loop dispatches for real via runStage,
+  // which resolves adapters through the real router (not ./_host-plugins
+  // above), and gemini-cli's plugin isn't installed under node_modules in
+  // this dev checkout by design. The other six prompt-only/non-claude hosts
+  // already cover this path; packages/host-gemini-cli/tests/adapter.test.js
+  // covers the adapter's own render output directly.
+  for (const host of ["codex", "generic", "omnigent", "openai-compat", "antigravity", "acp"]) {
     it(`${host}: descriptor.toolBudget populated from core/roles (pm role)`, () => {
       const plan = runStage("requirements", { cwd: cwd(host) });
       const ws = plan.workstreams[0];

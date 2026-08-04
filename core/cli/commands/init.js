@@ -69,6 +69,15 @@ function run(positional, _flags) {
   const available = new Set(listHosts());
   const unknown = hosts.filter((h) => !available.has(h));
   if (unknown.length > 0) {
+    // Phase 34.4 (completes 28.6): gemini-cli moved from a first-party host
+    // to the @devteam/host-gemini-cli plugin package (A4 mechanism, see
+    // core/router.js). Give the exact install instruction instead of the
+    // generic "unknown host" message when that's what's actually missing.
+    if (unknown.includes("gemini-cli")) {
+      console.error(`Host "gemini-cli" is no longer first-party — it moved to a plugin package.`);
+      console.error(`Install it, then re-run this command: npm install @devteam/host-gemini-cli`);
+      process.exit(2);
+    }
     console.error(`Unknown host(s): ${unknown.join(", ")}`);
     console.error(`Available: ${[...available].join(", ")}`);
     process.exit(2);

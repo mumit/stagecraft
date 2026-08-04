@@ -24,7 +24,9 @@ installed as npm packages named `@devteam/host-<name>`. For example,
 `devteam hosts`, `devteam init --host acme`, and normal routing resolution
 when the package is installed under the current project's `node_modules`.
 The package may expose either `adapter.js` at its package root or a package
-entrypoint that exports the adapter object.
+entrypoint that exports the adapter object. `packages/host-gemini-cli/` in
+this repo (phase 34.4) is a concrete example — a first-party-*maintained*
+adapter that isn't first-party-*shipped*, published as `@devteam/host-gemini-cli`.
 
 ## capabilities.json
 
@@ -232,7 +234,7 @@ The legacy `agent` field is removed. Adapters MUST write `host` and `orchestrato
 - `hosts/claude-code/` — full capabilities (hooks, subagents, slash commands, worktrees, headless via `claude --print`).
 - `hosts/codex/` — skills + prompts, no hooks, headless via `codex exec --sandbox workspace-write`.
 - `hosts/antigravity/` — skills + prompts, no hooks, headless via `agy --print --dangerously-skip-permissions`. Supported successor to `gemini-cli` (Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18).
-- `hosts/gemini-cli/` — skills + prompts, no hooks, headless via `gemini`. Deprecated upstream; `devteam doctor` warns when routing resolves to it.
+- `packages/host-gemini-cli/` — skills + prompts, no hooks, headless via `gemini`. Deprecated upstream; `devteam doctor` warns when routing resolves to it. Phase 34.4 moved this out of `hosts/` into a `@devteam/host-gemini-cli` plugin package (the A4 mechanism below) — `devteam init --host gemini-cli` requires `npm install @devteam/host-gemini-cli` first.
 - `hosts/omnigent/` — skills + prompts + `.omnigent/stagecraft/agent/config.yaml`, no hooks, headless via `omnigent run ... --no-session --prompt <prompt>`.
 - `hosts/openai-compat/` — HTTP-native host; no CLI subprocess, talks to OpenAI-compatible Chat Completions APIs.
 - `hosts/acp/` — [Agent Client Protocol](https://agentclientprotocol.com) client; skills + prompts, no hooks, `invoke()` speaks newline-delimited JSON-RPC 2.0 directly to the configured agent's stdio instead of piping a prompt through `core/adapters/headless.js`. Enforces allowed-writes and a dangerous-command stoplist at ACP's `session/request_permission` call time — the first non-claude-code host with call-time (rather than post-hoc or prompt-only) enforcement. Routing carries the agent's launch command inline (`routing.roles.<role>: acp:<agent-command>`), since there's no single default ACP binary the way there is for claude/codex/gemini.

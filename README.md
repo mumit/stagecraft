@@ -122,7 +122,7 @@ Full feature catalogue: **[docs/FEATURES.md](docs/FEATURES.md)**.
 **Platform:** macOS, Linux, and native Windows are supported. CI exercises the core Windows portability surface on Node 22: CLI startup, initialization, diagnostics, quoted host commands, executable discovery, and timeout termination. WSL2 remains a supported option when a host CLI or project toolchain expects a POSIX shell.
 
 - Node.js ≥ 20
-- At least one of: **Claude Code** (`claude --version` works), **Codex CLI** (`codex --version` works), **Antigravity CLI** (`agy --version` works — the supported successor to Gemini CLI, which stopped serving free/Pro/Ultra requests 2026-06-18), **Gemini CLI** (`gemini --version` works, deprecated upstream — see `devteam doctor`), **Omnigent** (`omnigent --version` works), any **ACP** agent ([agentclientprotocol.com](https://agentclientprotocol.com) — no default binary; set the launch command via `routing.roles.<role>: acp:<command>` or `hosts.acp.command`), an OpenAI-compatible API key for `openai-compat`, or just a terminal (generic adapter — prompts rendered for manual use, no automation)
+- At least one of: **Claude Code** (`claude --version` works), **Codex CLI** (`codex --version` works), **Antigravity CLI** (`agy --version` works — the supported successor to Gemini CLI, which stopped serving free/Pro/Ultra requests 2026-06-18), **Gemini CLI** (`gemini --version` works, deprecated upstream — `npm install @devteam/host-gemini-cli` first; see `devteam doctor`), **Omnigent** (`omnigent --version` works), any **ACP** agent ([agentclientprotocol.com](https://agentclientprotocol.com) — no default binary; set the launch command via `routing.roles.<role>: acp:<command>` or `hosts.acp.command`), an OpenAI-compatible API key for `openai-compat`, or just a terminal (generic adapter — prompts rendered for manual use, no automation)
 - Git (recommended for version-controlling artifacts; the pipeline itself does not require it)
 
 ## Quick start
@@ -133,7 +133,8 @@ git clone <this-repo> && cd stagecraft && npm install && npm link
 
 # 2. In your target project — install the host adapter surface
 cd ~/projects/my-app
-devteam init --host claude-code         # or: codex / antigravity / gemini-cli / omnigent / openai-compat / acp / claude-code,codex
+devteam init --host claude-code         # or: codex / antigravity / omnigent / openai-compat / acp / claude-code,codex
+                                         # gemini-cli is a plugin (34.4): npm install @devteam/host-gemini-cli first
 
 # 3. Verify
 devteam doctor                           # should be all green
@@ -237,7 +238,7 @@ For `--host claude-code` in a target project:
 | `.claude/settings.local.json` | Hooks: validator on `Stop`/`SubagentStop`; approval-derivation on `PostToolUse`; secret-scan on `PreToolUse` |
 | `pipeline/gates/` | Empty workspace dir for gate files |
 
-For `--host codex`, `--host antigravity`, or `--host gemini-cli`: similar but rendered into the host's markdown prompt/skill directories, with no hooks or slash commands. For `--host omnigent`: rendered into `.omnigent/stagecraft/roles/`, `.omnigent/stagecraft/skills/`, plus a default `.omnigent/stagecraft/agent/config.yaml` bundle. For `--host openai-compat`: rendered into `.openai-compat/prompts/roles/` and `.openai-compat/skills/`. For `--host acp`: rendered into `.acp/stagecraft/roles/` and `.acp/stagecraft/skills/`; no hooks or slash commands, but allowed-writes and the dangerous-command stoplist are enforced at ACP's `session/request_permission` call time (see [docs/user-guide.md § Using ACP](docs/user-guide.md#using-acp-agent-client-protocol)).
+For `--host codex`, `--host antigravity`, or `--host gemini-cli` (plugin package — `npm install @devteam/host-gemini-cli`): similar but rendered into the host's markdown prompt/skill directories, with no hooks or slash commands. For `--host omnigent`: rendered into `.omnigent/stagecraft/roles/`, `.omnigent/stagecraft/skills/`, plus a default `.omnigent/stagecraft/agent/config.yaml` bundle. For `--host openai-compat`: rendered into `.openai-compat/prompts/roles/` and `.openai-compat/skills/`. For `--host acp`: rendered into `.acp/stagecraft/roles/` and `.acp/stagecraft/skills/`; no hooks or slash commands, but allowed-writes and the dangerous-command stoplist are enforced at ACP's `session/request_permission` call time (see [docs/user-guide.md § Using ACP](docs/user-guide.md#using-acp-agent-client-protocol)).
 
 For multi-host (`--host claude-code,codex` or `--host claude-code,omnigent`): both surfaces installed side-by-side; the routing config decides who handles what at runtime.
 
@@ -360,15 +361,16 @@ stagecraft/
 ├── rules/                      ← pipeline rules docs (10 top-level + 9 per-stage)
 ├── skills/                     ← task-oriented helpers (13)
 ├── templates/                  ← artifact templates (15)
-├── hosts/                      ← per-host adapters
+├── hosts/                      ← per-host adapters (first-party, ship by default)
 │   ├── claude-code/
 │   ├── codex/
 │   ├── antigravity/
-│   ├── gemini-cli/             ← deprecated upstream; devteam doctor warns (retirement: 34.4)
 │   ├── omnigent/
 │   ├── openai-compat/
 │   ├── acp/                    ← any Agent Client Protocol agent as a host
 │   └── generic/
+├── packages/                   ← first-party-maintained plugin packages (A4)
+│   └── host-gemini-cli/        ← deprecated upstream; npm install @devteam/host-gemini-cli (34.4)
 └── docs/                       ← guides, walkthroughs, BACKLOG
 ```
 

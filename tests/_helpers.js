@@ -47,6 +47,31 @@ function cleanup(cwd) {
   }
 }
 
+// 34.4: installs the real @devteam/host-gemini-cli plugin package (moved out
+// of hosts/ into packages/host-gemini-cli/) into a tmpdir project's
+// node_modules, mirroring core/router.js's external-adapter resolution
+// (EXTERNAL_SCOPE/EXTERNAL_PREFIX). Tests that need a real end-to-end
+// dispatch to gemini-cli (not just the host-name string) call this before
+// running the CLI/orchestrator against `cwd`.
+//
+// This SYMLINKS the package rather than copying it, deliberately: the
+// adapter's own requires (`../../core/adapters/headless`) are relative
+// paths that only resolve when the file's real location is inside a
+// Stagecraft checkout (see packages/host-gemini-cli/README.md's honest
+// scope note). Node resolves `require()` against a symlink's *real* path
+// by default, so a symlink here reproduces exactly what an `npm` workspace
+// link would give a local dev install; a genuine copy (as a real registry
+// install would produce) would break those requires — that gap is real and
+// intentionally not papered over here.
+function installGeminiCliPluginFixture(cwd) {
+  const pluginSrc = path.join(REPO_ROOT, "packages", "host-gemini-cli");
+  const scopeDir = path.join(cwd, "node_modules", "@devteam");
+  fs.mkdirSync(scopeDir, { recursive: true });
+  const destDir = path.join(scopeDir, "host-gemini-cli");
+  if (!fs.existsSync(destDir)) fs.symlinkSync(pluginSrc, destDir, "dir");
+  return destDir;
+}
+
 function runCLI(args, opts = {}) {
   const result = spawnSync("node", [BIN, ...args], {
     cwd: opts.cwd || process.cwd(),
@@ -60,4 +85,4 @@ function runCLI(args, opts = {}) {
   };
 }
 
-module.exports = { REPO_ROOT, BIN, makeTargetProject, seedGate, cleanup, runCLI };
+module.exports = { REPO_ROOT, BIN, makeTargetProject, seedGate, cleanup, runCLI, installGeminiCliPluginFixture };

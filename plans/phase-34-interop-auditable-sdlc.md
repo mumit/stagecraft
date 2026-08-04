@@ -1,7 +1,15 @@
 # Phase 34 — Interop & the Auditable SDLC
 
-Status: **proposed** (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.7, §4).
+Status: **complete** (2026-08-03) — 34.1/34.2/34.3/34.4 shipped
+(from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.7, §4).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §34.
+
+| Item | Status |
+|---|---|
+| 34.1 ACP host adapter | ✅ complete — `hosts/acp/`, PR #368 |
+| 34.2 Attestation export | ✅ complete — `devteam evidence export --attestation`, PR #369 |
+| 34.3 Control mapping + audited-track docs | ✅ complete — `docs/compliance.md`, PR #370 |
+| 34.4 Retire/park the gemini-cli adapter | ✅ complete — `packages/host-gemini-cli/` (A4 plugin package), first-party surface is now claude-code/codex/antigravity/openai-compat/acp/omnigent/generic |
 
 ## Why
 

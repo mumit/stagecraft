@@ -1,5 +1,10 @@
 // Gemini CLI host adapter.
 //
+// Moved out of hosts/ into this plugin package by phase 34.4 (completes
+// 28.6) — see README.md in this directory for why and for the honest
+// scope note on relative-require resolution. Adapter contract and
+// behavior are otherwise unchanged.
+//
 // install: copies roles/*.md verbatim into <target>/.gemini/prompts/roles/
 //          (gemini consumes plain markdown — no frontmatter), renders
 //          rules/*.md into <target>/.devteam/rules/ to satisfy "Read
