@@ -1,7 +1,7 @@
-# Stagecraft Execution Prompts — Phases 28–35 (2026-H2 Roadmap)
+# Stagecraft Execution Prompts — Phases 28–36 (2026-H2 Roadmap)
 
 Companion to [landscape-review-2026-07.md](../landscape-review-2026-07.md) and the
-phase plans `plans/phase-28-*` … `plans/phase-35-*`. Same execution model as
+phase plans `plans/phase-28-*` … `plans/phase-36-*`. Same execution model as
 [ALL-PROMPTS.md](ALL-PROMPTS.md): paste the **PREAMBLE** (§0) plus one item prompt into a
 fresh Claude (Sonnet) session at the repo root. One item = one session = one branch = one PR.
 
@@ -16,13 +16,15 @@ Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see 
 | 32 | Performance & parallelism | 32.1–32.5 | ⚠️ 32.1 ✅ · 32.2 ⏸ ADR-017 drafted only (status Proposed), wave execution not built · 32.3 ✅ · 32.4 ⏸ deferred, no host adapter exposes worktree-isolation capability · 32.5 ✅ |
 | 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ✅ complete |
 | 34 | Interop & auditable SDLC | 34.1–34.4 | ✅ complete |
-| 35 | Existing-codebase mode | 35.1–35.5 | 🔲 all ready — next up |
+| 35 | Existing-codebase mode | 35.1–35.5 | ✅ complete |
+| 36 | External review mode (ACP-first) | 36.0–36.6 | 🔲 ready — **start with the 36.0 spike** |
 
-Only two items from phases 28–34 remain open: **32.2** (needs ADR-017 accepted first —
+Only two items from phases 28–35 remain open: **32.2** (needs ADR-017 accepted first —
 it is written but still Proposed) and **32.4** (deferred; no host adapter exposes
-worktree-isolated dispatch, so the item's own precondition cannot be met). Phase 35 is
-ready to run and depends only on 31.4's mutation runner, which has shipped. Items within
-a phase are independently mergeable unless the item says otherwise.
+worktree-isolated dispatch, so the item's own precondition cannot be met). Phase 36 is
+ready, but 36.0 is a report-only spike whose answer decides how 36.2 is built — run it
+first and do not implement in the same session. Items within a phase are independently
+mergeable unless the item says otherwise.
 
 **Verify before running an item.** Implementation sessions do not update this table, so
 it can lag: `git log --no-merges --oneline --reverse a8e071a..main` lists what has
@@ -1100,6 +1102,238 @@ gate fields are null-permitted as in 35.1 (depends on 35.1 — STOP if it hasn't
 Tests: --track refactor runs on a fixture; a behavior-CHANGING edit fails the
 preserved-behavior bar; mutation defaults on for refactor and stays off elsewhere;
 nano behavior unchanged.
+```
+
+---
+
+## Phase 36 — External Review Mode (ACP-first) 🔲
+
+Run **36.0 first** — it is report-only and the rest of the phase branches on its answer.
+
+### 36.0 Spike: ACP read scope outside the session cwd 🔲 [report-only]
+
+```
+TASK: Execute plans/phase-36-external-review-mode.md item 36.0. This is a REPORT-ONLY
+spike. Write NO production code. Do not implement 36.2 in this session.
+Branch: spike/acp-read-scope
+
+Question to answer: can a stage prompt point an ACP agent at framework files by ABSOLUTE
+path outside its session cwd, or does the agent sandbox reads to that directory?
+
+Why it matters: Stagecraft declares `fs: { readTextFile: false, writeTextFile: false }` at
+initialize (hosts/acp/adapter.js:310), so the agent uses its own filesystem access. Item
+36.2 renders framework paths (rules, role briefs, templates) as absolute paths into a
+separate state directory — which only works if the agent will read them.
+
+Method:
+1. Read hosts/acp/adapter.js end to end first (344 lines) and confirm how session/new
+   receives cwd (:163-165, :313) and what clientCapabilities are declared (:310).
+2. Create two temp dirs: A (session cwd, containing a trivial repo) and B (outside A,
+   containing a file with a known sentinel string).
+3. Launch the real agent from hosts/acp/capabilities.json headlessCommand
+   (`npx -y @agentclientprotocol/claude-agent-acp`) with session cwd = A, and a prompt
+   instructing it to read B's absolute path and echo the sentinel. Network + a model are
+   required; if credentials or network are unavailable, STOP and report that rather than
+   simulating the result with the existing stub agent — a stub proves nothing here.
+4. Record exactly what happened: read succeeded / refused / asked permission via
+   session/request_permission / returned nothing.
+5. Repeat with B symlinked inside A, and note any difference.
+
+Deliverable: create plans/acp-read-scope.md in the house style of the other evidence
+reviews (see plans/h3-ground-truth.md and plans/adaptive-routing-evidence.md for tone and
+shape): agent name + version tested, date, exact observed behaviour per case, and a
+one-line RECOMMENDATION for 36.2 — either "absolute paths" (preferred, free) or "inline
+framework content" (fallback: costs tokens per dispatch and must be reconciled with the
+32.1 cache-first prefix layout, so note that cost). Append a link to it from
+plans/phase-36-external-review-mode.md item 36.0 and from the plans/README.md evidence
+reviews table.
+
+Report honestly if the answer is "it depends" or if you could not run a real agent. A
+wrong answer here sends 36.2 down the expensive path unnecessarily.
+```
+
+### 36.1 Two-root permissions + real read-only mode 🔲
+
+```
+TASK: Implement plans/phase-36-external-review-mode.md item 36.1 — give the ACP permission
+evaluator separate code and state roots, plus a review mode that mechanically prevents
+writes to the code being reviewed.
+Branch: feat/acp-two-root-permissions
+
+[verify-first] Confirm in hosts/acp/permissions.js: evaluateToolCall (:84) takes a single
+`cwd`; relativeToProject (:61-66) returns null for paths outside it; findWriteViolation
+(:68-80) treats null as a violation; WRITE_KINDS (:36) is {edit, delete, move} ONLY. And
+in hosts/acp/adapter.js:256, handlePermissionRequest is passed `processCwd`. Report each.
+
+Implement: evaluateToolCall accepts { codeRoot, stateRoot, mode } instead of one cwd
+(migrate the adapter.js call site in the same commit; do NOT leave two code paths).
+- mode "normal": byte-identical behaviour to today, single root. Existing permission tests
+  must pass UNTOUCHED — if you find yourself editing one, stop and report.
+- mode "review": a write (edit/delete/move) resolving inside codeRoot is DENIED with a
+  reason naming read-only mode; writes under stateRoot are checked against allowedWrites
+  relativised to stateRoot; paths outside both roots stay denied.
+
+THE EXECUTE GAP — this is the substance of the item, not an afterthought. WRITE_KINDS
+covers only edit/delete/move, so a `kind: "execute"` shell call can mutate the subject
+(`sed -i`, `git checkout`, a build script) and today would sail through. Review genuinely
+needs shell for rg/grep/git log. So in review mode, `execute` is DENY-BY-DEFAULT with a
+read-only allowlist: rg, grep, git log|diff|show|status, ls, cat, find, wc, plus a config
+extension point (hosts.acp.review.exec_allowlist). Parse to argv — never substring-match a
+command string — and deny any redirection or shell metacharacter (> >> | ; & $( `). Deny
+reasons quote the command. In normal mode `execute` handling is unchanged.
+
+If the allowlist turns out to make real reviews impractical, say so in your report rather
+than widening it silently. An advertised read-only guarantee that leaks writes is worse
+than no guarantee.
+
+Tests: write into codeRoot denied in review mode and allowed in normal mode with the SAME
+descriptor; write under stateRoot matching allowedWrites allowed; `rg foo` allowed and
+`sed -i` denied in review mode; `sed -i` still allowed in normal mode; `rg foo > out.txt`
+denied (redirection); existing hosts/acp permission tests untouched and green.
+```
+
+### 36.2 Framework-path resolution across roots ⏸ (needs 36.0)
+
+```
+TASK: Implement plans/phase-36-external-review-mode.md item 36.2 — make framework files
+resolvable when the state root and code root differ.
+Branch: feat/external-framework-paths
+PRECONDITION CHECK: plans/acp-read-scope.md exists from 36.0 and carries a RECOMMENDATION.
+If it does not, STOP — running this item without that answer risks building the expensive
+path (inlining) when absolute paths would have worked, or vice versa. Follow its
+recommendation; if you disagree with it, report rather than diverge.
+
+Stage prompts name AGENTS.md, .devteam/rules/*.md, role briefs and templates as RELATIVE
+paths (33.4's verify-first finding: adapters render path pointers, never inlined content).
+Against an external subject those resolve into the subject, where they do not exist.
+
+Implement: extend phase 35.1's readFirst entry form ({path, optional: true}) with a root
+marker — {path, root: "framework" | "subject", optional}. Default "subject" so nothing
+changes for in-place runs. Mark rules, role briefs, and templates as "framework".
+
+LEAVE AGENTS.md AS "subject" ON PURPOSE: the subject repo's own AGENTS.md is exactly what a
+reviewer should read, and the framework's copy is an init stub. Put that reasoning in a
+why-comment so a later reader does not "fix" it.
+
+When stateRoot !== codeRoot, framework entries render per 36.0's recommendation (absolute
+paths into stateRoot, or inlined content). When the roots are equal, rendered prompts must
+be BYTE-IDENTICAL to today — add that regression test explicitly.
+
+Tests: differing-roots render has every framework path absolute and resolvable, and no
+framework path pointing into the subject; equal-roots byte-identical; the 32.1 cache-prefix
+stability test still passes (if inlining, show what it does to prompt-budget numbers and
+regenerate docs/reference/prompt-budget.md).
+```
+
+### 36.3 Review workspace + orchestrator plumbing ⏸ (needs 36.1, 36.2)
+
+```
+TASK: Implement plans/phase-36-external-review-mode.md item 36.3 — the review workspace and
+the dispatch plumbing that keeps state out of the subject.
+Branch: feat/review-workspace
+PRECONDITION CHECK: 36.1 and 36.2 merged. Without 36.1 the subject is not protected; without
+36.2 the prompts do not resolve.
+
+[verify-first] core/cli/commands/prototype.js:321-323 already sets ctx.processCwd to a
+separate workspace while ctx.cwd stays the project, and core/adapters/headless.js:232 plus
+hosts/omnigent/adapter.js:468 honour ctx.processCwd. Confirm, and follow that precedent
+rather than inventing a second mechanism.
+
+Implement the workspace: ~/.stagecraft/reviews/<slug>/ where slug = subject basename + a
+short hash of its absolute path (collision-safe, stable across runs); --workspace <path>
+overrides. Contains .devteam/ (config, patterns, corpus, evals), pipeline/ (gates,
+artifacts, logs), and the ACP role/skill dirs named in hosts/acp/capabilities.json. Write
+subject.json recording the subject's absolute path, git remote, and THE COMMIT SHA
+REVIEWED — 34.2's attestation should be able to name what was reviewed, not what was
+produced.
+
+Orchestrator: ctx.processCwd = subject, ctx.cwd = workspace, review mode on for the
+permission evaluator.
+
+THE TEST THAT MATTERS: snapshot the subject tree (file list + content hashes, including
+.gitignore and AGENTS.md) before and after a stubbed review run and assert it is completely
+unchanged. That test is the phase's core promise — write it first.
+
+Tests: the snapshot test above; a stubbed review-only run puts every gate, log, and artifact
+under the workspace; subject.json records path/remote/SHA; `devteam verify-chain --cwd
+<workspace>` passes on the resulting chain.
+```
+
+### 36.4 `devteam review <path>` ⏸ (needs 36.3)
+
+```
+TASK: Implement plans/phase-36-external-review-mode.md item 36.4 — the zero-install entry
+point.
+Branch: feat/devteam-review
+PRECONDITION CHECK: 36.3 merged.
+
+`devteam review <path> [--scope <p>]... [--track review-only] [--host acp] [--workspace
+<path>] [--json] [--open]` plus `devteam review --list`.
+
+No init, no config, nothing written to the subject. Resolve or create the workspace (36.3),
+dispatch the track, then run 35.4's findings report and print its path.
+
+HOST HONESTY — do not skip this. `acp` is the only host that can mechanically prevent
+writes to the subject (36.1). When --host names anything else, print a one-line warning
+that writes to the subject are NOT prevented and enforcement degrades to post-hoc audit,
+and refuse to proceed without an explicit acknowledgement flag. Never print a read-only
+claim a host cannot keep. Pick the ack flag name to match existing house conventions
+(look at how other commands gate risky behaviour) and say which you chose.
+
+`--list` shows workspaces with subject path, last run date, and last status.
+
+Tests: end-to-end against a fixture repo with the scripted ACP stub agent produces a
+findings report and a byte-identical subject tree; non-ACP host warns and refuses without
+the ack flag, proceeds with it; --list renders including the empty case; --json validated
+against a checked-in schema.
+```
+
+### 36.5 `review-pr` without an initialised project ⏸ (needs 36.3)
+
+```
+TASK: Implement plans/phase-36-external-review-mode.md item 36.5 — review an inbound PR from
+anywhere, with no checkout and no initialised project.
+Branch: feat/review-pr-standalone
+PRECONDITION CHECK: 36.3 merged.
+
+[verify-first] core/cli/commands/review-pr.js:227 refuses when <cwd>/.devteam/config.yml is
+absent. Confirm, and read how 35.2 materialises the PR into pipeline/review-input/.
+
+Implement: accept a PR number or URL; materialise into the 36.3 workspace rather than the
+subject; drop the initialised-project precondition when a workspace is in play (keep it
+when running in-place so existing behaviour is unchanged). No clone in the common case —
+the diff IS the subject, so codeRoot may be absent; when it is, every write target is under
+stateRoot and review mode is trivially satisfied (assert that, don't just assume it).
+
+KEEP 35.2'S PUBLISHING SAFETY EXACTLY AS SHIPPED: --post opt-in, the confirmation must
+actually stop the command, non-interactive requires the explicit yes flag, nothing posted on
+a partial or failed review. Do not relax any of it while moving the state root. Re-run those
+tests and confirm they still pass.
+
+Tests: `devteam review-pr <url>` succeeds from a directory that is neither a Stagecraft
+project nor the repo, using a scripted `gh` stub; state lands in the workspace; in-place
+behaviour unchanged; every 35.2 publishing-safety test still green.
+```
+
+### 36.6 Docs: external review guide 🔲
+
+```
+TASK: Implement plans/phase-36-external-review-mode.md item 36.6.
+Branch: docs/external-review
+PRECONDITION CHECK: at least 36.1, 36.3, and 36.4 merged — do not document unbuilt behaviour.
+
+Write docs/external-review.md: the two entry points (`devteam review`, `devteam review-pr`),
+a per-host enforcement table, the workspace layout, where evidence lands, and the honest
+limits — the execute allowlist from 36.1, and that non-ACP hosts cannot guarantee
+read-only. Every enforcement claim must name the file that implements it (house rule from
+34.3).
+
+Cross-link from docs/compliance.md: a review workspace is where an auditor's evidence
+bundle belongs, since it names the reviewed commit and never mutates the audited repo.
+Update the README host table to note acp as the recommended host for reviewing code you do
+not own. Add the new doc to docs/README.md's index.
+
+No code. `npm run consistency` green is the acceptance gate.
 ```
 
 ---
