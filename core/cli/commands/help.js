@@ -302,6 +302,19 @@ Commands:
                                    import paths. --dry-run prints
                                    without writing. --json emits the
                                    structured discovery result.
+  review-pr <number|url>           Materialize an inbound GitHub PR (diff,
+       [--post] [--yes] [--json]    changed files, title/body) into
+                                   pipeline/review-input/ and dispatch
+                                   stage-05 against it: a single reviewer
+                                   in panel mode, reviewer then critic when
+                                   review.mode: adversarial. Local-only by
+                                   default. --post publishes the review as
+                                   a PR comment: prints the exact payload
+                                   and requires interactive confirmation;
+                                   refuses in a non-interactive context
+                                   without --yes; refuses outright on a
+                                   partial/incomplete review. Requires
+                                   the gh CLI, authenticated.
   stages                           List known stage names.
   hosts                            List available host adapters.
   help                             Show this message.

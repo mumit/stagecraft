@@ -3,7 +3,7 @@
 
 # CLI Reference
 
-Full `devteam` command reference. 40 commands.
+Full `devteam` command reference. 41 commands.
 Derived from the per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
@@ -454,6 +454,17 @@ Scan the project codebase and produce docs/project-conventions.md with detected 
 | --json    | bool   | JSON output                                    |
 | --dry-run | bool   | Print report without writing                   |
 | --force   | bool   | Overwrite existing docs/project-conventions.md |
+
+### `devteam review-pr <number|url> [options]`
+
+Materialize an inbound GitHub PR (diff, changed files, title/body) into pipeline/review-input/ and dispatch stage-05 against it: a single reviewer in panel mode, reviewer then critic when review.mode: adversarial. Local-only by default; --post publishes the review as a PR comment after printing the exact payload and requiring interactive confirmation (or --yes in a non-interactive context) — refuses outright on a partial/incomplete review. Requires the gh CLI, authenticated (plans/phase-35-existing-codebase-mode.md item 35.2).
+
+| Flag   | Type   | Description                                                |
+| ------ | ------ | ---------------------------------------------------------- |
+| --cwd  | string | Target project directory                                   |
+| --post | bool   | Publish the review as a PR comment (opt-in; see --yes)     |
+| --yes  | bool   | Auto-confirm --post; required in a non-interactive context |
+| --json | bool   | JSON output                                                |
 
 ### `devteam stages`
 

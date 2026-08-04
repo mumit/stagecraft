@@ -207,13 +207,16 @@ describe("tracks: isStageInTrack", () => {
     assert.equal(isStageInTrack("design", "nano"), false);
   });
 
-  it("build is in every track except review-only", () => {
+  it("build is in every track except review-only and review-pr", () => {
     // Phase-35 item 35.1: `review-only` is the one track that never builds
     // anything — it reviews code that already exists (security-review +
     // red-team + peer-review only). Every other track produces new code, so
     // "build is in every track" held until this track existed.
+    // Phase-35 item 35.2: `review-pr` is the same shape for the same
+    // reason — it reviews an already-materialized PR diff, never builds.
+    const NO_BUILD_TRACKS = new Set(["review-only", "review-pr"]);
     for (const t of TRACKS) {
-      if (t === "review-only") {
+      if (NO_BUILD_TRACKS.has(t)) {
         assert.equal(isStageInTrack("build", t), false, `build unexpectedly present on ${t}`);
         continue;
       }
