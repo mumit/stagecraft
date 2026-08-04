@@ -18,7 +18,7 @@ const path = require("node:path");
 const { REPO_ROOT, cleanup } = require("./_helpers");
 
 const adapter = require(path.join(REPO_ROOT, "hosts", "acp", "adapter.js"));
-const { evaluateToolCall, selectOption, findDangerousCommandMatch } = require(
+const { evaluateToolCall, selectOption, findDangerousCommandMatch, findReviewExecViolation } = require(
   path.join(REPO_ROOT, "hosts", "acp", "permissions.js"),
 );
 const STUB_PATH = path.join(REPO_ROOT, "tests", "fixtures", "acp-stub-agent.js");
@@ -237,5 +237,151 @@ describe("hosts/acp/permissions: unit-level mapping", () => {
     ];
     assert.deepEqual(selectOption(options, false), { optionId: "once-allow" });
     assert.equal(selectOption(options, true), null); // no reject_* option offered
+  });
+});
+
+// Two-root permission model + review mode (36.1, plans/phase-36-external-
+// review-mode.md §36.1). The describe block above stays untouched — every
+// test there still calls evaluateToolCall(toolCall, descriptor, "/repo"), a
+// bare string, proving the pre-36.1 single-root call shape is unaffected.
+describe("hosts/acp/permissions: two-root review mode (36.1)", () => {
+  const roots = (mode, overrides = {}) => ({
+    codeRoot: "/repo/code", stateRoot: "/repo/state", mode, ...overrides,
+  });
+
+  it("a write into codeRoot is denied in review mode and allowed in normal mode, same descriptor and toolCall", () => {
+    const descriptor = makeDescriptor({ allowedWrites: ["build-plan.md"] });
+    const toolCall = { kind: "edit", locations: [{ path: "/repo/code/build-plan.md" }] };
+
+    const inReview = evaluateToolCall(toolCall, descriptor, roots("review"));
+    assert.equal(inReview.deny, true);
+    assert.match(inReview.reason, /review-mode/);
+    assert.match(inReview.reason, /read-only/);
+
+    // Same toolCall/descriptor, single root == codeRoot == today's cwd.
+    const inNormal = evaluateToolCall(toolCall, descriptor, "/repo/code");
+    assert.equal(inNormal.deny, false);
+  });
+
+  it("a write under stateRoot matching allowedWrites is allowed in review mode", () => {
+    const descriptor = makeDescriptor({ allowedWrites: ["pipeline/build-plan.md"] });
+    const toolCall = { kind: "edit", locations: [{ path: "/repo/state/pipeline/build-plan.md" }] };
+    const { deny } = evaluateToolCall(toolCall, descriptor, roots("review"));
+    assert.equal(deny, false);
+  });
+
+  it("a write under stateRoot NOT matching allowedWrites is denied in review mode", () => {
+    const descriptor = makeDescriptor({ allowedWrites: ["pipeline/build-plan.md"] });
+    const toolCall = { kind: "edit", locations: [{ path: "/repo/state/secret.txt" }] };
+    const { deny, reason } = evaluateToolCall(toolCall, descriptor, roots("review"));
+    assert.equal(deny, true);
+    assert.match(reason, /allowed-writes/);
+  });
+
+  it("a write outside both codeRoot and stateRoot stays denied in review mode", () => {
+    const descriptor = makeDescriptor({ allowedWrites: ["pipeline/build-plan.md"] });
+    const toolCall = { kind: "edit", locations: [{ path: "/elsewhere/file.txt" }] };
+    const { deny } = evaluateToolCall(toolCall, descriptor, roots("review"));
+    assert.equal(deny, true);
+  });
+
+  it("codeRoot absent (36.5's diff-only review) skips straight to the stateRoot check", () => {
+    const descriptor = makeDescriptor({ allowedWrites: ["pipeline/build-plan.md"] });
+    const toolCall = { kind: "edit", locations: [{ path: "/repo/state/pipeline/build-plan.md" }] };
+    const { deny } = evaluateToolCall(toolCall, descriptor, { stateRoot: "/repo/state", mode: "review" });
+    assert.equal(deny, false);
+  });
+
+  it("`rg foo` is allowed and `sed -i` is denied in review mode; `sed -i` is still allowed (unrestricted) in normal mode", () => {
+    const descriptor = makeDescriptor();
+    const rg = { kind: "execute", rawInput: { command: "rg foo" } };
+    const sed = { kind: "execute", rawInput: { command: "sed -i s/a/b/ file.js" } };
+
+    assert.equal(evaluateToolCall(rg, descriptor, roots("review")).deny, false);
+    const sedDenied = evaluateToolCall(sed, descriptor, roots("review"));
+    assert.equal(sedDenied.deny, true);
+    assert.match(sedDenied.reason, /review-mode/);
+    assert.match(sedDenied.reason, /sed/);
+
+    // normal mode's execute handling is unchanged: only the dangerous-command
+    // stoplist applies, and "sed -i ..." isn't on it.
+    assert.equal(evaluateToolCall(sed, descriptor, "/repo/code").deny, false);
+  });
+
+  it("`rg foo > out.txt` is denied in review mode (redirection)", () => {
+    const descriptor = makeDescriptor();
+    const toolCall = { kind: "execute", rawInput: { command: "rg foo > out.txt" } };
+    const { deny, reason } = evaluateToolCall(toolCall, descriptor, roots("review"));
+    assert.equal(deny, true);
+    assert.match(reason, /redirection|metacharacter/);
+  });
+
+  it("denies pipes, backgrounding, command substitution, and semicolons even when the leading binary is allowlisted", () => {
+    const descriptor = makeDescriptor();
+    for (const command of [
+      "rg foo | tee out.txt",
+      "cat file.txt; rm -rf /",
+      "ls && git checkout .",
+      "echo $(rm -rf /)",
+      "echo `rm -rf /`",
+    ]) {
+      const { deny } = evaluateToolCall({ kind: "execute", rawInput: { command } }, descriptor, roots("review"));
+      assert.equal(deny, true, `expected deny for: ${command}`);
+    }
+  });
+
+  it("git is restricted to read-only subcommands in review mode: log/diff/show/status allowed, checkout denied", () => {
+    const descriptor = makeDescriptor();
+    for (const sub of ["log", "diff", "show", "status"]) {
+      const { deny } = evaluateToolCall({ kind: "execute", rawInput: { command: `git ${sub}` } }, descriptor, roots("review"));
+      assert.equal(deny, false, `expected allow for: git ${sub}`);
+    }
+    const denied = evaluateToolCall({ kind: "execute", rawInput: { command: "git checkout ." } }, descriptor, roots("review"));
+    assert.equal(denied.deny, true);
+    assert.match(denied.reason, /git checkout/);
+  });
+
+  it("hosts.acp.review.exec_allowlist extends (not replaces) the default read-only binaries", () => {
+    const descriptor = makeDescriptor();
+    const jq = { kind: "execute", rawInput: { command: "jq '.foo' file.json" } };
+    assert.equal(evaluateToolCall(jq, descriptor, roots("review")).deny, true);
+    assert.equal(evaluateToolCall(jq, descriptor, roots("review", { execAllowlist: ["jq"] })).deny, false);
+    // default allowlist members keep working alongside the extension.
+    const rg = { kind: "execute", rawInput: { command: "rg foo" } };
+    assert.equal(evaluateToolCall(rg, descriptor, roots("review", { execAllowlist: ["jq"] })).deny, false);
+  });
+
+  it("an execute call with no parseable command is denied by default, not silently allowed", () => {
+    assert.match(findReviewExecViolation({ kind: "execute", rawInput: {} }, []), /no inspectable command/);
+    assert.match(findReviewExecViolation({ kind: "execute" }, []), /no inspectable command/);
+  });
+
+  it("read-kind calls are still ungated by location in review mode (unchanged from normal mode — see plans/acp-read-scope.md)", () => {
+    const descriptor = makeDescriptor({ allowedWrites: ["pipeline/build-plan.md"] });
+    const toolCall = { kind: "read", locations: [{ path: "/repo/code/secret.txt" }] };
+    const { deny } = evaluateToolCall(toolCall, descriptor, roots("review"));
+    assert.equal(deny, false);
+  });
+});
+
+describe("hosts/acp: review mode wiring end-to-end (36.1)", () => {
+  it("adapter.invoke actually plumbs ctx.externalReviewMode through to the permission evaluator: same write allowed in normal mode, denied in review mode", async () => {
+    const cwd = tmpdir();
+    const decisionPath = path.join(cwd, "decision.json");
+    const codeRootPath = path.join(cwd, "pipeline", "build-plan.md"); // matches makeDescriptor()'s allowedWrites
+    fs.mkdirSync(path.dirname(codeRootPath), { recursive: true });
+
+    await withEnvVars({
+      DEVTEAM_HEADLESS_COMMAND: `node "${STUB_PATH}"`,
+      ACP_STUB_MODE: "out-of-scope-write",
+      ACP_STUB_FORBIDDEN_PATH: codeRootPath,
+      ACP_STUB_DECISION_PATH: decisionPath,
+    }, async () => {
+      const result = await adapter.invoke(makeDescriptor(), makeCtx(cwd, { externalReviewMode: true }), "rendered stage prompt");
+      assert.equal(result.gatePath, null, "no gate should be written when the only write attempt is denied");
+      const decision = JSON.parse(fs.readFileSync(decisionPath, "utf8"));
+      assert.equal(decision.outcome.outcome, "selected");
+      assert.equal(decision.outcome.optionId, "reject", "review mode must deny a write to processCwd even though it matches allowedWrites");
+    });
   });
 });
