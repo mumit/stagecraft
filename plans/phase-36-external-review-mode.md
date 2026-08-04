@@ -1,9 +1,19 @@
 # Phase 36 — External Review Mode (ACP-first)
 
-Status: **proposed** (2026-08-04). Follows [phase-35](phase-35-existing-codebase-mode.md),
+Status: **in progress** (2026-08-04). Follows [phase-35](phase-35-existing-codebase-mode.md),
 which made brownfield review possible but still required installing Stagecraft into the
 repo being reviewed.
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §36.
+
+| Item | Status |
+|---|---|
+| 36.0 spike: does a real ACP agent read outside its session cwd? | ✅ complete — see [`plans/acp-read-scope.md`](acp-read-scope.md) |
+| 36.1 two-root permission model + real read-only mode | ✅ complete — `hosts/acp/permissions.js#evaluateToolCall` (`codeRoot`/`stateRoot`/`mode`) |
+| 36.2 framework-path resolution when roots differ | ✅ complete — `core/adapters/render-helpers.js#resolveFrameworkPath` |
+| 36.3 review workspace + orchestrator plumbing | ✅ complete — `core/review-workspace.js`; `ctx.processCwd`/`ctx.externalReviewMode` threaded through `core/orchestrator.js#runStage`/`core/driver.js#run` |
+| 36.4 `devteam review <path>` | proposed |
+| 36.5 `devteam review-pr` without an initialised project | proposed |
+| 36.6 docs: external review guide | proposed |
 
 ## Why
 

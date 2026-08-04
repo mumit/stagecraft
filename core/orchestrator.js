@@ -584,6 +584,13 @@ function runStage(stageName, opts = {}) {
     // when absent so renderStagePrompt/appendGateFooter can render nothing
     // and keep every non-scoped track's prompt byte-identical.
     scope: Array.isArray(opts.scope) && opts.scope.length > 0 ? opts.scope : null,
+    // Phase-36 item 36.3: opts.processCwd/opts.externalReviewMode ride the
+    // same opts passthrough opts.scope already uses (35.1) — unset on every
+    // non-review caller, so ctx.processCwd stays null and hosts/acp/adapter.js's
+    // `ctx.processCwd || ctx.cwd` fallback (plus buildDescriptor's own
+    // processCwd passthrough below) keeps this byte-identical to today.
+    processCwd: opts.processCwd || null,
+    externalReviewMode: opts.externalReviewMode === true,
   };
 
   if (!isStageInTrack(stageName, ctx.track)) {

@@ -1,0 +1,147 @@
+// Review workspace (phase-36 item 36.3, plans/phase-36-external-review-mode.md
+// §36.3) — where an external review's state (gates, artifacts, logs, and the
+// host adapter's own role/skill dirs) lives when the subject being reviewed
+// must stay untouched. Mirrors core/memory/index.js's ~/.stagecraft/<name>/
+// precedent (STAGECRAFT_ORG_MEMORY_DIR) with its own env override for test
+// isolation.
+//
+// The split this workspace exists for is ctx.cwd (stateRoot, this workspace)
+// vs. ctx.processCwd (codeRoot, the subject) — see hosts/acp/adapter.js and
+// core/orchestrator.js's runStage(). Callers wire those two ctx fields; this
+// module only creates the workspace directory tree and records what is being
+// reviewed.
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { spawnSync } = require("node:child_process");
+const yaml = require("js-yaml");
+const { loadAdapter } = require("./router");
+
+const SHA1_PATTERN = /^[0-9a-f]{40}$/;
+
+// Overridable for testing and for users who want workspaces on a different
+// disk/mount — same precedent as STAGECRAFT_ORG_MEMORY_DIR
+// (core/memory/index.js, docs/reference/environment-variables.md).
+function reviewsRoot() {
+  return process.env.STAGECRAFT_REVIEWS_DIR || path.join(os.homedir(), ".stagecraft", "reviews");
+}
+
+// Same slugify as core/config.js's changeIdFromFeature, reused verbatim for
+// the basename component.
+function slugify(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+// Short, stable hash of the subject's absolute path — collision-safe (two
+// checkouts of a repo with the same basename get different slugs) and stable
+// across runs (the same absolute path always resolves to the same workspace).
+function shortHash(absPath) {
+  return crypto.createHash("sha1").update(absPath).digest("hex").slice(0, 8);
+}
+
+function slugForSubject(subjectPath) {
+  const abs = path.resolve(subjectPath);
+  const base = slugify(path.basename(abs)) || "subject";
+  return `${base}-${shortHash(abs)}`;
+}
+
+// `--workspace <path>` overrides the derived ~/.stagecraft/reviews/<slug>/
+// path outright.
+function resolveWorkspacePath(subjectPath, workspaceOverride) {
+  if (workspaceOverride) return path.resolve(workspaceOverride);
+  return path.join(reviewsRoot(), slugForSubject(subjectPath));
+}
+
+function runGit(cwd, args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.status !== 0 || result.error) return null;
+  const out = (result.stdout || "").trim();
+  return out || null;
+}
+
+function subjectCommitSha(subjectPath) {
+  const sha = runGit(subjectPath, ["rev-parse", "HEAD"]);
+  return sha && SHA1_PATTERN.test(sha) ? sha : null;
+}
+
+function subjectRemote(subjectPath) {
+  return runGit(subjectPath, ["remote", "get-url", "origin"]);
+}
+
+function subjectManifestPath(workspacePath) {
+  return path.join(workspacePath, "subject.json");
+}
+
+// Records what was reviewed — the commit SHA, not what the run produced.
+// Review mode denies every write into codeRoot (hosts/acp/permissions.js), so
+// there is never a "produced commit" in the subject the way core/evidence/
+// attestation.js's resolveSubjectCommits() expects; this file is what a
+// future attestation pass should read instead when ctx.externalReviewMode is
+// set (not wired in this item — see plan §36.3's why-comment).
+function writeSubjectManifest(workspacePath, subjectPath, opts = {}) {
+  const abs = path.resolve(subjectPath);
+  const manifest = {
+    schema_version: "1.0",
+    subject_path: abs,
+    remote: opts.remote !== undefined ? opts.remote : subjectRemote(abs),
+    commit_sha: opts.commitSha !== undefined ? opts.commitSha : subjectCommitSha(abs),
+    recorded_at: new Date().toISOString(),
+  };
+  fs.mkdirSync(workspacePath, { recursive: true });
+  fs.writeFileSync(subjectManifestPath(workspacePath), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  return manifest;
+}
+
+function readSubjectManifest(workspacePath) {
+  return JSON.parse(fs.readFileSync(subjectManifestPath(workspacePath), "utf8"));
+}
+
+// Skeleton mirrors the parts of `devteam init` (core/cli/commands/init.js) a
+// review needs: pipeline/gates/ (state), a minimal config.yml pinning routing
+// to the review host and track, and the host adapter's own install() for role
+// prompts/rules/templates/skills (ACP's .acp/stagecraft/{roles,skills} per
+// hosts/acp/capabilities.json). .devteam/patterns, corpus, and evals are
+// deliberately NOT pre-created here — every consumer (core/patterns.js,
+// core/corpus.js, core/evals/*) already mkdirSync(..., {recursive:true}) on
+// first write, same as a freshly-init'd project would behave; pre-creating
+// empty dirs here would just be dead weight nothing reads.
+function createReviewWorkspace(opts) {
+  const { subjectPath, workspacePath, host = "acp", track = "review-only", force = false } = opts;
+  if (!subjectPath) throw new Error("createReviewWorkspace: subjectPath is required");
+  if (!workspacePath) throw new Error("createReviewWorkspace: workspacePath is required");
+
+  fs.mkdirSync(workspacePath, { recursive: true });
+  fs.mkdirSync(path.join(workspacePath, "pipeline", "gates"), { recursive: true });
+
+  const cfgPath = path.join(workspacePath, ".devteam", "config.yml");
+  if (!fs.existsSync(cfgPath) || force) {
+    fs.mkdirSync(path.dirname(cfgPath), { recursive: true });
+    fs.writeFileSync(cfgPath, yaml.dump({
+      routing: { default_host: host },
+      pipeline: { default_track: track },
+    }), "utf8");
+  }
+
+  const adapter = loadAdapter(host);
+  const install = adapter.install(workspacePath, { force });
+
+  const subject = writeSubjectManifest(workspacePath, subjectPath);
+
+  return { workspacePath, install, subject };
+}
+
+module.exports = {
+  reviewsRoot,
+  slugForSubject,
+  resolveWorkspacePath,
+  createReviewWorkspace,
+  writeSubjectManifest,
+  readSubjectManifest,
+  subjectManifestPath,
+};
