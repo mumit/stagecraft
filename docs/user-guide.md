@@ -459,6 +459,8 @@ Add `--follow` to tail the directory at 1-second poll; new events stream in as g
 
 Unlike `devteam log` and `devteam ui`, `report` is a **point-in-time snapshot** — it reads whatever is on disk at the moment you run it and writes a standalone HTML file that works offline and can be shared.
 
+**`devteam report --findings`** (Phase 35 item 35.4) switches to a different, fixing-oriented view: one severity-ordered table collected across *every* review artifact present — security-review (stage-04b), red-team including the 31.2 mechanical floor (stage-04c), peer-review and critic (stage-05 / stage-05.critic), the 31.4 mutation smoke gate (stage-06), verification-beyond-tests (stage-06d), and `docs/audit/*.md` once the audit workflow has run. Each row carries severity, `file:line`, what's wrong, a suggested mitigation (when the source stated one), rough effort, and — the important column — **provenance**: `orchestrator-observed` (traces to code the orchestrator itself ran: the mechanical red-team floor, a mutation gate execution, a confirmed stage-06d stamp, an approval-derivation-hook-derived peer-review mismatch) versus `model-asserted` (a reviewer's judgment, even when well-evidenced in prose). No findings across every source scanned renders an honest empty state, never a broken table. Written to `pipeline/findings-report.html` by default; `--json` prints the raw data (schema: `core/report/schemas/findings-report.schema.json`).
+
 The three real-time options are complementary. A common pattern: `devteam log --follow` in one terminal pane while running the pipeline in another, then `devteam report` once it finishes.
 
 ### Answering an open question between stages

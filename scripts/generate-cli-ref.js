@@ -127,7 +127,7 @@ const COMMANDS = [
   {
     name:        "report",
     synopsis:    "devteam report [options]",
-    description: "Generate a self-contained HTML report of the most recent pipeline run. Embeds status, per-stage timing, dispatch counts, blocker log, and all pipeline documents. Written to pipeline/report.html and opened in the default browser.",
+    description: "Generate a self-contained HTML report of the most recent pipeline run. Embeds status, per-stage timing, dispatch counts, blocker log, and all pipeline documents. Written to pipeline/report.html and opened in the default browser. With --findings, generates a severity-ordered findings report instead, collected across every review artifact present (security-review, red-team, peer-review/critic, verification-beyond-tests, mutation, docs/audit/*.md) and labelled orchestrator-observed vs model-asserted — written to pipeline/findings-report.html.",
   },
   {
     name:        "performance",
