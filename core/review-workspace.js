@@ -102,6 +102,66 @@ function readSubjectManifest(workspacePath) {
   return JSON.parse(fs.readFileSync(subjectManifestPath(workspacePath), "utf8"));
 }
 
+// Phase-36 item 36.4 (plans/phase-36-external-review-mode.md §36.4) —
+// `devteam review --list` needs "last run date, last status" per workspace.
+// Recorded here (not in subject.json, which is write-once-per-review-target
+// metadata about what's being reviewed, not about run outcomes) so a
+// workspace with zero runs yet still has a valid subject.json but no
+// last-run.json — exactly the "empty case" --list must render.
+function lastRunManifestPath(workspacePath) {
+  return path.join(workspacePath, "last-run.json");
+}
+
+function writeLastRun(workspacePath, info = {}) {
+  const manifest = {
+    schema_version: "1.0",
+    started_at: info.startedAt || null,
+    completed_at: info.completedAt || new Date().toISOString(),
+    status: info.status || "unknown", // "completed" | "halted" | "error"
+    halt_action: info.haltAction !== undefined ? info.haltAction : null,
+    track: info.track || null,
+    findings_report: info.findingsReport || null,
+  };
+  fs.mkdirSync(workspacePath, { recursive: true });
+  fs.writeFileSync(lastRunManifestPath(workspacePath), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  return manifest;
+}
+
+function readLastRun(workspacePath) {
+  try {
+    return JSON.parse(fs.readFileSync(lastRunManifestPath(workspacePath), "utf8"));
+  } catch {
+    return null; // no runs yet — a valid state, not an error
+  }
+}
+
+// Enumerates every workspace under reviewsRoot(), newest-run-first (never-run
+// workspaces sort last). Each entry pairs subject.json (what's being
+// reviewed) with last-run.json (what happened last time), tolerating either
+// being absent — a workspace directory can exist from createReviewWorkspace()
+// before any run has completed.
+function listWorkspaces() {
+  const root = reviewsRoot();
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => {
+      const workspacePath = path.join(root, e.name);
+      let subject = null;
+      try { subject = readSubjectManifest(workspacePath); } catch { subject = null; }
+      const lastRun = readLastRun(workspacePath);
+      return {
+        slug: e.name,
+        workspace_path: workspacePath,
+        subject_path: subject ? subject.subject_path : null,
+        commit_sha: subject ? subject.commit_sha : null,
+        last_run_at: lastRun ? lastRun.completed_at : null,
+        last_status: lastRun ? lastRun.status : null,
+      };
+    })
+    .sort((a, b) => (b.last_run_at || "").localeCompare(a.last_run_at || ""));
+}
+
 // Skeleton mirrors the parts of `devteam init` (core/cli/commands/init.js) a
 // review needs: pipeline/gates/ (state), a minimal config.yml pinning routing
 // to the review host and track, and the host adapter's own install() for role
@@ -144,4 +204,8 @@ module.exports = {
   writeSubjectManifest,
   readSubjectManifest,
   subjectManifestPath,
+  writeLastRun,
+  readLastRun,
+  lastRunManifestPath,
+  listWorkspaces,
 };

@@ -3,7 +3,7 @@
 
 # CLI Reference
 
-Full `devteam` command reference. 41 commands.
+Full `devteam` command reference. 42 commands.
 Derived from the per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
@@ -466,6 +466,21 @@ Materialize an inbound GitHub PR (diff, changed files, title/body) into pipeline
 | --post | bool   | Publish the review as a PR comment (opt-in; see --yes)     |
 | --yes  | bool   | Auto-confirm --post; required in a non-interactive context |
 | --json | bool   | JSON output                                                |
+
+### `devteam review <path> [options]`
+
+Zero-install external review: no init, no config, nothing written to <path>. Creates (or reuses) a review workspace under ~/.stagecraft/reviews/<slug>/ and dispatches the track there with ctx.processCwd=<path>, ctx.cwd=<workspace>. Only --host acp mechanically prevents writes to <path> (hosts/acp/permissions.js); any other host prints a warning and refuses without --allow-unenforced-writes. Prints the 35.4 findings report path on completion. --list shows existing workspaces: subject path, last run date, last status.
+
+| Flag                      | Type   | Description                                                                                                          |
+| ------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| --scope                   | list   | Scope the review to this path within the subject (repeatable; review-only track)                                     |
+| --track                   | string | Pipeline track to dispatch (default: review-only)                                                                    |
+| --host                    | string | Dispatch host (default: acp — the only host that mechanically prevents writes to the subject)                        |
+| --workspace               | string | Override the derived ~/.stagecraft/reviews/<slug> workspace path                                                     |
+| --allow-unenforced-writes | bool   | Required with --host anything other than acp: acknowledges that writes to the subject are not mechanically prevented |
+| --json                    | bool   | JSON output                                                                                                          |
+| --open                    | bool   | Open the findings report in a browser when the run finishes                                                          |
+| --list                    | bool   | List existing review workspaces instead of running a review                                                          |
 
 ### `devteam stages`
 

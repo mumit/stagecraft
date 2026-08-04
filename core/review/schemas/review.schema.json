@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stagecraft:schema:review",
+  "title": "devteam review --json",
+  "description": "Zero-install external review entry point (Phase 36 item 36.4, plans/phase-36-external-review-mode.md §36.4). Wraps core/driver.js run()'s summary (snake_case, same convention) with the workspace/host-honesty facts specific to this command: which workspace the review's state landed in, which host dispatched it (and whether that host mechanically enforces read-only review), and where the 35.4 findings report was written. core/cli/commands/review.js is the authoritative producer; this file documents the same contract.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "subject", "workspace", "host", "track", "review_mode_enforced", "completed", "halted", "halt_action", "findings_report"],
+  "properties": {
+    "schema_version": { "type": "string", "description": "Schema version of this JSON shape, independent of driver.js's own RUN_SCHEMA_VERSION." },
+    "subject": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["path", "remote", "commit_sha"],
+      "properties": {
+        "path": { "type": "string", "description": "Absolute path to the subject being reviewed." },
+        "remote": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "commit_sha": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    },
+    "workspace": { "type": "string", "description": "Absolute path to the review workspace (stateRoot) — where every gate, artifact, and log for this run landed." },
+    "host": { "type": "string", "description": "Dispatch host used for this run." },
+    "track": { "type": "string", "description": "Pipeline track dispatched (default: review-only)." },
+    "review_mode_enforced": { "type": "boolean", "description": "True only when --host is acp — the only host that mechanically prevents writes into the subject (hosts/acp/permissions.js). False means enforcement degraded to a post-hoc audit; --allow-unenforced-writes was required to reach this run." },
+    "completed": { "type": "boolean", "description": "Mirrors driver.js summary.completed." },
+    "halted": { "type": "boolean", "description": "Mirrors driver.js summary.halted." },
+    "halt_action": { "anyOf": [{ "type": "string" }, { "type": "null" }], "description": "Mirrors driver.js summary.halt_action." },
+    "findings_report": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["path", "total"],
+          "properties": {
+            "path": { "type": "string", "description": "Path to the written findings-report.html." },
+            "total": { "type": "integer", "minimum": 0, "description": "Total findings collected (core/report/collect-findings.js's counts.total)." }
+          }
+        },
+        { "type": "null" }
+      ],
+      "description": "Null only when the run errored before a findings report could be generated."
+    }
+  }
+}

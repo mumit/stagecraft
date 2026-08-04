@@ -11,7 +11,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §36
 | 36.1 two-root permission model + real read-only mode | ✅ complete — `hosts/acp/permissions.js#evaluateToolCall` (`codeRoot`/`stateRoot`/`mode`) |
 | 36.2 framework-path resolution when roots differ | ✅ complete — `core/adapters/render-helpers.js#resolveFrameworkPath` |
 | 36.3 review workspace + orchestrator plumbing | ✅ complete — `core/review-workspace.js`; `ctx.processCwd`/`ctx.externalReviewMode` threaded through `core/orchestrator.js#runStage`/`core/driver.js#run` |
-| 36.4 `devteam review <path>` | proposed |
+| 36.4 `devteam review <path>` | ✅ complete — `core/cli/commands/review.js`; host honesty gated by `--allow-unenforced-writes` |
 | 36.5 `devteam review-pr` without an initialised project | proposed |
 | 36.6 docs: external review guide | proposed |
 
@@ -194,6 +194,30 @@ are *not* mechanically prevented and enforcement degrades to post-hoc audit, and
 - Acceptance: end-to-end against a fixture repo with a scripted ACP stub agent produces a
   findings report and an untouched subject; non-ACP host warns and refuses without the
   ack flag; `--list` renders; `--json` shape schema-checked.
+
+**Done — see `core/cli/commands/review.js`, `core/review-workspace.js` (extended with
+`listWorkspaces()`/`writeLastRun()`/`readLastRun()`), `core/review/schemas/{review,
+review-list}.schema.json`, and `tests/review-command.test.js`.** Ack flag:
+`--allow-unenforced-writes`, matching the house "allow-&lt;compromised-guarantee&gt;"
+convention (`evidence.js`'s `--allow-unverified`) — states what's being given up, not
+just that the operator consents.
+
+**Two gaps found while wiring the real (stubbed) ACP dispatch end-to-end, neither fixed
+here:**
+1. `Produce <artifact>` / `Write to pipeline/gates/<id>.json` (`core/adapters/
+   render-helpers.js`) are still *relative* paths. A real ACP agent resolves them against
+   its own session cwd, which review mode sets to the subject (36.1's `processCwd`), not
+   the workspace — so a real agent following the prompt literally either gets the write
+   denied (safe) or must infer the workspace's absolute path from context the prompt
+   doesn't give it. 36.2 solved this for *read* targets (`readFirst` entries render
+   absolute when roots differ); the write side (artifact + gate paths) needs the same
+   treatment. The test's stub sidesteps it via `ACP_STUB_WORKSPACE_ROOT`, told directly by
+   the harness — proving the plumbing, not this case.
+2. `hosts/acp/adapter.js` never calls `core/hooks/approval-derivation.js#deriveForProject`
+   the way `core/adapters/headless.js` does for non-ACP headless hosts. A real ACP-routed
+   peer-review dispatch has no automatic path from `pipeline/code-review/by-<role>.md` to a
+   derived `stage-05.<role>.json` gate. The test stub writes that gate directly (a script,
+   not bound by the "never authored by an agent" contract stage-05's schema describes).
 
 ### 36.5 `devteam review-pr` without an initialised project
 
