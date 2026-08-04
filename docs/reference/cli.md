@@ -274,21 +274,25 @@ Reconstruct run critical path from run-log.jsonl: dispatch wall, workstream comp
 | --feature | string | Feature name (bounded isolation mode) |
 | --json    | bool   | JSON output                           |
 
-### `devteam evidence <status|export|identity|accept-resolution> [options]`
+### `devteam evidence <status|export|identity|accept-resolution|verify-attestation> [options]`
 
-Assess evidence-gated capabilities offline, export consented aggregates, manage project identity, or explicitly accept a successful fix/retry resolution.
+Assess evidence-gated capabilities offline, export consented aggregates or a per-run in-toto-shaped attestation, manage project identity, explicitly accept a successful fix/retry resolution, or offline-verify an attestation bundle.
 
-| Flag      | Type   | Description                                        |
-| --------- | ------ | -------------------------------------------------- |
-| --cwd     | string | Target project directory                           |
-| --feature | string | Feature name for bounded isolation                 |
-| --json    | bool   | Emit stable aggregate JSON                         |
-| --out     | string | New local export file                              |
-| --consent | bool   | Acknowledge the documented export boundary         |
-| --bundle  | list   | Validated bundle for portfolio status (repeatable) |
-| --rotate  | bool   | Rotate the local project identity                  |
-| --delete  | bool   | Delete the local project identity                  |
-| --yes     | bool   | Confirm identity mutation or resolution acceptance |
+| Flag               | Type   | Description                                                                     |
+| ------------------ | ------ | ------------------------------------------------------------------------------- |
+| --cwd              | string | Target project directory                                                        |
+| --feature          | string | Feature name for bounded isolation                                              |
+| --json             | bool   | Emit stable aggregate JSON                                                      |
+| --out              | string | New local export file                                                           |
+| --consent          | bool   | Acknowledge the documented export boundary                                      |
+| --bundle           | list   | Validated bundle for portfolio status (repeatable)                              |
+| --rotate           | bool   | Rotate the local project identity                                               |
+| --delete           | bool   | Delete the local project identity                                               |
+| --yes              | bool   | Confirm identity mutation or resolution acceptance                              |
+| --attestation      | bool   | Export an in-toto-shaped, per-stage attestation instead of the aggregate bundle |
+| --track            | string | Override the pipeline track for --attestation chain verification                |
+| --allow-unverified | bool   | Attest even when the gate chain is broken, stamping the bundle as unverified    |
+| --sign             | bool   | Sign the --attestation bundle with cosign sign-blob (must be on PATH)           |
 
 ### `devteam ui [options]`
 

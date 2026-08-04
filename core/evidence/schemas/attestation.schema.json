@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stagecraft:schema:attestation:1.0",
+  "title": "Stagecraft in-toto-Statement-shaped attestation bundle",
+  "description": "Full per-stage-fidelity evidence for ONE run/commit, produced by `devteam evidence export --attestation`. Distinct from evidence-export.schema.json's privacy-preserving cross-run aggregate. core/evidence/attestation.js's validateAttestation is the authoritative reader; this file documents the same contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_type", "subject", "predicateType", "predicate", "payload_sha256"],
+  "properties": {
+    "_type": { "const": "https://in-toto.io/Statement/v1" },
+    "subject": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/subject" } },
+    "predicateType": { "const": "urn:stagecraft:attestation:1.0" },
+    "predicate": { "$ref": "#/$defs/predicate" },
+    "payload_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "subject": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "digest"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "digest": {
+          "type": "object", "additionalProperties": false,
+          "required": ["sha1"],
+          "properties": { "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" } }
+        }
+      }
+    },
+    "predicate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "stagecraft_version", "generated_at", "project_ref", "track", "chain_verification", "unverified", "stages", "resolutions"],
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "stagecraft_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$" },
+        "generated_at": { "type": "string" },
+        "project_ref": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "track": { "type": "string", "minLength": 1 },
+        "chain_verification": { "$ref": "#/$defs/chain_verification" },
+        "unverified": { "type": "boolean" },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/stage" } },
+        "resolutions": { "type": "array", "items": { "$ref": "#/$defs/resolution" } }
+      }
+    },
+    "chain_verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ok", "checked", "breaks", "unstamped", "unsigned", "invalid_macs", "unverified_signatures", "require_signed"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "checked": { "type": "integer", "minimum": 0 },
+        "breaks": { "type": "array" },
+        "unstamped": { "type": "array", "items": { "type": "string" } },
+        "unsigned": { "type": "array", "items": { "type": "string" } },
+        "invalid_macs": { "type": "array" },
+        "unverified_signatures": { "type": "array", "items": { "type": "string" } },
+        "require_signed": { "type": "boolean" }
+      }
+    },
+    "stage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stage", "status", "provenance", "reproducibility", "prompt_pack_version", "chain", "authority_resolution"],
+      "properties": {
+        "stage": { "type": "string", "pattern": "^stage-[0-9]{2}([-.][a-z0-9-]+)?$" },
+        "status": { "type": "string", "enum": ["PASS", "WARN", "FAIL", "ESCALATE"] },
+        "provenance": { "type": "array", "items": { "$ref": "#/$defs/provenance_entry" } },
+        "reproducibility": { "$ref": "#/$defs/reproducibility" },
+        "prompt_pack_version": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{12}$" }, { "type": "null" }] },
+        "chain": { "anyOf": [{ "$ref": "#/$defs/chain" }, { "type": "null" }] },
+        "authority_resolution": { "anyOf": [{ "$ref": "#/$defs/authority_resolution" }, { "type": "null" }] }
+      }
+    },
+    "provenance_entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["field", "model_asserted", "orchestrator_value", "orchestrator_kind"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "model_asserted": { "anyOf": [{ "type": "string" }, { "type": "number" }, { "type": "null" }] },
+        "orchestrator_value": { "anyOf": [{ "type": "string" }, { "type": "number" }, { "type": "null" }] },
+        "orchestrator_kind": { "enum": ["observed", "stamped", null] }
+      }
+    },
+    "reproducibility": {
+      "type": "object", "additionalProperties": false,
+      "required": ["model", "model_version", "temperature", "seed", "max_tokens", "system_prompt_hash", "tools_hash", "stage", "workstream", "host", "timestamp", "orchestrator"],
+      "properties": {
+        "model": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "model_version": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "temperature": { "anyOf": [{ "type": "number" }, { "type": "null" }] },
+        "seed": { "anyOf": [{ "type": "integer" }, { "type": "null" }] },
+        "max_tokens": { "anyOf": [{ "type": "integer" }, { "type": "null" }] },
+        "system_prompt_hash": { "anyOf": [{ "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, { "type": "null" }] },
+        "tools_hash": { "anyOf": [{ "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, { "type": "null" }] },
+        "stage": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "workstream": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "host": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "timestamp": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "orchestrator": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    },
+    "chain": {
+      "type": "object", "additionalProperties": false,
+      "required": ["prev_stage", "prev_hash", "algo", "hmac_present"],
+      "properties": {
+        "prev_stage": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "prev_hash": { "anyOf": [{ "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, { "type": "null" }] },
+        "algo": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "hmac_present": { "type": "boolean" }
+      }
+    },
+    "authority_resolution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority", "grant_class", "ruling", "ts"],
+      "properties": {
+        "authority": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "grant_class": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "ruling": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+        "ts": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    },
+    "resolution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stage", "failure_class", "schema_fingerprint", "derivable", "source_event_sha256", "accepted_at"],
+      "properties": {
+        "stage": { "type": "string" },
+        "failure_class": { "type": "string" },
+        "schema_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "derivable": { "type": "boolean" },
+        "source_event_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "accepted_at": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      }
+    }
+  }
+}

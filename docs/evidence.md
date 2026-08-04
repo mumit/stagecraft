@@ -149,6 +149,72 @@ exports from the same project, and unusual host/model combinations may still be
 commercially sensitive. Retention, sharing, and deletion of exported files remain the
 operator's responsibility.
 
+## Attestation export (per-run, full fidelity)
+
+The aggregate bundle above is a privacy-preserving summary across many runs. Phase-34
+item 34.2 adds the opposite shape: a signed, full-fidelity proof for ONE run/commit —
+"here is exactly which stages passed, who/what verified each field, and what the
+tamper-evident chain looked like at export time." This productizes the existing gate
+chain (C6/ADR-011), C4 reproducibility fields, and ADR-012 resolution-acceptance
+machinery; it does not anonymize or suppress anything, so treat it as a document to
+hand to a specific auditor, not something to publish broadly.
+
+```bash
+devteam evidence export --attestation --out ./attestation.json
+devteam evidence export --attestation --out ./attestation.json --sign
+devteam evidence export --attestation --out ./attestation.json --allow-unverified
+devteam evidence verify-attestation ./attestation.json
+```
+
+The command runs `verify-chain` first and refuses to attest a broken chain — a break
+means an earlier gate changed after being chained, so the "proof" would be worthless.
+`--allow-unverified` overrides the refusal for cases like a deliberate earlier-stage
+re-run that hasn't been re-stamped yet; the bundle then records `predicate.unverified:
+true` and the full `chain_verification` detail rather than hiding the problem.
+
+The bundle is shaped like an [in-toto Statement](https://in-toto.io/) —
+`_type`/`subject`/`predicateType`/`predicate` — so tooling that already understands
+that envelope recognizes it, but `predicateType` is Stagecraft-namespaced
+(`urn:stagecraft:attestation:1.0`; it does not claim a registered SLSA/in-toto
+predicate) and `payload_sha256` is a Stagecraft-local tamper check, not a DSSE
+envelope. `subject` is the commit(s) this run produced: `auto-commit` run-log events
+when `devteam run --auto-commit` made them, plus the current git `HEAD` (the common
+manual-commit workflow). Exporting requires a git repository with at least one commit.
+
+`predicate.stages` has one entry per stage gate present for the resolved track, each
+with:
+
+- `status` — the gate's PASS/WARN/FAIL/ESCALATE.
+- `provenance` — per-field entries distinguishing what the model asserted
+  (`model_asserted`) from what the orchestrator actually observed or stamped
+  (`orchestrator_value`/`orchestrator_kind`), for `model`, `tokens_in`, `tokens_out`,
+  `cost_usd`, and `model_requested`.
+- `reproducibility` — the C4 fingerprint (`core/reproducibility.js`): model version,
+  temperature, seed, max_tokens, system/tools prompt hashes.
+- `prompt_pack_version` — the 33.3 content-hash of the prompt surface, when recorded.
+- `chain` — this gate's chain-hash linkage (`prev_stage`/`prev_hash`/`algo`) and
+  whether an HMAC is present (`hmac_present`); the raw HMAC value itself is never
+  copied into the bundle.
+- `authority_resolution` — C6/Phase-2 autonomous-resolution provenance (`--auto-rule`),
+  when the gate carries one.
+
+`predicate.resolutions` lists every ADR-012 accepted fix/retry resolution from the run
+log as its own entry (stage, failure class, schema fingerprint, `derivable`, the
+binding hash) — the same fields `evidence status`'s `resolutions` section aggregates,
+here kept per-event instead of grouped.
+
+`--sign` shells to `cosign sign-blob --output-signature <file>.sig <file>` when
+`cosign` is on PATH; Stagecraft never bundles or manages signing keys (KMS/Fulcio/OIDC
+setup is the operator's). A missing `cosign` or a failing sign step exits non-zero
+with the underlying error, but the attestation bundle itself is still written — signing
+is a separate, best-effort step layered on a bundle that's already valid without it.
+
+`devteam evidence verify-attestation <bundle>` is a fully offline counterpart: it
+re-parses the file, revalidates it against
+[`core/evidence/schemas/attestation.schema.json`](../core/evidence/schemas/attestation.schema.json),
+and recomputes `payload_sha256` to detect any edit made after export. It never reads
+the live pipeline — only the named file.
+
 ## Project identity
 
 The first export creates `.devteam/evidence-project-id`, covered by Stagecraft's managed

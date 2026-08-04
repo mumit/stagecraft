@@ -136,8 +136,8 @@ const COMMANDS = [
   },
   {
     name:        "evidence",
-    synopsis:    "devteam evidence <status|export|identity|accept-resolution> [options]",
-    description: "Assess evidence-gated capabilities offline, export consented aggregates, manage project identity, or explicitly accept a successful fix/retry resolution.",
+    synopsis:    "devteam evidence <status|export|identity|accept-resolution|verify-attestation> [options]",
+    description: "Assess evidence-gated capabilities offline, export consented aggregates or a per-run in-toto-shaped attestation, manage project identity, explicitly accept a successful fix/retry resolution, or offline-verify an attestation bundle.",
   },
   {
     name:        "ui",
