@@ -128,7 +128,17 @@ const FULL_TRACK_QA_SNAPSHOT = {
     stage: "stage-06d",
     roles: ["verifier"],
     objective: "Apply property-based testing, mutation testing, and/or formal verification to the changed code. Run AFTER stage-06 (qa) PASS — tests are the floor, this stage raises the ceiling. Surface counterexamples + surviving mutants + invariant violations as blocking findings.",
-    readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/spec.feature", "pipeline/test-report.md", "pipeline/red-team-report.md"],
+    // Phase-35 item 35.1: pipeline-artifact deps are optional (soft readFirst)
+    // so this stage can also run standalone with no predecessor gates.
+    readFirst: [
+      "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
+      { path: "pipeline/context.md", optional: true },
+      { path: "pipeline/brief.md", optional: true },
+      { path: "pipeline/design-spec.md", optional: true },
+      { path: "pipeline/spec.feature", optional: true },
+      { path: "pipeline/test-report.md", optional: true },
+      { path: "pipeline/red-team-report.md", optional: true },
+    ],
     allowedWrites: ["pipeline/verification-report.md", "pipeline/gates/stage-06d.json", "src/tests/property/", "pipeline/formal/", "pipeline/reports/"],
     artifact: "pipeline/verification-report.md",
     template: "verification-report-template.md",

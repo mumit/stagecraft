@@ -50,7 +50,7 @@ what projects that don't want the overhead should use.
 
 ### Track routing
 
-Before Stage 1, the orchestrator must decide which track to run. Seven tracks
+Before Stage 1, the orchestrator must decide which track to run. Eight tracks
 exist and they share gates, agents, and artefacts where they overlap, but
 differ on which stages run and how many approvals a gate requires:
 
@@ -63,6 +63,7 @@ differ on which stages run and how many approvals a gate requires:
 | **Dep update** | `--track dep-update` | 4 (platform + changelog scan + SCA) → 5 (single supply-chain reviewer) → 6 (no-regression) → 8 (optional) | 1 (supply-chain focus) | Fix-log entry only |
 | **Hotfix** | `--track hotfix` | 4 → 4b (conditional) → 5 → 6 → 7 → 8 (design + 4a skipped; blast-radius rule active) | 2 per area | Abbreviated single-section retro |
 | **Loop** | `--track loop` | 1 (one-screen brief) → 4 (single workstream, default backend) → 6 (qa) → 5 (1 reviewer) — note qa before peer-review, the reverse of every other track | 1 (single reviewer) | None; no sign-off/deploy on this track |
+| **Review-only** | `--track review-only` | 4b (security-review) → 4c (red-team) → 5 (peer-review) — no requirements/design/build; reviews code that already exists, optionally narrowed with `--scope <path>` (repeatable) | 2 per area (matrix) | None; no sign-off/deploy on this track |
 
 The routing decision is recorded in `pipeline/context.md` under `## Brief
 Changes` as `TRACK: <name>` with a one-line rationale. Each gate file in

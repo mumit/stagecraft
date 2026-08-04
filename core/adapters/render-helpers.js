@@ -24,6 +24,16 @@
 // Returns nothing; mutates `lines` in place (same contract as
 // appendGateFooter). The caller pushes nothing if patchItems is absent
 // — absence is the normal case and must not alter any other output.
+// Phase-35 item 35.1: render "Scope: <path>[, <path>...]" right after the
+// Track/Feature header lines when --scope was passed (ctx.scope is a
+// non-empty array; null otherwise — see core/orchestrator.js's runStage()).
+// Absence is the normal case for every pre-35 track and must not alter their
+// prompts (byte-identical regression, tests/prompt-layout.test.js).
+function renderScopeLine(ctx, lines) {
+  if (!ctx.scope || ctx.scope.length === 0) return;
+  lines.push(`Scope: ${ctx.scope.join(", ")} — review only this path (these paths); the rest of the repo is out of scope for this review.`);
+}
+
 function renderPatchBlock(ctx, lines) {
   if (!ctx.patchItems || ctx.patchItems.length === 0) return;
   lines.push("");
@@ -217,7 +227,7 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`## Gate to write`);
   lines.push(`Write to \`${gatePath}\`. You provide:`);
   lines.push("```json");
-  lines.push(JSON.stringify({
+  const gateSkeleton = {
     stage: descriptor.stage,
     workstream: descriptor.role,
     status: "PASS|WARN|FAIL|ESCALATE",
@@ -226,7 +236,11 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
     blockers: [],
     warnings: [],
     ...descriptor.expectedGate,
-  }, null, 2));
+  };
+  // Phase-35 item 35.1: --scope lands on the gate too, for audit — only when
+  // passed, so every pre-35 gate skeleton (and prompt) stays byte-identical.
+  if (ctx.scope) gateSkeleton.scope = ctx.scope;
+  lines.push(JSON.stringify(gateSkeleton, null, 2));
   lines.push("```");
   lines.push(`The orchestrator adds \`"orchestrator": "${ctx.orchestrator}"\` and \`"host": "${hostName}"\` at validation time.`);
   lines.push("");
@@ -241,4 +255,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, splitReadFirst, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderScopeLine, splitReadFirst, toolBudgetSection };

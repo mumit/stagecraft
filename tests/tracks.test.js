@@ -207,8 +207,16 @@ describe("tracks: isStageInTrack", () => {
     assert.equal(isStageInTrack("design", "nano"), false);
   });
 
-  it("build is in every track", () => {
+  it("build is in every track except review-only", () => {
+    // Phase-35 item 35.1: `review-only` is the one track that never builds
+    // anything — it reviews code that already exists (security-review +
+    // red-team + peer-review only). Every other track produces new code, so
+    // "build is in every track" held until this track existed.
     for (const t of TRACKS) {
+      if (t === "review-only") {
+        assert.equal(isStageInTrack("build", t), false, `build unexpectedly present on ${t}`);
+        continue;
+      }
       assert.equal(isStageInTrack("build", t), true, `build missing from ${t}`);
     }
   });

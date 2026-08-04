@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const { listRoles, ROLES_DIR } = require("../roles");
 const baseInstall = require("./base-install");
-const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst, toolBudgetSection } = require("./render-helpers");
+const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderScopeLine, splitReadFirst, toolBudgetSection } = require("./render-helpers");
 
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -152,6 +152,7 @@ function makeMarkdownHostAdapter(capabilities) {
     lines.push(`Workstream: ${descriptor.workstreamId} (role: ${descriptor.role}, host: ${hostName})`);
     lines.push(`Track: ${ctx.track}`);
     if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
+    renderScopeLine(ctx, lines);
     renderPatchBlock(ctx, lines);
     lines.push("");
     lines.push(`## Objective`);
