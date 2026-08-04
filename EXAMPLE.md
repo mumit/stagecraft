@@ -1,11 +1,24 @@
 # EXAMPLE — One pipeline run, end to end
 
-Walks one feature ("Add SMS notification opt-in to user settings") through the full Stagecraft pipeline. Every command in this doc is real and every output is captured from an actual run.
+Walks one feature ("Add SMS notification opt-in to user settings") through the full Stagecraft pipeline.
 
 If you read one doc to learn Stagecraft, read this one.
 
-> **Freshness:** captured at v0.7.0. Command outputs reflect the pipeline at that release.
-> Re-run the traced pipeline before using this doc for demos or release notes.
+> **Freshness:** captured at v0.9.0. Two kinds of output appear below, and they were
+> refreshed differently:
+>
+> - **Orchestrator output** — `devteam init`, `devteam next`, dispatch lines, gate JSON,
+>   file counts. Re-captured 2026-08-03 by running the real CLI against a fresh temp
+>   project. These are current.
+> - **Model-written content** — the brief text, design spec, review comments, and the
+>   wall-clock timings of real model calls. Carried over from the original v0.7.0 run
+>   against live Claude Code. Nothing about the *shape* of these artifacts has changed,
+>   but the prose is what that model wrote then, not a fresh generation. Re-running this
+>   part costs real model spend, so it is done at release time rather than on every doc
+>   pass.
+>
+> Timings shown for model dispatches are from that original run and vary widely by model
+> and feature size — read them as order-of-magnitude, not benchmarks.
 > `npm run consistency` warns when this stamp is more than one minor behind the current version.
 
 ## Setup
@@ -23,20 +36,29 @@ Host(s): claude-code
   ✓ wrote .devteam/config.yml
   ✓ created pipeline/
   ✓ created pipeline/gates/
+  ✓ created .devteam/templates/
+  ✓ wrote AGENTS.md (stub — edit with project context)
 
 Installing host adapter: claude-code
-  written: 26, skipped: 0
+  written: 68, skipped: 0
+
+Installing deploy adapter: local (default)
+  ✓ wrote   .devteam/adapters/local.md
+  ✓ wrote .gitignore (stagecraft block)
 
 Next: edit .devteam/config.yml if you need custom routing, then `devteam stage requirements --feature "..."`.
 ```
 
-40 files landed:
-- 12 role subagents in `.claude/agents/`
+72 files landed:
+- 14 role subagents in `.claude/agents/` — the 12 original roles plus `critic` (adversarial review, 31.3) and `reflector` (run-end learning, 30.3)
 - 3 slash commands in `.claude/commands/` (`devteam`, `audit`, `audit-quick`)
-- 10 rules docs in `.devteam/rules/`
-- 13 task skills in `.claude/skills/`
-- 1 `.devteam/config.yml`
-- 1 `settings.local.json` wiring the hooks
+- 30 rules docs in `.devteam/rules/` — 10 top-level plus one per stage
+- 20 task skills in `.claude/skills/`
+- 1 `.devteam/config.yml`, 1 `settings.local.json` wiring the hooks
+- 1 `.devteam/adapters/local.md` (the default deploy adapter)
+- an `AGENTS.md` stub and a managed `.gitignore` block
+
+`AGENTS.md` is a stub on purpose — fill it in with your project's conventions, because every stage prompt tells the model to read it first.
 
 Check what to do next:
 
@@ -73,7 +95,7 @@ devteam stage requirements --feature "Add SMS notification opt-in to user settin
 [devteam] dispatching pm → claude-code (headless)
 ```
 
-**Step 2.** The orchestrator spawns `claude --print` and pipes the rendered stage prompt to it via stdin. Claude's output streams to your terminal as the model works. You'll see:
+**Step 2.** The orchestrator spawns `claude --print --output-format stream-json --verbose` and pipes the rendered stage prompt to it via stdin. The JSON stream is how the orchestrator reads real token counts and cost (28.1); the human-readable text is teed to `pipeline/logs/<workstream>.log` so transcripts stay readable. Claude's output streams to your terminal as the model works. You'll see:
 - Claude acknowledging the prompt and reading its `pm` subagent brief.
 - Claude reading the brief template (`templates/brief-template.md`).
 - Claude writing `pipeline/brief.md` section by section.
@@ -107,17 +129,39 @@ $ cat pipeline/gates/stage-01.json
   "stage": "stage-01",
   "workstream": "pm",
   "host": "claude-code",
-  "orchestrator": "devteam@0.2.0",
+  "orchestrator": "devteam@0.9.0",
   "status": "PASS",
   "track": "full",
-  "timestamp": "2026-05-28T14:32:11Z",
+  "timestamp": "2026-08-03T14:32:11Z",
   "blockers": [],
   "warnings": [],
   "acceptance_criteria_count": 5,
   "out_of_scope_items": [...],
-  "required_sections_complete": true
+  "required_sections_complete": true,
+  "dispatched_tool_budget": ["Read", "Write", "Glob"],
+  "prompt_pack_version": "00bd1d34ff67",
+  "chain": {
+    "prev_stage": null,
+    "prev_hash": null,
+    "algo": "sha256-canonical-json"
+  },
+  "_orchestrator_observed": {
+    "tokens_in": 14203,
+    "tokens_out": 1875,
+    "cost_usd": 0.0461,
+    "model_observed": "claude-sonnet-5",
+    "source": "claude-code:stream-json",
+    "at": "2026-08-03T14:32:11Z"
+  }
 }
 ```
+
+The model writes the top block. **Everything from `dispatched_tool_budget` down is added by the orchestrator, not the model** — that split is the whole point of the gate contract:
+
+- `dispatched_tool_budget` — the tools this workstream was actually granted.
+- `prompt_pack_version` — content hash of `roles/ + rules/ + templates/`, so you can later ask "did that role-brief edit change outcomes?" (33.3).
+- `chain` — hash link to the predecessor gate, making the trail tamper-evident (`devteam verify-chain`).
+- `_orchestrator_observed` — token counts and cost parsed from the host CLI's own output. Before v0.8 the only cost number in a gate was whatever the model claimed about itself; now `--budget-usd` counts this instead (28.1–28.4). On a host that reports no usage you get `tokens_estimated: true` and a labelled estimate rather than a confident wrong number.
 
 #### What you do next
 
@@ -306,7 +350,7 @@ Write to `pipeline/gates/stage-01.json`. You provide:
   "required_sections_complete": false
 }
 ```
-The orchestrator adds `"orchestrator": "devteam@0.1.0"` and `"host": "claude-code"` at validation time.
+The orchestrator adds `"orchestrator": "devteam@0.9.0"` and `"host": "claude-code"` at validation time.
 ```
 
 Inside Claude Code, the PM subagent reads the brief template, drafts `pipeline/brief.md`, and writes the gate. The Stop hook fires the validator. PASS:
@@ -395,9 +439,9 @@ The merged stage gate carries the contributing workstreams:
 {
   "stage": "stage-04",
   "status": "PASS",
-  "orchestrator": "devteam@0.1.0",
+  "orchestrator": "devteam@0.9.0",
   "track": "full",
-  "timestamp": "2026-05-26T20:00:00Z",
+  "timestamp": "2026-08-03T20:00:00Z",
   "blockers": [],
   "warnings": [],
   "workstreams": [
@@ -450,6 +494,11 @@ The security subagent reviews; gate carries `security_approved` and `veto` flags
 Peer-review has the same multi-workstream shape as build, but the **workstreams are areas being reviewed** (backend / frontend / platform / qa). All four dispatch to the same `reviewer` subagent (via `subagent: "reviewer"` on the stage).
 
 Reviewers write per-area sections in their review files. The PostToolUse hook (`approval-derivation.js`) fires on every save, parses the file, and upserts the per-area workstream gates.
+
+Two things changed here since v0.7 and both are worth knowing:
+
+- **The orchestrator re-derives approvals after the merge, on every host** (31.5). The hook above only runs inside Claude Code, so a gate written by any other host used to be taken at its word. Now a workstream gate claiming approval whose review file actually says `CHANGES REQUESTED` flips the merged gate to FAIL, with the disagreement recorded.
+- **There is an alternative to the four-area panel.** Setting `review.mode: adversarial` replaces it with one reviewer followed by a `critic` whose job is to attack the review — missed findings, unsupported approvals — and the stage passes only when the reviewer approves *and* the critic's challenges are resolved (31.3). When two or more hosts are configured, reviewer and critic default to different hosts. The panel below is still the default; this walkthrough shows it.
 
 ```bash
 # Reviewer A writes pipeline/code-review/by-backend.md:
@@ -532,25 +581,36 @@ pipeline/gates/
 ├── stage-01.json              # PM brief
 ├── stage-02.json              # Principal design
 ├── stage-03.json              # PM clarification
+├── stage-03b.json             # executable spec (Gherkin)
 ├── stage-04.json              # merged build (4 workstreams)
 ├── stage-04.backend.json
 ├── stage-04.frontend.json
 ├── stage-04.platform.json
 ├── stage-04.qa.json
-├── stage-04a.json             # Platform pre-review
+├── stage-04a.json             # Platform pre-review (lint + tests, orchestrator-verified)
 ├── stage-04b.json             # (only if security_review_required)
+├── stage-04c.json             # red-team (model pass + mechanical floor)
+├── stage-04d.json             # migration safety
 ├── stage-05.json              # merged peer-review (4 area workstreams)
 ├── stage-05.backend.json
 ├── stage-05.frontend.json
 ├── stage-05.platform.json
 ├── stage-05.qa.json
-├── stage-06.json              # QA test report
+├── stage-06.json              # QA test report (orchestrator-verified)
+├── stage-06b.json             # accessibility audit
+├── stage-06c.json             # observability gate
+├── stage-06d.json             # verification beyond tests (PBT / mutation / formal)
+├── stage-06e.json             # performance budget
 ├── stage-07.json              # sign-off
 ├── stage-08.json              # deploy
 └── stage-09.json              # retrospective
 ```
 
+That is all 18 stages of the `full` track. Shorter tracks write a subset — `quick` folds the four specialty QA stages (`06b`/`06c`/`06d`/`06e`) into a single `stage-06x` verification sweep (29.4), and `loop` writes only four gates.
+
 Every gate carries the contract F identity fields. Every multi-role stage has a workstream gate per area plus the merged stage gate. The whole pipeline is auditable from these files alone — the orchestrator never holds state outside of them.
+
+**Which of these the orchestrator actually verifies, rather than believing:** `stage-03b`, `stage-04a`, `stage-04c`, and `stage-06` are re-checked by running the real commands and are overwritten when the model's claim disagrees (31.1–31.2). `stage-04` build workstreams are stamped per role plus once on the merge. The rest — including `stage-06d` — are schema-shaped model self-report today; `stage-06d` stamping is planned as phase 35 item 35.3. `devteam verify-chain` checks the hash links across all of them.
 
 ## What this example didn't show
 
@@ -563,7 +623,9 @@ Every gate carries the contract F identity fields. Every multi-role stage has a 
   ```
   Then `devteam stage build` produces 4 prompts, with the backend workstream pointing at `.codex/prompts/roles/backend.md` and the rest pointing at `.claude/agents/dev-*.md`.
 
-- **Headless invocation.** `devteam stage build --headless` would drive each workstream's host CLI non-interactively (`claude --print` for claude-code workstreams, `codex exec` for codex). Per-workstream exit codes + gate paths get reported in the summary.
+- **Headless invocation.** `devteam stage build --headless` would drive each workstream's host CLI non-interactively (`claude --print --output-format stream-json` for claude-code workstreams, `codex exec` for codex). Per-workstream exit codes + gate paths get reported in the summary.
+
+- **The `loop` track — and it is now the recommended default for everyday changes.** This doc walks `full` because it shows every stage, but `full` is the *audited* path you choose when the stakes justify it. Most changes should run `loop`: four slots (requirements → build → qa → peer-review), same gate and chain artifacts on disk, a fraction of the cost. `devteam run` with no `--track` now assesses the change and picks a track for you (29.2). See [docs/tracks.md](docs/tracks.md).
 
 - **Track shortcuts.** `devteam init` defaults `pipeline.default_track: full`. For a config-only change, edit that to `config-only` and `devteam next` walks a different stage list.
 
