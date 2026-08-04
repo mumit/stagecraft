@@ -72,6 +72,16 @@ gated only by one `session/request_permission` round-trip that Stagecraft's own
 `hosts/acp/permissions.js` already auto-allows for `read`/`execute`-kind calls today.
 **Recommendation: absolute paths** — no permission-layer change needed for 36.2.
 
+**Caution for future permission hardening** (not this phase — see
+`plans/landscape-review-2026-07.md` §3 item 4, "verification depth", which has no phase
+item yet): 36.0 found that `read`-kind ACP tool calls carry no location check at all today
+(`WRITE_KINDS` in `hosts/acp/permissions.js` is `edit`/`delete`/`move` only, and 36.1 below
+only tightens `execute`, not `read`). That's *required* for 36.2's absolute-framework-path
+mechanism to work — a reviewer/build agent must be able to read outside `codeRoot`. If a
+later pass ever adds a location check to `read` calls (e.g. to stop a review agent reading
+secrets outside the repo), it must explicitly allow `stateRoot`/framework paths, or it will
+silently break 36.2 with no test in this repo currently guarding against that regression.
+
 ### 36.1 Two-root permission model with a real read-only mode
 
 [verify-first] Claims to confirm in `hosts/acp/permissions.js`: `evaluateToolCall` takes a
