@@ -1,13 +1,14 @@
 # Tracks
 
-A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The eight tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team` (plus `loop`, added in phase-29 for minimal-ceremony iteration, and `review-only`, added in phase-35 for reviewing code that already exists).
+A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The nine tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team` (plus `loop`, added in phase-29 for minimal-ceremony iteration; `review-only`, added in phase-35 for reviewing code that already exists; and `review-pr`, added in phase-35.2 as the internal track `devteam review-pr` dispatches against).
 
-`loop` is the day-to-day default: the lightest track that still produces a brief, a build, a QA pass, and a review gate. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not run by default just because it's the safest-looking option. `review-only` is the one track that never builds anything — it reviews code that already exists (a brownfield repo, an inherited module) rather than shipping new code. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes of change in between. See the ceremony-cost column below, or run `devteam assess --json` for a numeric estimate against your project's routed models.
+`loop` is the day-to-day default: the lightest track that still produces a brief, a build, a QA pass, and a review gate. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not run by default just because it's the safest-looking option. `review-only` is the one track that never builds anything — it reviews code that already exists (a brownfield repo, an inherited module) rather than shipping new code. `review-pr` is a narrower sibling of `review-only`: a single scoped peer-review of one materialized inbound PR, driven by `devteam review-pr <number|url>` rather than `--track`. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes of change in between. See the ceremony-cost column below, or run `devteam assess --json` for a numeric estimate against your project's routed models.
 
 - [Pick by what you're shipping](#pick-by-what-youre-shipping)
 - [What each track runs](#what-each-track-runs)
 - [The `loop` track](#the-loop-track)
 - [The `review-only` track](#the-review-only-track)
+- [The `review-pr` track](#the-review-pr-track)
 - [Safety: the stoplist](#safety-the-stoplist)
 - [How `devteam next` honors the track](#how-devteam-next-honors-the-track)
 - [Conditional dispatch within a track](#conditional-dispatch-within-a-track)
@@ -54,14 +55,15 @@ dep-update                    ✓                   ✓   ✓                   
 hotfix                        ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓   ✓       ✓   ✓   ✓   ✓   
 loop          ✓               ✓ˢ                  ✓ˢ  ✓                               
 review-only                           ✓⁺  ✓       ✓                                   
+review-pr                                         ✓ˢ                                  
 
    Legend:
    ✓⁺ = conditional stage — only runs when stage-04a triggers it
        (security-review: security_review_required; migration-safety: migration_safety_required)
-   ✓ˢ = scoped to a single workstream — nano peer-review (single reviewer,
-       required_approvals=1); loop build + peer-review (single config-overridable
-       role, default backend). See PEER_REVIEW_SIZING / loopBuildRole in
-       core/pipeline/stages.js.
+   ✓ˢ = scoped to a single workstream — nano and review-pr peer-review (single
+       reviewer, required_approvals=1); loop build + peer-review (single config-
+       overridable role, default backend). See PEER_REVIEW_SIZING / loopBuildRole
+       in core/pipeline/stages.js.
    ✓ᵐ = mechanical script (preflight/stage-04e), not an LLM dispatch.
    3b = executable-spec (Gherkin scenarios from acceptance criteria)
    4a = pre-review (lint + dep review + SCA + trigger heuristics)
@@ -138,6 +140,30 @@ nothing to build and nothing to deploy. Peer-review keeps the standard
 4-area matrix (2 approvals) rather than a scoped variant: unlike `nano`/`loop`,
 there's no single-workstream build to size the review to, and an arbitrary
 existing subtree can span every area.
+
+## The `review-pr` track
+
+`review-pr` (phase-35 item 35.2) backs a single command,
+`devteam review-pr <number|url>` — it isn't meant to be picked directly via
+`--track`. It's the narrower, PR-shaped sibling of `review-only`: instead of
+reviewing an arbitrary existing subtree, it reviews one already-diffed,
+already-scoped unit of change — an inbound GitHub PR — so peer-review is
+sized like `nano`'s (a single "reviewer" workstream, `required_approvals: 1`)
+rather than `review-only`'s four-area matrix.
+
+`devteam review-pr` fetches the PR via `gh` (view + diff), materializes it
+into `pipeline/review-input/` (`pr.md` — title/body as the stated intent;
+`diff.patch` — the unified diff; `changed-files.md` — the changed-file list),
+then dispatches `peer-review` alone against that input: a single reviewer in
+panel mode, reviewer-then-critic when `review.mode: adversarial` (see
+[§31.3](reference/stages.md)). Output is a normal stage-05 gate plus
+`pipeline/code-review/by-*.md` — nothing else runs (no build, no
+security-review, no red-team — the PR's own diff already is the change).
+
+Publishing is opt-in: local-only by default, `--post` prints the exact
+review-comment payload, requires interactive confirmation (or `--yes` in a
+non-interactive context), and refuses outright on a partial or incomplete
+review.
 
 ## Safety: the stoplist
 
@@ -230,7 +256,9 @@ something. `review-only` isn't a rung on that ladder: reach for it when
 there's no new code to ship at all, just an existing subtree (or an entire
 brownfield repo) you want reviewed. `devteam assess` does not recommend
 `review-only` — pass `--track review-only` explicitly. See
-[§ The `review-only` track](#the-review-only-track).
+[§ The `review-only` track](#the-review-only-track). `review-pr` isn't
+picked from `--track` at all — run `devteam review-pr <number|url>` to
+review an inbound PR; see [§ The `review-pr` track](#the-review-pr-track).
 
 ## Prototype mode is not a track
 

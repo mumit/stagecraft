@@ -50,9 +50,10 @@ what projects that don't want the overhead should use.
 
 ### Track routing
 
-Before Stage 1, the orchestrator must decide which track to run. Eight tracks
+Before Stage 1, the orchestrator must decide which track to run. Nine tracks
 exist and they share gates, agents, and artefacts where they overlap, but
-differ on which stages run and how many approvals a gate requires:
+differ on which stages run and how many approvals a gate requires (the table
+below predates `review-only`/`review-pr` — see `docs/tracks.md` for those):
 
 | Track | CLI flag | Runs | Stage 5 approvals | Retro |
 |---|---|---|---|---|

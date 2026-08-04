@@ -98,7 +98,11 @@ describe("35.1: optional readFirst entries are existence-gated at render time", 
 const TOUCHED_STAGES = [
   { name: "security-review", role: "security", files: ["context.md", "pre-review.md", "build-plan.md", "pr-backend.md"] },
   { name: "red-team", role: "red-team", files: ["context.md", "brief.md", "design-spec.md", "pr-backend.md", "pre-review.md", "security-review.md"] },
-  { name: "peer-review", role: "backend", files: ["context.md", "pr-backend.md"] },
+  // Phase-35 item 35.2 added three more optional entries (review-input/
+  // pr.md, diff.patch, changed-files.md) — included here so the byte-
+  // identical check still holds when all optional artifacts (old and new)
+  // are present.
+  { name: "peer-review", role: "backend", files: ["context.md", "pr-backend.md", "review-input/pr.md", "review-input/diff.patch", "review-input/changed-files.md"] },
   { name: "verification-beyond-tests", role: "verifier", files: ["context.md", "brief.md", "design-spec.md", "spec.feature", "test-report.md", "red-team-report.md"] },
 ];
 
@@ -107,7 +111,11 @@ describe("35.1: full-track prompts are byte-identical when every optional artifa
     it(`"${name}" renders identically to a hand-authored plain-string readFirst copy`, () => {
       const cwd = track(makeTargetProject({ gates: false }));
       fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
-      for (const f of files) fs.writeFileSync(path.join(cwd, "pipeline", f), `# ${f}\n`);
+      for (const f of files) {
+        const full = path.join(cwd, "pipeline", f);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, `# ${f}\n`);
+      }
 
       const stageDef = getStage(name);
       const wsId = stageDef.roles.length > 1 ? `${stageDef.stage}.${role}` : stageDef.stage;

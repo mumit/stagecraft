@@ -100,7 +100,7 @@ set `"status": "ESCALATE"` and halt. Same failure twice = escalate, don't retry.
 
 ## Track field
 
-Every gate should carry a `"track"` field. Valid values: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`, `review-only`. The validator emits an advisory (non-blocking) when the field is missing or carries an unrecognised value. Treat missing as `full` for compatibility.
+Every gate should carry a `"track"` field. Valid values: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`, `review-only`, `review-pr`. The validator emits an advisory (non-blocking) when the field is missing or carries an unrecognised value. Treat missing as `full` for compatibility.
 
 ## Tamper-evident chain
 

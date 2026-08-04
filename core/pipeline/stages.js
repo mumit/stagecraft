@@ -348,10 +348,18 @@ const STAGES = {
     // Phase-35 item 35.1: see the why-comment on security-review's readFirst
     // above. Also runs standalone on `review-only` (brownfield, no build ever
     // ran — reviews existing code, not a fresh PR).
+    // Phase-35 item 35.2: `devteam review-pr` materializes an inbound GitHub
+    // PR into pipeline/review-input/ (diff, changed-file list, PR title/body
+    // as the stated intent) before dispatching this stage on the `review-pr`
+    // track. Optional for the same reason as the entries above — every other
+    // track never creates these files, so they're omitted from those prompts.
     readFirst: [
       "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
       { path: "pipeline/context.md", optional: true },
       { path: "pipeline/pr-*.md", optional: true },
+      { path: "pipeline/review-input/pr.md", optional: true },
+      { path: "pipeline/review-input/diff.patch", optional: true },
+      { path: "pipeline/review-input/changed-files.md", optional: true },
     ],
     allowedWrites: ["pipeline/code-review/by-<reviewer>.md", "pipeline/gates/stage-05.*.json", "pipeline/gates/stage-05.json"],
     artifact: "pipeline/code-review/by-<reviewer>.md",
@@ -384,6 +392,11 @@ const STAGES = {
           { path: "pipeline/context.md", optional: true },
           { path: "pipeline/pr-*.md", optional: true },
           { path: "pipeline/code-review/by-reviewer.md", optional: true },
+          // Phase-35 item 35.2: `devteam review-pr` in adversarial mode —
+          // see the why-comment on the panel readFirst above.
+          { path: "pipeline/review-input/pr.md", optional: true },
+          { path: "pipeline/review-input/diff.patch", optional: true },
+          { path: "pipeline/review-input/changed-files.md", optional: true },
         ],
         roleWrites: {
           reviewer: ["pipeline/code-review/by-reviewer.md", "pipeline/gates/stage-05.reviewer.json"],
@@ -619,7 +632,7 @@ const STAGES = {
   },
 };
 
-const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop", "review-only"];
+const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop", "review-only", "review-pr"];
 
 const ORDERED_STAGE_NAMES = [
   "requirements",
@@ -705,6 +718,18 @@ const STAGES_BY_TRACK = {
   // still the right shape for reviewing an arbitrary existing subtree; unlike
   // `nano`/`loop` there's no single-workstream build to size the review to.
   "review-only": ["security-review", "red-team", "peer-review"],
+  // Phase-35 item 35.2: the internal track `devteam review-pr <number|url>`
+  // dispatches against. Exactly one stage — peer-review of a materialized
+  // inbound PR (pipeline/review-input/, see the readFirst why-comment above)
+  // — never build/security-review/red-team, since the "PR" already carries
+  // its own diff and there's no repo-wide surface to walk. Sized to a single
+  // "reviewer" workstream in panel mode (PEER_REVIEW_SIZING["review-pr"]
+  // below) rather than the four-area matrix: a PR is a bounded, already-
+  // diffed unit of change, closer to `nano`/`loop`'s single-workstream shape
+  // than to `review-only`'s arbitrary-subtree shape. Adversarial review.mode
+  // wins over this sizing exactly as it does everywhere else (rolesForStage
+  // checks isAdversarialReviewMode() first), giving reviewer-then-critic.
+  "review-pr": ["peer-review"],
 };
 
 // 29.4: tracks flagged compact_qa fold whichever of QA_SWEEP_STAGES they
@@ -766,6 +791,13 @@ const PEER_REVIEW_SIZING = {
   hotfix:        { roles: ["backend", "frontend", "platform", "qa"], required_approvals: 2 },
   "dep-update":  { roles: ["backend", "frontend", "platform", "qa"], required_approvals: 2 },
   "config-only": { roles: ["backend", "frontend", "platform", "qa"], required_approvals: 2 },
+  // 35.2: `devteam review-pr` — a single "reviewer" workstream (role name
+  // matches the fixed panel `subagent: "reviewer"`, so the allowedWrites
+  // `<reviewer>` placeholder substitutes to the same `by-reviewer.md` the
+  // adversarial override already uses — one artifact name across both
+  // review.mode values for this track). One approval: there's no second
+  // area to cross-check on a single materialized PR diff.
+  "review-pr":   { roles: ["reviewer"], required_approvals: 1 },
   // loop's sizing is derived from loopBuildRole(config) instead of a static
   // roles list — see rolesForStage()/requiredApprovalsFor() below — because
   // the single reviewed area must always match the single role that build

@@ -17,7 +17,7 @@ Six primitives make up Stagecraft. Every other doc assumes you know these terms.
 | **Workstream** | derived at dispatch time | The orchestrator | One dispatch of a stage to one role. Single-role stages have one workstream; multi-role stages (build, peer-review) have several. **The workstream is the unit of gate identity.** Stage 5 (peer-review) is a special case — see the §stage-05 vocabulary callout below. |
 | **Host** | `hosts/<host>/` (first-party) or a `@devteam/host-<name>` plugin package | You choose at `devteam init` | The AI tool that actually runs the model: `claude-code`, `codex`, `antigravity`, or `generic` (no host) ship first-party; `gemini-cli` is a plugin (`packages/host-gemini-cli/`, phase 34.4 — deprecated upstream). |
 | **Gate** | `pipeline/gates/<stage>*.json` | The model writes it; the validator enforces it | A JSON record of one workstream's (or stage's) outcome. **The stable contract between stages.** Required fields: `stage`, `status`, `orchestrator`, `track`, `timestamp`, `blockers`, `warnings`. |
-| **Track** | `core/pipeline/stages.js` | Your `.devteam/config.yml` (`pipeline.default_track`) | Which stages run for this kind of change. Eight tracks: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`, `review-only`. Tracks shape *which* stages run; never *what* a stage does. |
+| **Track** | `core/pipeline/stages.js` | Your `.devteam/config.yml` (`pipeline.default_track`) | Which stages run for this kind of change. Nine tracks: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`, `review-only`, `review-pr`. Tracks shape *which* stages run; never *what* a stage does. |
 
 The rest of this page builds on these six concepts.
 
@@ -105,7 +105,7 @@ These come up frequently but build on the primitives above:
 
 ## Tracks at a glance
 
-Eight tracks control which stages run: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`, `review-only`. Each is a subset of the full 18-stage pipeline tuned to a change size and risk level. `full` runs everything; `nano` runs just build + a scoped peer-review + qa; `loop` is the smallest build-shaped track — one build workstream + qa + one reviewer, no design or deploy; `review-only` runs no build at all — security-review + red-team + peer-review of code that already exists.
+Nine tracks control which stages run: `full`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `loop`, `review-only`, `review-pr`. Each is a subset of the full 18-stage pipeline tuned to a change size and risk level. `full` runs everything; `nano` runs just build + a scoped peer-review + qa; `loop` is the smallest build-shaped track — one build workstream + qa + one reviewer, no design or deploy; `review-only` runs no build at all — security-review + red-team + peer-review of code that already exists; `review-pr` is the internal single-stage track `devteam review-pr` dispatches against — a scoped peer-review of one materialized PR, not meant to be picked directly via `--track`.
 
 For the complete per-track stage matrix see **[`docs/tracks.md`](tracks.md)**; for each stage's roles and gate files see **[`docs/reference/stages.md`](reference/stages.md)**.
 

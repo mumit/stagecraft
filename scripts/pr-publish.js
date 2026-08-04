@@ -283,4 +283,9 @@ module.exports = {
   publish,
   readGatesDir,
   STATUS_TO_CONCLUSION,
+  // Exported for reuse by other `gh`-shelling commands (e.g.
+  // core/cli/commands/review-pr.js, phase-35 item 35.2) — one auth/error
+  // pattern for shelling to `gh`, not a second one invented per caller.
+  gh,
+  ensureGh,
 };
