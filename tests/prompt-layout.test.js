@@ -26,7 +26,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const { REPO_ROOT } = require("./_helpers");
 
-const { loadAdapter } = require(path.join(REPO_ROOT, "core", "router"));
+// 34.4: routed through ./_host-plugins so "gemini-cli" below keeps loading
+// the real adapter code (now at packages/host-gemini-cli/), unchanged by
+// its move out of hosts/.
+const { loadAdapter } = require("./_host-plugins");
 const { STAGES, ORDERED_STAGE_NAMES, FRAMEWORK_READ_FIRST } =
   require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 const { splitReadFirst, renderFrameworkPreamble } =

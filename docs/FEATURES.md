@@ -14,11 +14,11 @@ Stagecraft is an orchestrator that runs your AI coding tool through a structured
 
 ## Supported hosts
 
-Stagecraft is model-agnostic. It runs on whichever AI runtime you already have — Claude Code, Codex, Antigravity, Gemini CLI (deprecated upstream — see `devteam doctor`), Omnigent, any [Agent Client Protocol](https://agentclientprotocol.com) agent, any other tool that can accept a prompt and write files — or an OpenAI-compatible Chat Completions endpoint through the HTTP-native host.
+Stagecraft is model-agnostic. It runs on whichever AI runtime you already have — Claude Code, Codex, Antigravity, Gemini CLI (deprecated upstream — plugin package, see below), Omnigent, any [Agent Client Protocol](https://agentclientprotocol.com) agent, any other tool that can accept a prompt and write files — or an OpenAI-compatible Chat Completions endpoint through the HTTP-native host.
 
-Eight adapters ship: `claude-code` (primary, with hooks and slash commands), `codex`, `antigravity`, `gemini-cli`, `omnigent`, `acp`, `generic`, and `openai-compat`. Each declares its capabilities — headless support, hooks, subagents, enforcement levels — in `hosts/<host>/capabilities.json`.
+Seven adapters ship first-party: `claude-code` (primary, with hooks and slash commands), `codex`, `antigravity`, `omnigent`, `acp`, `generic`, and `openai-compat`. Each declares its capabilities — headless support, hooks, subagents, enforcement levels — in `hosts/<host>/capabilities.json`. An eighth, `gemini-cli`, is deprecated upstream (Gemini CLI stopped serving free/Pro/Ultra requests 2026-06-18) and moved out to the `@devteam/host-gemini-cli` plugin package (`packages/host-gemini-cli/`, phase 34.4) — install it with `npm install @devteam/host-gemini-cli` before `devteam init --host gemini-cli`.
 
-See **[`docs/reference/hosts.md`](reference/hosts.md)** for the full capability and enforcement matrix across all eight hosts.
+See **[`docs/reference/hosts.md`](reference/hosts.md)** for the full capability and enforcement matrix across all seven first-party hosts.
 
 ---
 
@@ -418,7 +418,7 @@ into a non-root container for unattended local orchestration.
 
 - Writes `.devteam/config.yml`, lays down role briefs, rules, skills, and the `/devteam` slash command for the chosen host
 - Writes (or updates) a managed `# BEGIN stagecraft` / `# END stagecraft` block in `.gitignore` listing all volatile Stagecraft runtime files — run once and your `.gitignore` is machine-maintained; re-running updates an outdated block
-- `--host claude-code | codex | gemini-cli | generic`
+- `--host claude-code | codex | antigravity | omnigent | openai-compat | acp | generic` (`gemini-cli` too, once its plugin package is installed: `npm install @devteam/host-gemini-cli`)
 - **`--adapter <name>`** (Phase 15 pre-work, PR #173) — sets `deploy.adapter` in `.devteam/config.yml` and writes adapter-specific config hints (`gizmos`, `cloud-run`, `docker-compose`, `kubernetes`, `terraform`, `custom`). Combined with Phase 15.2, this means `devteam init --adapter gizmos` immediately enables automatic conventions injection into `pipeline/context.md` for all subsequent runs.
 - **`--profile dogfood`** (Phase 14.1) — when dogfooding Stagecraft against its own source tree, adds four safeguards: a supplemental `# BEGIN stagecraft-dogfood` gitignore block covering generated pipeline documents (`brief.md`, `context.md`, `spec.feature`, `runbook.md`, `test-report.md`, `code-review/`), a pre-commit hook that blocks accidental commits to `core/`, `bin/devteam`, `pipeline/stages/`, `roles/`, or `rules/`, a `pipeline/stages/deploy.md` entry in `.git/info/exclude`, and a `profile: dogfood` marker in `.devteam/config.yml`. All writes are idempotent.
 

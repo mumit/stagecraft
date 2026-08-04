@@ -7,7 +7,7 @@
     "devteam": "bin/devteam"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js",
+    "test": "node --test tests/*.test.js packages/*/tests/*.test.js",
     "consistency": "node scripts/consistency.js",
     "lint": "eslint .",
     "visualize": "node scripts/visualize.js",

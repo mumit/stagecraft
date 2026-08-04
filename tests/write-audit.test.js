@@ -399,6 +399,10 @@ describe("snapshotWritables — real git repo", { concurrency: false }, () => {
 });
 
 // ─── 4. capabilities.json — codex and gemini-cli declare post-hoc-audit ───────
+//
+// 34.4: gemini-cli's own capabilities coverage moved to
+// packages/host-gemini-cli/tests/adapter.test.js (it's no longer under
+// hosts/ — see that directory's README.md for why).
 
 describe("adapter capabilities — post-hoc-audit declared", () => {
   function loadCap(host) {
@@ -410,10 +414,6 @@ describe("adapter capabilities — post-hoc-audit declared", () => {
 
   test("codex.enforces.allowed_writes = post-hoc-audit", () => {
     assert.equal(loadCap("codex").enforces.allowed_writes, "post-hoc-audit");
-  });
-
-  test("gemini-cli.enforces.allowed_writes = post-hoc-audit", () => {
-    assert.equal(loadCap("gemini-cli").enforces.allowed_writes, "post-hoc-audit");
   });
 
   test("omnigent.enforces.allowed_writes = post-hoc-audit", () => {

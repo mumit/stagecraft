@@ -66,11 +66,18 @@ describe("fanout: computeDispatchPlan", () => {
 });
 
 describe("fanout: runStage dispatches all combos in parallel", () => {
+  // 34.4: this test dispatches for real (runStage resolves + renders via
+  // each host's actual adapter), unlike the computeDispatchPlan/
+  // mergeWorkstreamGates tests above and below which only need host name
+  // strings. gemini-cli moved to a plugin package not installed under
+  // node_modules in this dev checkout, so antigravity (also first-party,
+  // also headless) stands in as the third host — the fanout mechanics
+  // under test don't depend on which specific hosts are used.
   it("produces 12 prompts for 3-host fanout × 4 areas", () => {
     const cwd = track(makeTargetProject({
       config: `routing:
   default_host: generic
-  review_fanout: [claude-code, codex, gemini-cli]
+  review_fanout: [claude-code, codex, antigravity]
 pipeline:
   default_track: full
 `,
@@ -82,7 +89,7 @@ pipeline:
     assert.equal(hosts.size, 3);
     assert.ok(hosts.has("claude-code"));
     assert.ok(hosts.has("codex"));
-    assert.ok(hosts.has("gemini-cli"));
+    assert.ok(hosts.has("antigravity"));
     // Every workstream has a 3-segment id
     assert.ok(r.workstreams.every((w) => /^stage-05\.\w+\.[\w-]+$/.test(w.descriptor.workstreamId)));
   });

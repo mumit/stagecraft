@@ -50,9 +50,17 @@ function listExternalHosts() {
     const scopeDir = externalPackageScopeDir(root);
     if (!fs.existsSync(scopeDir)) continue;
     for (const entry of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !entry.name.startsWith(EXTERNAL_PREFIX)) {
-        continue;
+      if (!entry.name.startsWith(EXTERNAL_PREFIX)) continue;
+      // 34.4: npm workspace / manually-linked packages (the shape a
+      // first-party-maintained plugin like @devteam/host-gemini-cli takes
+      // in local dev) land under node_modules/@devteam/* as symlinks, not
+      // real directories — Dirent.isDirectory() reflects the symlink
+      // itself (false), not its target, so it needs an explicit follow.
+      let isDir = entry.isDirectory();
+      if (!isDir && entry.isSymbolicLink()) {
+        try { isDir = fs.statSync(path.join(scopeDir, entry.name)).isDirectory(); } catch { isDir = false; }
       }
+      if (!isDir) continue;
       const hostName = entry.name.slice(EXTERNAL_PREFIX.length);
       if (hostName && externalAdapterPath(hostName)) {
         hosts.add(hostName);

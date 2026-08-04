@@ -3,7 +3,7 @@
 
 # Host Capability Reference
 
-Derived from `hosts/*/capabilities.json`. 8 host adapters.
+Derived from `hosts/*/capabilities.json`. 7 host adapters.
 Run `npm run docs:generate` to regenerate after editing capabilities files.
 
 ### Capabilities
@@ -14,7 +14,6 @@ Run `npm run docs:generate` to regenerate after editing capabilities files.
 | antigravity   | Antigravity CLI                        | yes      | no    | no        | no            | yes       | no       | estimated |
 | claude-code   | Claude Code                            | yes      | yes   | yes       | yes           | yes       | yes      | native    |
 | codex         | Codex CLI                              | yes      | no    | no        | no            | yes       | yes      | native    |
-| gemini-cli    | Gemini CLI                             | yes      | no    | no        | no            | yes       | no       | estimated |
 | generic       | Generic CLI (no host integration)      | no       | no    | no        | no            | no        | no       | estimated |
 | omnigent      | Omnigent                               | yes      | no    | no        | no            | no        | no       | estimated |
 | openai-compat | OpenAI-compatible Chat Completions API | yes      | no    | no        | no            | no        | no       | native    |
@@ -31,7 +30,6 @@ How each host enforces the framework's core rules:
 | antigravity   | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
 | claude-code   | tool-call-time | tool-call-time | enforced     | enforced     | native      |
 | codex         | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
-| gemini-cli    | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
 | generic       | prompt-only    | prompt-only    | not enforced | not enforced | prompt-only |
 | omnigent      | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
 | openai-compat | post-hoc-audit | prompt-only    | enforced     | enforced     | prompt-only |
@@ -46,7 +44,6 @@ Command the orchestrator spawns in `--headless` mode:
 | antigravity   | agy --print --dangerously-skip-permissions                                          |
 | claude-code   | claude --dangerously-skip-permissions --print --output-format stream-json --verbose |
 | codex         | codex exec --sandbox workspace-write --json                                         |
-| gemini-cli    | gemini                                                                              |
 | omnigent      | omnigent run .omnigent/stagecraft/agent --no-session                                |
 | openai-compat | —                                                                                   |
 

@@ -10,7 +10,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { makeTargetProject, cleanup, runCLI } = require("./_helpers");
+const { makeTargetProject, cleanup, runCLI, installGeminiCliPluginFixture } = require("./_helpers");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 
@@ -97,7 +97,8 @@ test("the canonical role list (core/roles.listRoles) includes 'auditor'", () => 
     /listRoles/,
     "core/adapters/markdown-host.js must call listRoles() from core/roles instead of a hardcoded ROLES array",
   );
-  for (const rel of ["hosts/codex/adapter.js", "hosts/gemini-cli/adapter.js"]) {
+  // 34.4: gemini-cli moved to packages/host-gemini-cli/ (plugin package).
+  for (const rel of ["hosts/codex/adapter.js", "packages/host-gemini-cli/adapter.js"]) {
     const text = fs.readFileSync(path.join(REPO_ROOT, rel), "utf8");
     assert.match(
       text,
@@ -134,8 +135,16 @@ test("`devteam init --host codex` installs audit skill + auditor role (no slash 
   assert.equal(fs.existsSync(path.join(cwd, ".codex/commands/audit.md")), false);
 });
 
-test("`devteam init --host gemini-cli` installs audit skill + auditor role", () => {
+// 34.4: gemini-cli moved to the @devteam/host-gemini-cli plugin package
+// (packages/host-gemini-cli/) — installing the real plugin into this
+// project's node_modules (mirroring `npm install @devteam/host-gemini-cli`)
+// proves the audit surface still installs correctly through the plugin
+// path, not just from the now-removed hosts/gemini-cli/. The "plugin not
+// installed" error path is covered separately in
+// tests/gemini-cli-plugin.test.js.
+test("`devteam init --host gemini-cli` installs audit skill + auditor role (via plugin package)", () => {
   const cwd = track(makeTargetProject());
+  installGeminiCliPluginFixture(cwd);
   const r = runCLI(["init", "--host", "gemini-cli"], { cwd });
   assert.equal(r.status, 0);
   assert.ok(fs.existsSync(path.join(cwd, ".gemini/skills/audit/SKILL.md")));

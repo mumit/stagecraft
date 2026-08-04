@@ -1366,22 +1366,31 @@ process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:1
 });
 
 describe("orchestrator: runStageHeadless falls back to a prompt-bytes estimate for non-native hosts (phase 28.3)", () => {
-  function geminiConfig() {
-    return "routing:\n  default_host: gemini-cli\npipeline:\n  default_track: full\n";
+  // 34.4: uses antigravity, not gemini-cli, as the "estimated telemetry"
+  // fixture host. gemini-cli moved to a plugin package (packages/
+  // host-gemini-cli/); router.js resolution for external adapters keys off
+  // process.cwd() at call time, and runStageHeadless here runs in-process
+  // (no subprocess whose cwd we control), so installGeminiCliPluginFixture
+  // (used by tests/goal-loop.test.js, which dispatches via a real
+  // subprocess) doesn't apply cleanly. antigravity declares the identical
+  // telemetry: "estimated" shape and is first-party, so it exercises the
+  // same fallback path without that wrinkle.
+  function antigravityConfig() {
+    return "routing:\n  default_host: antigravity\npipeline:\n  default_track: full\n";
   }
 
-  // gemini-cli declares telemetry: "estimated" in capabilities.json — no
+  // antigravity declares telemetry: "estimated" in capabilities.json — no
   // usageFormat, so the dispatch's own telemetry is "unavailable" and the
   // orchestrator falls back to a promptBytes/4 estimate.
-  function makeGeminiPlainStub() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-gemini-stub-"));
+  function makeAntigravityPlainStub() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-antigravity-stub-"));
     _dirs.push(dir);
-    const script = path.join(dir, "gemini-stub.js");
+    const script = path.join(dir, "antigravity-stub.js");
     fs.writeFileSync(script, `const fs = require("node:fs");
 const path = require("node:path");
 const gateFile = path.join(process.cwd(), "pipeline", "gates", "stage-01.json");
 fs.writeFileSync(gateFile, JSON.stringify({
-  stage: "stage-01", host: "gemini-cli", status: "PASS", track: "full",
+  stage: "stage-01", host: "antigravity", status: "PASS", track: "full",
   blockers: [], warnings: [], orchestrator: "devteam@test",
   timestamp: "2026-07-02T00:00:00.000Z"
 }, null, 2) + "\\n");
@@ -1391,15 +1400,15 @@ process.stdout.write("plain text output\\n");
   }
 
   it("writes a tokens_in_estimate block, distinctly flagged, never mixed with an observed value", async () => {
-    const cwd = track(makeTargetProject({ config: geminiConfig() }));
-    const script = makeGeminiPlainStub();
+    const cwd = track(makeTargetProject({ config: antigravityConfig() }));
+    const script = makeAntigravityPlainStub();
     const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
     process.env.DEVTEAM_HEADLESS_COMMAND = `"${process.execPath}" "${script}"`;
     try {
       const result = await runStageHeadless("requirements", { cwd });
       const [r] = result.results;
       assert.equal(r.exitCode, 0);
-      // gemini-cli declares no usageFormat, so runHeadless never attaches a
+      // antigravity declares no usageFormat, so runHeadless never attaches a
       // usage/telemetry field at all (same as any pre-28.1 adapter) — the
       // estimate fallback below is keyed off capabilities.telemetry, not
       // this per-dispatch field.

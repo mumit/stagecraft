@@ -11,7 +11,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { REPO_ROOT, makeTargetProject, cleanup, runCLI } = require("./_helpers");
+const { REPO_ROOT, makeTargetProject, cleanup, runCLI, installGeminiCliPluginFixture } = require("./_helpers");
 const { getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 
 // ---------------------------------------------------------------------------
@@ -33,7 +33,9 @@ describe("goalLoop capability declarations", () => {
     // The /goal directive is a Claude Code session-level feature; Gemini CLI
     // has no equivalent convergence directive. goalLoop is explicitly false
     // (phase-1-trust-consolidation.md §1.5) so absence is never ambiguous.
-    const caps = require(path.join(REPO_ROOT, "hosts", "gemini-cli", "capabilities.json"));
+    // 34.4: gemini-cli moved out of hosts/ into packages/host-gemini-cli/
+    // (plugin package) — path updated, capability value unchanged.
+    const caps = require(path.join(REPO_ROOT, "packages", "host-gemini-cli", "capabilities.json"));
     assert.strictEqual(caps.goalLoop, false, "gemini-cli.goalLoop must be explicitly false");
   });
 
@@ -187,6 +189,11 @@ describe("/goal injection in headless mode", () => {
     const cwd = makeTargetProject({
       config: "routing:\n  default_host: gemini-cli\npipeline:\n  default_track: full\n",
     });
+    // 34.4: gemini-cli is a plugin now (packages/host-gemini-cli/), not a
+    // first-party host under hosts/ — install the real plugin into this
+    // project's node_modules so the dispatch resolves exactly as it would
+    // for a consumer who ran `npm install @devteam/host-gemini-cli`.
+    installGeminiCliPluginFixture(cwd);
     try {
       const r = runCLI(["stage", "build", "--headless", "--feature", "test"], {
         cwd,

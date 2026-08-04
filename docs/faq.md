@@ -275,7 +275,7 @@ The orchestrator. The merge is host-agnostic — it just reads JSON files. The `
 
 ### Can I add Cursor / Aider / Cline / Windsurf as a host?
 
-Yes. Gemini CLI is already shipped (`hosts/gemini-cli/`). For others, implement `hosts/<your-host>/adapter.js` per the contract in `core/adapters/host-adapter.md` — see [`CONTRIBUTING.md`](../CONTRIBUTING.md) recipe 1. Adding a host is intentionally a small, self-contained task. The codex/gemini-cli adapters are the closest templates for IDE-embedded tools.
+Yes. Gemini CLI is already shipped as a plugin package (`packages/host-gemini-cli/` — `npm install @devteam/host-gemini-cli`; deprecated upstream, see `devteam doctor`). For others, implement `hosts/<your-host>/adapter.js` per the contract in `core/adapters/host-adapter.md` — see [`CONTRIBUTING.md`](../CONTRIBUTING.md) recipe 1, or ship it as a `@devteam/host-<name>` plugin package the same way (see `packages/host-gemini-cli/README.md`) if it's not meant to be first-party-maintained. Adding a host is intentionally a small, self-contained task. The codex/gemini-cli adapters are the closest templates for IDE-embedded tools.
 
 ### Does the routing config support different model versions of the same host?
 

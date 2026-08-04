@@ -29,6 +29,30 @@ function writeExternalAdapterFixture(hostName) {
   return tmp;
 }
 
+// 34.4: npm workspaces (and manual `npm link`) install local packages as
+// symlinks under node_modules/@devteam/, not real directories — this is
+// exactly how a first-party-maintained plugin like @devteam/host-gemini-cli
+// (packages/host-gemini-cli/) resolves in local dev/test. Separate fixture
+// so the plain-directory case above stays untouched.
+function writeExternalAdapterFixtureSymlinked(hostName) {
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-router-real-"));
+  fs.writeFileSync(
+    path.join(real, "adapter.js"),
+    `module.exports = {
+  capabilities: { name: ${JSON.stringify(hostName)}, headless: false },
+  install() { return { written: [], skipped: [], warnings: [] }; },
+  renderStagePrompt() { return "external adapter prompt (symlinked)"; },
+  status() { return { ok: true, missing: [], stale: [], notes: [] }; },
+  uninstall() {},
+};\n`,
+  );
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "stagecraft-router-link-"));
+  const scopeDir = path.join(tmp, "node_modules", "@devteam");
+  fs.mkdirSync(scopeDir, { recursive: true });
+  fs.symlinkSync(real, path.join(scopeDir, `host-${hostName}`), "dir");
+  return tmp;
+}
+
 describe("router: listHosts", () => {
   it("includes claude-code, codex, generic", () => {
     const hosts = listHosts();
@@ -42,6 +66,13 @@ describe("router: listHosts", () => {
     process.chdir(tmp);
 
     assert.ok(listHosts().includes("acme"));
+  });
+
+  it("includes symlinked @devteam/host-* adapters (npm workspace / npm link shape)", () => {
+    const tmp = writeExternalAdapterFixtureSymlinked("acme-linked");
+    process.chdir(tmp);
+
+    assert.ok(listHosts().includes("acme-linked"));
   });
 });
 
