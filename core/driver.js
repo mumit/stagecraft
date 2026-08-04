@@ -1720,6 +1720,7 @@ async function run(opts = {}) {
             cwd,
             track: effectiveTrack,
             feature: opts.feature || "",
+            scope: opts.scope, // Phase-35 item 35.1: --scope <path> (repeatable), review-only track
             intent,   // ADR-009 §Decision.7: propagate so adapters render repair prompts
             timeoutMs,
             skipCompleted: r.action === "continue-stage",

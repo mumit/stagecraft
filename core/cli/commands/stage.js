@@ -27,6 +27,7 @@ const flags = {
   from:              { type: "string",  description: "Stage to read patch items from (default: red-team)" },
   "skip-completed":  { type: "boolean", description: "Skip workstreams whose gate file already exists" },
   workstream:        { type: "list",    description: "Dispatch only this workstream (repeatable)" },
+  scope:             { type: "list",    description: "Scope review to this path (repeatable; review-only track)" },
   "experimental-omnigent-director": { type: "boolean", description: "EXPERIMENTAL: run planned Omnigent workstreams through one director session" },
   force:             { type: "boolean", description: "Bypass stoplist guard" },
   json:              { type: "boolean", description: "JSON output" },

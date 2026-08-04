@@ -53,8 +53,13 @@
     },
     "track": {
       "type": "string",
-      "enum": ["full", "quick", "nano", "config-only", "dep-update", "hotfix"],
+      "enum": ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "review-only"],
       "description": "Pipeline track the gate belongs to. Tracks differ on which stages run and how many approvals each gate requires."
+    },
+    "scope": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional (phase-35 item 35.1). Path(s) passed via --scope (repeatable), narrowing a review to a subtree. Absent when --scope wasn't passed."
     },
     "timestamp": {
       "type": "string",

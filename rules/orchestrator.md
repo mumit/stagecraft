@@ -75,7 +75,7 @@ project root where `.devteam/` was installed.
 
 **Start or continue a pipeline run:**
 ```
-devteam run [--track <track>]    # bounded autonomous driver (full/quick/nano/config-only/dep-update/hotfix/loop)
+devteam run [--track <track>]    # bounded autonomous driver (full/quick/nano/config-only/dep-update/hotfix/loop/review-only)
 devteam stage <name>             # render and dispatch a single stage interactively
 devteam next                     # inspect gates and report what to do next
 ```

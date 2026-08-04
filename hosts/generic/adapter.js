@@ -35,7 +35,7 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? fs.readFileSync(roleBriefPath, "utf8")
     : `(role brief missing at ${roleBriefPath})`;
 
-  const { renderPatchBlock, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderScopeLine, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -60,6 +60,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   lines.push(`Workstream: ${descriptor.workstreamId}`);
   lines.push(`Track: ${ctx.track}`);
   if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
+  renderScopeLine(ctx, lines);
   renderPatchBlock(ctx, lines);
   lines.push("");
   lines.push(`## Objective`);
@@ -82,7 +83,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   lines.push(`## Gate to write at pipeline/gates/${descriptor.workstreamId}.json`);
   lines.push("Required base fields (you write these):");
   lines.push("```json");
-  lines.push(JSON.stringify({
+  const gateSkeleton = {
     stage: descriptor.stage,
     workstream: descriptor.role,
     status: "PASS",
@@ -91,7 +92,10 @@ function renderStagePromptLayers(descriptor, ctx) {
     blockers: [],
     warnings: [],
     ...descriptor.expectedGate,
-  }, null, 2));
+  };
+  // Phase-35 item 35.1: see render-helpers.js#appendGateFooter's why-comment.
+  if (ctx.scope) gateSkeleton.scope = ctx.scope;
+  lines.push(JSON.stringify(gateSkeleton, null, 2));
   lines.push("```");
   lines.push(`Orchestrator fills "orchestrator": "${ctx.orchestrator}" and "host": "generic" at validation time.`);
 

@@ -203,14 +203,20 @@ function renderForCase(cwd, config, caseEntry, opts = {}) {
 
   const roleCount = Math.max(stageDef.roles ? stageDef.roles.length : 1, 1);
   const workstreamId = roleCount > 1 ? `${stageId}.${role}` : stageId;
+  const scratchDir = materializeScratchProject(cwd, caseEntry, adapter);
+  // Phase-35 item 35.1: pass cwd so an optional readFirst entry (e.g.
+  // stage-04c's pipeline/security-review.md) is existence-checked against
+  // the materialized scratch project — replay should see exactly what a
+  // live dispatch would have rendered, not the pre-35 "always include"
+  // fallback that only applies when no cwd is available at all.
   const descriptor = buildDescriptor(stageDef, role, {
     workstreamId,
     track,
     toolBudget: toolBudgetFor(role),
     changeId: null,
+    cwd: scratchDir,
   });
 
-  const scratchDir = materializeScratchProject(cwd, caseEntry, adapter);
   const ctx = {
     track,
     feature: "",

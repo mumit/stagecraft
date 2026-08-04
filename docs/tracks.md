@@ -1,12 +1,13 @@
 # Tracks
 
-A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The seven tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team` (plus `loop`, added in phase-29 for minimal-ceremony iteration).
+A **track** is a named subset of pipeline stages. It tells Stagecraft how much rigor a change requires. The eight tracks reflect over a year of operational tuning on which stages are skippable for which change types, carried over from `claude-dev-team` (plus `loop`, added in phase-29 for minimal-ceremony iteration, and `review-only`, added in phase-35 for reviewing code that already exists).
 
-`loop` is the day-to-day default: the lightest track that still produces a brief, a build, a QA pass, and a review gate. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not run by default just because it's the safest-looking option. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes of change in between. See the ceremony-cost column below, or run `devteam assess --json` for a numeric estimate against your project's routed models.
+`loop` is the day-to-day default: the lightest track that still produces a brief, a build, a QA pass, and a review gate. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not run by default just because it's the safest-looking option. `review-only` is the one track that never builds anything — it reviews code that already exists (a brownfield repo, an inherited module) rather than shipping new code. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes of change in between. See the ceremony-cost column below, or run `devteam assess --json` for a numeric estimate against your project's routed models.
 
 - [Pick by what you're shipping](#pick-by-what-youre-shipping)
 - [What each track runs](#what-each-track-runs)
 - [The `loop` track](#the-loop-track)
+- [The `review-only` track](#the-review-only-track)
 - [Safety: the stoplist](#safety-the-stoplist)
 - [How `devteam next` honors the track](#how-devteam-next-honors-the-track)
 - [Conditional dispatch within a track](#conditional-dispatch-within-a-track)
@@ -36,6 +37,7 @@ Or override per-invocation: `devteam stage build --track quick`.
 | Dependency bump or library upgrade | `dep-update` | Light | Build + peer-review + qa + sign-off + deploy |
 | Urgent production incident | `hotfix` | Moderate — pre-review and peer-review are mandatory | Build + pre-review + (security if triggered) + peer-review + qa + sign-off + deploy + retro |
 | Complex feature, cross-cutting architecture change, or anything needing formal design or adversarial review — the **audited** path for regulated/high-stakes changes | `full` | Heaviest — all 18 stages | Full rigor: requirements → design → build → review → red-team → tests → sign-off → deploy → retro. Choose it when stakes justify the ceremony (Phase 34 — roadmap, not yet built — extends this trail into exportable, regulator-shaped attestations) |
+| Reviewing code that already exists — a brownfield repo, an inherited module, a subtree you didn't build with Stagecraft | `review-only` | Light — 3 dispatches, no build | Security-review + red-team + peer-review only; no requirements/design/build/sign-off/deploy. Works on a repo with zero `pipeline/` history. Narrow it with `--scope <path>` (repeatable). See [§ The `review-only` track](#the-review-only-track) |
 
 These are relative sizings, not bills. Run `devteam assess --json` (or watch `devteam run`'s pre-flight output) for the actual per-track estimate — stage-slot count, dispatch-count range, token estimate, and cost range against your project's routed models. Static by default; once the run corpus has ≥5 comparable runs for a track, the estimate switches to an empirical median and says so (`estimate_basis`). See [`core/ceremony-preview.js`](../core/ceremony-preview.js) (phase-29.3).
 
@@ -51,6 +53,7 @@ config-only                   ✓   ✓   ✓⁺      ✓⁺      ✓           
 dep-update                    ✓                   ✓   ✓                   ✓   ✓       
 hotfix                        ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓   ✓       ✓   ✓   ✓   ✓   
 loop          ✓               ✓ˢ                  ✓ˢ  ✓                               
+review-only                           ✓⁺  ✓       ✓                                   
 
    Legend:
    ✓⁺ = conditional stage — only runs when stage-04a triggers it
@@ -99,6 +102,42 @@ track is a re-run with `--until` on a bigger track, or a `custom_stages`
 config, not a `loop` feature. Stage-01 on `loop` renders a one-screen brief
 (`templates/loop-brief-template.md`: intent, AC-N list, affected files)
 instead of the full requirements template.
+
+## The `review-only` track
+
+Every other track assumes the intent→code direction: a brief exists, a
+design spec exists, the pipeline produced the artifacts each later stage
+reads. `review-only` (phase-35, `plans/phase-35-existing-codebase-mode.md`
+item 35.1) doesn't — it reviews code that already exists, with no build
+ever having run: `security-review` → `red-team` → `peer-review`. Nothing
+else. Run it with:
+
+```
+devteam run --track review-only --scope src/payments/
+```
+
+`--scope <path>` is repeatable and narrows what's reviewed to a subtree
+without changing which stages run — it lands in the rendered prompt (a
+"Scope: ..." line) and on the gate (`scope: [...]`) for audit. Omit it to
+review the whole repo.
+
+This works on a repo with **zero `pipeline/` history** — no `pipeline/brief.md`,
+no `design-spec.md`, none of the artifacts `security-review`/`red-team`/
+`peer-review` normally read. Their `readFirst` pipeline-artifact dependencies
+are all *optional*: at render time, an entry for a file that doesn't exist is
+omitted from the prompt entirely rather than rendered as an instruction to
+read something that isn't there (the "soft readFirst" half of 35.1 — see
+`core/pipeline/stages.js`'s why-comment on `security-review`'s `readFirst`).
+`security-review` normally only runs when stage-04a's pre-review heuristic
+flags it, but stage-04a never runs on this track — with no prerequisite gate
+to read, the orchestrator treats it as unconditional here, so all three
+stages always dispatch.
+
+`review-only` has no requirements/design/build/sign-off/deploy — there's
+nothing to build and nothing to deploy. Peer-review keeps the standard
+4-area matrix (2 approvals) rather than a scoped variant: unlike `nano`/`loop`,
+there's no single-workstream build to size the review to, and an arbitrary
+existing subtree can span every area.
 
 ## Safety: the stoplist
 
@@ -185,6 +224,13 @@ Decision tree:
 8. **Otherwise** → `quick`. This covers most bounded features and fixes: a new endpoint, a new UI component, added business logic, a non-trivial bug fix. Requirements must be clear and design self-contained. When in doubt between `quick` and `full`, start with `quick`; if Stage 2 design review surfaces cross-cutting concerns, restart on `full`.
 
 > **Note on the config.yml default.** The factory default is `pipeline.default_track: full`, which is conservative and always safe. However, `full` runs red-team adversarial review and formal design on every change, which is wasteful when most attack surfaces don't apply. Evaluate the appropriate track for each brief rather than relying on the config default — in practice, treat `loop` as the day-to-day default and reserve `full` for changes where the audited trail is worth the ceremony.
+
+This decision tree is for the intent→code direction — you're about to *ship*
+something. `review-only` isn't a rung on that ladder: reach for it when
+there's no new code to ship at all, just an existing subtree (or an entire
+brownfield repo) you want reviewed. `devteam assess` does not recommend
+`review-only` — pass `--track review-only` explicitly. See
+[§ The `review-only` track](#the-review-only-track).
 
 ## Prototype mode is not a track
 

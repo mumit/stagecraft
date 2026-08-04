@@ -213,7 +213,27 @@ const STAGES = {
     // silently and the pipeline advances to peer-review.
     conditionalOn: { stage: "stage-04a", field: "security_review_required", equals: true },
     objective: "Security review of changes flagged by the Stage 4a security-trigger heuristic. Has veto power; a FAIL here halts the pipeline regardless of peer-review outcomes.",
-    readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/pre-review.md", "pipeline/build-plan.md", "pipeline/pr-*.md"],
+    // Phase-35 item 35.1 (soft readFirst): pipeline-artifact deps below are
+    // optional, using the same `{path, optional:true}` form 31.3/G3 already
+    // established (stage-05 adversarial's by-reviewer.md, stage-09's
+    // production-feedback.md) rather than a parallel readIfPresent array —
+    // one shape to teach adapters instead of two. What changes here is the
+    // render-time contract: buildDescriptor() now checks real file existence
+    // (core/orchestrator.js#existsForReadFirst) and OMITS an absent optional
+    // entry from the rendered prompt entirely, rather than always including
+    // it annotated "(if present)" as the pre-35 behavior did — the annotation
+    // alone still tells the model to go read a file that provably isn't
+    // there, which is exactly the degrade-instead-of-fail failure mode this
+    // phase exists to close. This stage also runs standalone on the
+    // `review-only` track (no build/pre-review ever ran, so none of these
+    // files exist on a brownfield repo).
+    readFirst: [
+      "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
+      { path: "pipeline/context.md", optional: true },
+      { path: "pipeline/pre-review.md", optional: true },
+      { path: "pipeline/build-plan.md", optional: true },
+      { path: "pipeline/pr-*.md", optional: true },
+    ],
     allowedWrites: ["pipeline/security-review.md", "pipeline/gates/stage-04b.json"],
     artifact: "pipeline/security-review.md",
     template: "review-template.md",
@@ -239,7 +259,18 @@ const STAGES = {
     // Diversity matters: route red-team to a different host than the
     // builders (`routing.roles.red-team` in .devteam/config.yml).
     objective: "Adversarial review of what was just built. Enumerate concrete attack scenarios, hostile inputs, race conditions, abuse cases, scale failures, downstream effects, and observability gaps the spec didn't cover. Produces must-fix items the implementer addresses before Stage 5 peer review begins.",
-    readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/pr-*.md", "pipeline/pre-review.md", "pipeline/security-review.md"],
+    // Phase-35 item 35.1: see the why-comment on security-review's readFirst
+    // above. Also runs standalone on `review-only` (brownfield, no brief/
+    // design-spec/pre-review/security-review artifacts).
+    readFirst: [
+      "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
+      { path: "pipeline/context.md", optional: true },
+      { path: "pipeline/brief.md", optional: true },
+      { path: "pipeline/design-spec.md", optional: true },
+      { path: "pipeline/pr-*.md", optional: true },
+      { path: "pipeline/pre-review.md", optional: true },
+      { path: "pipeline/security-review.md", optional: true },
+    ],
     allowedWrites: ["pipeline/red-team-report.md", "pipeline/gates/stage-04c.json"],
     artifact: "pipeline/red-team-report.md",
     template: "red-team-report-template.md",
@@ -314,7 +345,14 @@ const STAGES = {
     roles: ["backend", "frontend", "platform", "qa"],
     subagent: "reviewer",
     objective: "Review peer implementation per area; record findings in pipeline/code-review/by-<reviewer>.md; the approval-derivation hook fills the per-area workstream gates.",
-    readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/pr-*.md"],
+    // Phase-35 item 35.1: see the why-comment on security-review's readFirst
+    // above. Also runs standalone on `review-only` (brownfield, no build ever
+    // ran — reviews existing code, not a fresh PR).
+    readFirst: [
+      "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
+      { path: "pipeline/context.md", optional: true },
+      { path: "pipeline/pr-*.md", optional: true },
+    ],
     allowedWrites: ["pipeline/code-review/by-<reviewer>.md", "pipeline/gates/stage-05.*.json", "pipeline/gates/stage-05.json"],
     artifact: "pipeline/code-review/by-<reviewer>.md",
     template: "review-template.md",
@@ -343,7 +381,8 @@ const STAGES = {
         objective: "Adversarial peer review. Reviewer: review the implementation across every area that applies, with file:line evidence, recorded in pipeline/code-review/by-reviewer.md. Critic (runs after the reviewer's gate lands): attack the review — missed findings, unsupported approvals, answer \"what would make this approval wrong?\" — with file:line evidence for every challenge, recorded in pipeline/code-review/by-critic.md.",
         readFirst: [
           "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
-          "pipeline/context.md", "pipeline/pr-*.md",
+          { path: "pipeline/context.md", optional: true },
+          { path: "pipeline/pr-*.md", optional: true },
           { path: "pipeline/code-review/by-reviewer.md", optional: true },
         ],
         roleWrites: {
@@ -431,7 +470,19 @@ const STAGES = {
     stage: "stage-06d",
     roles: ["verifier"],
     objective: "Apply property-based testing, mutation testing, and/or formal verification to the changed code. Run AFTER stage-06 (qa) PASS — tests are the floor, this stage raises the ceiling. Surface counterexamples + surviving mutants + invariant violations as blocking findings.",
-    readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/spec.feature", "pipeline/test-report.md", "pipeline/red-team-report.md"],
+    // Phase-35 item 35.1: see the why-comment on security-review's readFirst
+    // above. Not part of the `review-only` track, but shares the same
+    // standalone-dispatch concern (`devteam stage verification-beyond-tests`
+    // has no predecessor-gate check either) so it gets the same treatment.
+    readFirst: [
+      "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
+      { path: "pipeline/context.md", optional: true },
+      { path: "pipeline/brief.md", optional: true },
+      { path: "pipeline/design-spec.md", optional: true },
+      { path: "pipeline/spec.feature", optional: true },
+      { path: "pipeline/test-report.md", optional: true },
+      { path: "pipeline/red-team-report.md", optional: true },
+    ],
     allowedWrites: ["pipeline/verification-report.md", "pipeline/gates/stage-06d.json", "src/tests/property/", "pipeline/formal/", "pipeline/reports/"],
     artifact: "pipeline/verification-report.md",
     template: "verification-report-template.md",
@@ -568,7 +619,7 @@ const STAGES = {
   },
 };
 
-const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop"];
+const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop", "review-only"];
 
 const ORDERED_STAGE_NAMES = [
   "requirements",
@@ -642,6 +693,18 @@ const STAGES_BY_TRACK = {
   "dep-update":  ["build", "peer-review", "qa", "sign-off", "deploy"],
   hotfix:        ["build", "pre-review", "security-review", "red-team", "migration-safety", "peer-review", "qa", "accessibility-audit", "observability-gate", "performance-budget", "sign-off", "deploy", "retrospective"],
   loop:          ["requirements", "build", "qa", "peer-review"],
+  // Phase-35 item 35.1: existing-codebase mode. Code-that-already-exists
+  // review only — no requirements/design/build, no sign-off/deploy. Pairs
+  // with the soft-readFirst change above: none of these three stages'
+  // pipeline-artifact readFirst entries are required, so the track completes
+  // on a repo with zero pipeline/ history. `--scope <path>` (repeatable, see
+  // core/cli/commands/{stage,run}.js) narrows what's reviewed without
+  // changing which stages run. Peer-review sizing/roles fall through to
+  // PEER_REVIEW_SIZING.full (rolesForStage()/requiredApprovalsFor() below) —
+  // review-only has no entry of its own because the full 4-area matrix is
+  // still the right shape for reviewing an arbitrary existing subtree; unlike
+  // `nano`/`loop` there's no single-workstream build to size the review to.
+  "review-only": ["security-review", "red-team", "peer-review"],
 };
 
 // 29.4: tracks flagged compact_qa fold whichever of QA_SWEEP_STAGES they

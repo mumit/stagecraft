@@ -34,7 +34,7 @@ See **[`docs/reference/stages.md`](reference/stages.md)** for the full stage tab
 
 ### Tracks — right-size the pipeline to the change
 
-Seven tracks control which stages run. `full` runs all 18 stages; lighter tracks skip phases not relevant to the change type; `loop` is the lightest — a 4-slot brief/build/verify/review track with no design or deploy. See **[`docs/tracks.md`](tracks.md)** for the per-track stage matrix.
+Eight tracks control which stages run. `full` runs all 18 stages; lighter tracks skip phases not relevant to the change type; `loop` is the lightest build-shaped track — a 4-slot brief/build/verify/review track with no design or deploy; `review-only` (phase 35) skips build entirely — security-review + red-team + peer-review of code that already exists, for brownfield repos with no Stagecraft history. See **[`docs/tracks.md`](tracks.md)** for the per-track stage matrix.
 
 Pick at `devteam stage requirements --feature "..." --track full`.
 

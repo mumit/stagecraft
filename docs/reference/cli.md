@@ -27,6 +27,7 @@ Render stage prompt(s) for <name>, or drive the host CLI non-interactively with 
 | --from                           | string | Stage to read patch items from (default: red-team)                          |
 | --skip-completed                 | bool   | Skip workstreams whose gate file already exists                             |
 | --workstream                     | list   | Dispatch only this workstream (repeatable)                                  |
+| --scope                          | list   | Scope review to this path (repeatable; review-only track)                   |
 | --experimental-omnigent-director | bool   | EXPERIMENTAL: run planned Omnigent workstreams through one director session |
 | --force                          | bool   | Bypass stoplist guard                                                       |
 | --json                           | bool   | JSON output                                                                 |
@@ -56,6 +57,7 @@ Bounded autonomous driver with optional TTY watch mode: loop next â†’ dispatch â
 | --repair           | string | Bug symptom for repair mode (exclusive with --feature; ADR-009)                                      |
 | --repair-at        | string | Skip diagnosis: seed affected-files from file:line location(s) (comma-separated; ADR-009 Phase 2)    |
 | --track            | string | Override the pipeline track                                                                          |
+| --scope            | list   | Scope review to this path (repeatable; review-only track)                                            |
 | --until            | string | Stop before this stage                                                                               |
 | --max-iterations   | number | Iteration cap                                                                                        |
 | --budget-usd       | number | Cost cap in USD                                                                                      |

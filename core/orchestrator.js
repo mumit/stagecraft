@@ -346,6 +346,29 @@ function computeDispatchPlan(stageDef, config, track, opts = {}) {
   return plan;
 }
 
+// Phase-35 item 35.1: real existence check for an optional readFirst entry,
+// backing buildDescriptor()'s "omit, don't just annotate" contract (see the
+// why-comment on stage-04b's readFirst in core/pipeline/stages.js). `relPath`
+// is already change-id-prefixed (caller applies prefix() first). A bare "*"
+// glob (the only shape readFirst ever uses, e.g. "pipeline/pr-*.md") is
+// resolved by listing the parent directory rather than pulling in a glob
+// dependency — readFirst entries are never deep/recursive globs.
+// No `cwd` (buildDescriptor() called from a preview/test path with no
+// filesystem to check against) fails open: assume present, matching every
+// pre-35 caller's behavior of always including the entry.
+function existsForReadFirst(cwd, relPath) {
+  if (!cwd) return true;
+  if (!relPath.includes("*")) return fs.existsSync(path.join(cwd, relPath));
+  const dir = path.dirname(relPath);
+  const pattern = path.basename(relPath);
+  const re = new RegExp(`^${pattern.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+  try {
+    return fs.readdirSync(path.join(cwd, dir)).some((f) => re.test(f));
+  } catch {
+    return false;
+  }
+}
+
 function buildDescriptor(stageDef, role, opts = {}) {
   // ADR-009 Phase 2: when intent === "repair" and the stage declares a
   // repairOverride, merge override fields on top of the base stage definition.
@@ -378,11 +401,12 @@ function buildDescriptor(stageDef, role, opts = {}) {
     workstreamId: wsId,
     objective: effectiveDef.objective,
     readFirst: Array.isArray(effectiveDef.readFirst)
-      ? effectiveDef.readFirst.map((item) =>
-          typeof item === "object" && item.optional
-            ? `${prefix(item.path)} (if present)`
-            : prefix(item),
-        )
+      ? effectiveDef.readFirst
+          .filter((item) =>
+            typeof item !== "object" || !item.optional
+              || existsForReadFirst(opts.cwd, prefix(item.path)),
+          )
+          .map((item) => (typeof item === "object" ? prefix(item.path) : prefix(item)))
       : effectiveDef.readFirst,
     allowedWrites: Array.isArray(allowedWrites) ? allowedWrites.map(prefix) : allowedWrites,
     artifact: prefix(effectiveDef.artifact),
@@ -536,6 +560,11 @@ function runStage(stageName, opts = {}) {
     // the driver from state.fixRetries), consulted below to decide whether
     // routing.escalate_on_retry should bump a pinned model one tier.
     isRetry: opts.isRetry === true,
+    // Phase-35 item 35.1: --scope <path> (repeatable), narrows a review-only
+    // dispatch to a subtree without changing which stages run. null (not [])
+    // when absent so renderStagePrompt/appendGateFooter can render nothing
+    // and keep every non-scoped track's prompt byte-identical.
+    scope: Array.isArray(opts.scope) && opts.scope.length > 0 ? opts.scope : null,
   };
 
   if (!isStageInTrack(stageName, ctx.track)) {
@@ -625,7 +654,7 @@ function runStage(stageName, opts = {}) {
       // 32.5(b): computed per workstream at plan time — null on a
       // workstream's first-ever dispatch (nothing to diff against yet).
       const contextDelta = computeContextDelta({ cwd: ctx.cwd, changeId: ctx.changeId, workstreamId: entry.workstreamId });
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature
