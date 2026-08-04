@@ -44,3 +44,11 @@ See `skills/verification-beyond-tests/SKILL.md` for the full method catalogue:
 property-based testing (fast-check / Hypothesis), mutation testing (Stryker), and
 formal methods (TLA+, Alloy), plus the decision matrix for choosing methods given
 the change surface.
+
+**Orchestrator-verified (phase 35.3).** `methods_attempted[]` is no longer purely
+model-asserted: for each bare method tag claimed here, the orchestrator tries to
+produce real executable evidence (`core/verify/stamp.js#stampStage06d`) before the
+gate is accepted. A claim with no executable evidence is downgraded to
+`attempted_but_blocked:<method>` — write an honest `methods_skipped` entry instead
+if a method genuinely doesn't apply, rather than claiming it and hoping. See
+[docs/verification-beyond-tests.md](../docs/verification-beyond-tests.md#orchestrator-verified-stamping-stage-06d).

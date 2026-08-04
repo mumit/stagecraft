@@ -26,6 +26,10 @@ async function run(positional, _flags) {
     console.error("                         merges into findings_count/must_address_before_peer_review");
     console.error("  stage-06   qa:         runs tests + AC→test mapping check, stamps");
     console.error("                         all_acceptance_criteria_met and the test exit code");
+    console.error("  stage-06d  verification-beyond-tests: for each claimed method (property/");
+    console.error("                         mutation/formal), runs it for real and stamps what");
+    console.error("                         executed; an unverifiable claim downgrades to");
+    console.error("                         attempted_but_blocked:<method>");
     console.error("");
     console.error("Commands resolve from .devteam/config.yml pipeline.verify.{lint,test}_command");
     console.error("if set. Otherwise lint uses package.json scripts.lint; tests discover");

@@ -496,6 +496,14 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #     threshold_hard: false        # true turns a below-threshold score into a blocking FAIL");
   lines.push("  #     timeout_ms: 300000           # time-box for the mutation run; killed cleanly on expiry");
   lines.push("  #     paths: [\"src/billing/\"]      # optional: further restrict scope within changed files");
+  lines.push("  #   property:                     # stage-06d property-based verification (35.3)");
+  lines.push("  #     paths: [\"src/tests/property\"]  # where the verifier writes property tests; scanned + run");
+  lines.push("  #     command: \"...\"              # override: substitute the exact test invocation");
+  lines.push("  #     timeout_ms: 300000           # time-box for the property run; killed cleanly on expiry");
+  lines.push("  #   formal:                       # stage-06d formal-method verification (35.3)");
+  lines.push("  #     command: \"tlc spec.tla\"      # presence-and-exit-code only; no toolchain auto-detected");
+  lines.push("  #     tool: \"TLA+\"                 # label recorded on the gate; defaults to \"configured\"");
+  lines.push("  #     timeout_ms: 300000           # time-box for the formal-method run");
   lines.push("  #   test_suites:                  # optional replacement for auto-discovered suites");
   lines.push("  #     - id: unit");
   lines.push("  #       command: \"npm test\"");
