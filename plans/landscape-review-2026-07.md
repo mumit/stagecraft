@@ -116,9 +116,9 @@ Explicitly **not** pursuing (reaffirmed): becoming an IDE, session UIs, sandbox 
 
 ## 5. Roadmap at a glance
 
-Delivery status added 2026-08-03. This review was written 2026-07-31; phases 28–31, 33,
-and 34 shipped within three days of it, so the table below is a record of what was
-proposed *and* what happened.
+Delivery status added 2026-08-03, updated 2026-08-04. This review was written 2026-07-31;
+phases 28–31, 33, and 34 shipped within three days of it, and phase 35 followed shortly
+after, so the table below is a record of what was proposed *and* what happened.
 
 | Phase | Theme | Depends on | Size | Delivered? |
 |---|---|---|---|---|
@@ -129,11 +129,11 @@ proposed *and* what happened.
 | [32](phase-32-performance-parallelism.md) | Performance: cache-first prompts, stage DAG waves, model-tier routing, best-of-N | 28 (telemetry) | L | ⚠️ 32.1/32.3/32.5 shipped; **32.2 blocked on ADR-017**, **32.4 deferred** |
 | [33](phase-33-eval-flywheel.md) | Eval flywheel: failed-gate evals, `devteam evals`, GEPA-style prompt optimization | 28, 30 | L | ✅ all 4 items |
 | [34](phase-34-interop-auditable-sdlc.md) | Interop & compliance: ACP host, attestation export, control mapping | — | M | ✅ all 4 items |
-| [35](phase-35-existing-codebase-mode.md) | Existing-codebase mode: review-only track, `devteam review-pr`, 06d stamping, findings report, refactor track | 31.4 | M | 🔲 written, not started |
+| [35](phase-35-existing-codebase-mode.md) | Existing-codebase mode: review-only track, `devteam review-pr`, 06d stamping, findings report, refactor track | 31.4 | M | ✅ all 5 items |
 
 Sequencing as originally proposed: **28 and 29 first** (28 unblocks everything downstream; 29 addresses the adoption risk). 30 and 31 next in either order. 32 after telemetry proves where time goes. 33 once corpus + learning loop exist. 34 opportunistic (28.6 covers the urgent Antigravity piece). This is roughly what happened, except 32 was run before 33/34 and left two items open.
 
-Remaining work: accept ADR-017 and build stage waves (32.2), revisit 32.4 if a host adapter ever exposes worktree-isolated dispatch, then phase 35. Open items are tracked in [README.md](README.md#what-is-not-delivered-yet).
+Remaining work: accept ADR-017 and build stage waves (32.2), revisit 32.4 if a host adapter ever exposes worktree-isolated dispatch. Open items are tracked in [README.md](README.md#what-is-not-delivered-yet).
 
 Success metrics (per phase details): orchestrator-observed cost on 100% of headless dispatches; median small-change run ≤ 5 stage slots and ≤ $2; pattern recurrence-after-injection measurably declining; ≥ 8 of 18 stages with mechanical verification; full-track wall clock −30%; a regression eval corpus that grows from real failures.
 

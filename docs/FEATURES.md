@@ -34,7 +34,7 @@ See **[`docs/reference/stages.md`](reference/stages.md)** for the full stage tab
 
 ### Tracks — right-size the pipeline to the change
 
-Nine tracks control which stages run. `full` runs all 18 stages; lighter tracks skip phases not relevant to the change type; `loop` is the lightest build-shaped track — a 4-slot brief/build/verify/review track with no design or deploy; `review-only` (phase 35) skips build entirely — security-review + red-team + peer-review of code that already exists, for brownfield repos with no Stagecraft history; `review-pr` (phase 35.2) is the single-stage internal track `devteam review-pr <number|url>` dispatches — a scoped peer-review of one materialized inbound PR. See **[`docs/tracks.md`](tracks.md)** for the per-track stage matrix.
+Ten tracks control which stages run. `full` runs all 18 stages; lighter tracks skip phases not relevant to the change type; `loop` is the lightest build-shaped track — a 4-slot brief/build/verify/review track with no design or deploy; `review-only` (phase 35.1) skips build entirely — security-review + red-team + peer-review of code that already exists, for brownfield repos with no Stagecraft history; `review-pr` (phase 35.2) is the single-stage internal track `devteam review-pr <number|url>` dispatches — a scoped peer-review of one materialized inbound PR; `refactor` (phase 35.5) is `nano`'s build/peer-review/qa shape with the bar shifted from "new behavior verified" to "behavior preserved" — build produces a characterization of current behavior before any structural change, no new acceptance criteria are expected, and the 31.4 mutation smoke gate defaults to *on* (every other track keeps it opt-in). See **[`docs/tracks.md`](tracks.md)** for the per-track stage matrix.
 
 Pick at `devteam stage requirements --feature "..." --track full`.
 
@@ -559,6 +559,16 @@ Surface pipeline state in the tools your team already uses. The integration appr
 
 Auto-detects repo and PR from the current branch. `--dry-run` previews without API calls.
 
+### Inbound PR review — `devteam review-pr <number|url>` (phase 35.2)
+
+The inverse direction: instead of publishing local pipeline state to a PR, fetch an *existing* PR and review it with the same reviewer/critic machinery every other track uses.
+
+- Materializes the PR via `gh pr diff` / `gh pr view --json` into `pipeline/review-input/` (diff, changed-file list, and the PR title/body as the closest thing to a brief a PR offers) — no local build ever runs
+- Dispatches peer-review against that input on the internal `review-pr` track (a single scoped reviewer; `review.mode: adversarial` adds a critic exactly as it does everywhere else)
+- Output: a normal stage-05 gate plus `pipeline/code-review/by-<reviewer>.md`
+- **Publishing is opt-in and gated.** Local-only by default — findings on disk, nothing sent. `--post` prints exactly what will be posted and requires interactive confirmation (refuses in non-interactive contexts unless `--yes` is also passed); a *partial* review (dispatch timeout, non-zero exit, no gate written) never posts regardless of flags — a completed review that says FAIL is still a legitimate, postable outcome, not a rendering failure
+- No `gh` on `PATH`, or not authenticated → a clear actionable error (`gh auth login` hint), never a silent skip
+
 ### GitHub Actions workflow — validate gates on every PR
 
 `devteam ci install` drops a reusable workflow into `.github/workflows/`.
@@ -675,6 +685,8 @@ Full-track-only stage that runs after QA passes. The `verifier` role applies thr
 - **Formal verification** (TLA+ / Alloy / Lean) — optional, for functions where correctness is non-negotiable
 
 A surviving mutant on a critical path, a property counterexample, or a formal counterexample populates `blocking_findings[]` and fails the stage. Skipped methods require a stated reason — "didn't have time" is not accepted.
+
+**Orchestrator-verified, not model-asserted (phase 35.3).** `methods_attempted[]` used to be 100% self-report. `core/verify/stamp.js#stampStage06d` now tries to produce real executable evidence for every method the verifier claims with a bare tag: it reruns the 31.4 mutation gate, detects and runs property-test tooling (fast-check / hypothesis / proptest) against `pipeline.verify.property.paths`, and checks a configured formal-method command's presence and exit code. A claim backed by zero executed properties/mutants, or an undetectable toolchain, downgrades to `attempted_but_blocked:<method>` with the model's original claim preserved alongside it — the orchestrator decides whether a method actually ran, not the verifier's word for it.
 
 See [`docs/verification-beyond-tests.md`](verification-beyond-tests.md) for candidate identification, gate fields, and skip-reason policy.
 

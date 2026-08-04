@@ -4,9 +4,9 @@ Phase plans produced from the 2026-06-10 full-framework review and subsequent au
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
 written to be executed one item at a time.
 
-**Current state (2026-08-03):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, and 34 are
-complete. Phase 32 is mostly complete with two open items. Phase 35 is written and ready
-to run. Phases 21, 25, and 26 are proposed and not authorized for implementation. See
+**Current state (2026-08-04):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, and 35 are
+complete. Phase 32 is mostly complete with two open items. Phases 21, 25, and 26 are
+proposed and not authorized for implementation. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
 listed under [Evidence reviews](#evidence-reviews).
@@ -47,7 +47,7 @@ listed under [Evidence reviews](#evidence-reviews).
 | 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | ⚠️ mostly complete — 32.1 ✅ cache-first prompts (PR #360) · 32.2 ⏸ ADR-017 drafted only, status Proposed, wave execution not built · 32.3 ✅ model-tier routing (PR #362) · 32.4 ⏸ deferred (no host adapter exposes worktree-isolated dispatch; the item's own precondition can't be met yet) · 32.5 ✅ context.md diet (PR #363) |
 | 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | ✅ complete — 33.1 eval capture · 33.2 `devteam evals run` · 33.3 `prompt_pack_version` · 33.4 `scripts/prompt-optimize.js` |
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | ✅ complete — 34.1 ACP adapter (PR #368) · 34.2 attestation export (PR #369) · 34.3 compliance mapping (PR #370) · 34.4 gemini-cli → plugin package |
-| 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | 📝 proposed (2026-08 brownfield capability review) |
+| 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | ✅ complete — 35.1 review-only track (PR #373) · 35.2 `devteam review-pr` (PR #375) · 35.3 stage-06d stamping (PR #376) · 35.4 findings report (PR #377) · 35.5 refactor track (PR #378) |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt. Phases 1–4
 and the documentation phase use [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md); phases
@@ -60,13 +60,12 @@ session per branch.
 ## What is not delivered yet
 
 Everything below is either written-but-unbuilt or deliberately parked. Verified against
-`git log` on 2026-08-03, not inferred from status chips.
+`git log` on 2026-08-04, not inferred from status chips.
 
 | Work | Where | Why it is open |
 |---|---|---|
 | **32.2 stage DAG waves** | [phase-32](phase-32-performance-parallelism.md) · [ADR-017](../docs/adr/017-dag-wave-execution.md) | ADR-017 is written but its status is **Proposed**, so wave execution was never built. This is the largest remaining wall-clock win (~18 sequential stage slots → ~13). Needs the ADR accepted first. |
 | **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred: the item requires a host adapter that exposes worktree-isolated dispatch, and none does today. Its own precondition cannot be met, so it was not attempted. |
-| **Phase 35 — existing-codebase mode** | [phase-35](phase-35-existing-codebase-mode.md) | All five items written and ready: review-only track, `devteam review-pr`, stage-06d stamping, findings report, refactor track. Not started. |
 | **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Proposed ([#312](https://github.com/telus-labs/stagecraft/issues/312)). Partly overtaken by phases 28 and 32, which delivered telemetry, the run corpus, and cache-first prompts. Worth re-scoping rather than running as written. |
