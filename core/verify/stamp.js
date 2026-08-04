@@ -32,6 +32,8 @@ const {
   runDependencyAudit, runSecretScanFloor, runSemgrepFloor, computeDependencyDiff, getChangedFiles,
 } = require("./redteam-floor");
 const { runMutationGate } = require("./mutation");
+const { runPropertyGate } = require("./property");
+const { runFormalGate } = require("./formal");
 
 const STAMPER_VERSION = "1";
 
@@ -510,6 +512,173 @@ async function stampStage04c(cwd, gatePath) {
   return result;
 }
 
+// Stage-06d (Verification Beyond Tests, G7): closes the gap phase 31
+// deliberately deferred (plans/phase-31-verification-depth.md §"out of
+// scope"; plans/phase-35-existing-codebase-mode.md item 35.3). Before this,
+// `methods_attempted[]` was 100% model-asserted — the verifier role could
+// claim "property" or "mutation" ran without the orchestrator ever
+// checking. This makes methods_attempted[] orchestrator-derived: for each
+// BARE method tag the model claims (not already an honest
+// `attempted_but_blocked:*`), the orchestrator independently tries to
+// produce executable evidence. Real evidence confirms the claim and the
+// orchestrator's own numbers overwrite the model's (trust boundary: observed
+// wins over asserted); no evidence downgrades the claim to
+// `attempted_but_blocked:<method>`, with the model's original sub-object
+// preserved under stamp.runs.<method>.model_claim and a warning raised.
+//
+// Existing FAIL rules are unchanged in spirit: a property run that
+// genuinely executes but comes back with a counterexample, or a mutation
+// score below the model's own pre-declared threshold, still fails
+// sign-off — the orchestrator just insists the failure be real. Formal
+// methods are presence-and-exit-code only (core/verify/formal.js): TLA+/
+// Alloy/Lean output is too varied to parse, so a non-zero exit is a
+// warning for human triage, never an auto-blocker.
+async function stampStage06d(cwd, gatePath) {
+  const config = loadConfig(cwd);
+  const { gate, error } = loadGateSafe(gatePath);
+  if (error) return { ok: false, error };
+
+  const stamp = {
+    stamper_version: STAMPER_VERSION,
+    at: new Date().toISOString(),
+    fields: [],
+    runs: {},
+  };
+  const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
+  const warnings = Array.isArray(gate.warnings) ? gate.warnings.slice() : [];
+  const methodsAttempted = Array.isArray(gate.methods_attempted) ? gate.methods_attempted.slice() : [];
+
+  // Downgrades a bare method claim ("property"/"mutation"/"formal") to
+  // attempted_but_blocked:<method> when no executable evidence exists.
+  // No-op when the model never claimed the bare tag (nothing to downgrade —
+  // an honest methods_skipped[] entry or an already-honest
+  // attempted_but_blocked claim is left untouched).
+  function downgrade(method, fieldName, reason, evidenceRun) {
+    const idx = methodsAttempted.indexOf(method);
+    if (idx === -1) return;
+    methodsAttempted[idx] = `attempted_but_blocked:${method}`;
+    stamp.fields.push({
+      field: "methods_attempted", method,
+      model_said: method, orchestrator: `attempted_but_blocked:${method}`,
+      reason,
+    });
+    warnings.push(
+      `WARN ${method}-attempted-but-blocked: model claimed "${method}" was attempted but no executable ` +
+      `evidence exists — ${reason}`,
+    );
+    stamp.runs[method] = { ...evidenceRun, model_claim: gate[fieldName] };
+  }
+
+  // --- property-based ---
+  if (methodsAttempted.includes("property")) {
+    const propResult = await runPropertyGate(cwd, config);
+    if (propResult.ran && propResult.properties_asserted > 0) {
+      stamp.runs.property = propResult;
+      const orchProperty = {
+        properties_asserted: propResult.properties_asserted,
+        cases_tried: propResult.cases_tried,
+        counterexamples_found: propResult.counterexamples_found,
+        tool: propResult.runner,
+      };
+      const prevProperty = gate.property_based;
+      if (JSON.stringify(prevProperty) !== JSON.stringify(orchProperty)) {
+        stamp.fields.push({ field: "property_based", model_said: prevProperty, orchestrator: orchProperty });
+      } else {
+        stamp.fields.push({ field: "property_based", orchestrator: orchProperty });
+      }
+      gate.property_based = orchProperty;
+      if (!propResult.passed) {
+        blockers.push(
+          `property-based verification failed (orchestrator-run): ${propResult.counterexamples_found} ` +
+          `counterexample(s) found across ${propResult.properties_asserted} propert` +
+          `${propResult.properties_asserted === 1 ? "y" : "ies"} (${propResult.runner})`,
+        );
+      }
+    } else {
+      const reason = propResult.ran
+        ? `orchestrator ran the property command but found zero executed properties (exit ${propResult.exit_code})`
+        : propResult.reason;
+      downgrade("property", "property_based", reason, propResult);
+    }
+  }
+
+  // --- mutation: reuse the 31.4 runner path, never a second implementation ---
+  if (methodsAttempted.includes("mutation")) {
+    const changedFiles = getChangedFiles(cwd);
+    const mutationResult = await runMutationGate(cwd, config, changedFiles);
+    if (mutationResult.ran) {
+      stamp.runs.mutation = mutationResult;
+      // The verifier commits to a threshold BEFORE running (schema:
+      // "Audit-grade: prevents goal-post moving") — honor the model's own
+      // declared bar; only fall back to the mutation gate's own default
+      // when the model didn't declare one.
+      const declaredThreshold = (gate.mutation && typeof gate.mutation.threshold === "number")
+        ? gate.mutation.threshold
+        : mutationResult.threshold;
+      const orchMutation = {
+        mutants_generated: mutationResult.mutants.generated,
+        mutants_killed: mutationResult.mutants.killed,
+        mutants_survived: mutationResult.mutants.survived,
+        mutants_timed_out: mutationResult.mutants.timed_out,
+        score: mutationResult.score,
+        threshold: declaredThreshold,
+        tool: mutationResult.runner,
+        target: mutationResult.scope.mutated_files.join(", "),
+      };
+      const prevMutation = gate.mutation;
+      if (JSON.stringify(prevMutation) !== JSON.stringify(orchMutation)) {
+        stamp.fields.push({ field: "mutation", model_said: prevMutation, orchestrator: orchMutation });
+      } else {
+        stamp.fields.push({ field: "mutation", orchestrator: orchMutation });
+      }
+      gate.mutation = orchMutation;
+      if (mutationResult.score < declaredThreshold) {
+        const scorePct = (mutationResult.score * 100).toFixed(1);
+        const thresholdPct = (declaredThreshold * 100).toFixed(1);
+        blockers.push(
+          `mutation score ${scorePct}% below declared threshold ${thresholdPct}% ` +
+          `(orchestrator-run, runner: ${mutationResult.runner})`,
+        );
+      }
+    } else {
+      downgrade("mutation", "mutation", mutationResult.reason, mutationResult);
+    }
+  }
+
+  // --- formal: presence-and-exit-code only ---
+  if (methodsAttempted.includes("formal")) {
+    const formalResult = await runFormalGate(cwd, config);
+    if (formalResult.ran) {
+      stamp.runs.formal = formalResult;
+      const orchFormal = {
+        ...(gate.formal && typeof gate.formal === "object" ? gate.formal : {}),
+        tool: formalResult.tool,
+        ran: true,
+        exit_code: formalResult.exit_code,
+      };
+      stamp.fields.push({
+        field: "formal",
+        orchestrator: { tool: orchFormal.tool, ran: true, exit_code: orchFormal.exit_code },
+      });
+      gate.formal = orchFormal;
+      if (formalResult.exit_code !== 0) {
+        warnings.push(
+          `WARN formal-nonzero-exit: formal verification tool "${orchFormal.tool}" exited ` +
+          `${formalResult.exit_code} — presence-and-exit-code only (output too varied to parse); ` +
+          `verify manually whether this is a counterexample or a tool/config error`,
+        );
+      }
+    } else {
+      downgrade("formal", "formal", formalResult.reason, formalResult);
+    }
+  }
+
+  gate.methods_attempted = methodsAttempted;
+  gate.warnings = warnings;
+
+  return finalizeStamp(gate, gatePath, blockers, stamp);
+}
+
 // Stage-03b (Executable Spec): orchestrator stamps the spec-related gate
 // fields by running verify() from core/spec/verify. This moves spec
 // generation/verification out of the pm agent (budget: Read, Write, Glob —
@@ -979,13 +1148,14 @@ async function stamp(cwd, stageId) {
     case "stage-04a": return stampStage04a(cwd, gatePath);
     case "stage-04c": return stampStage04c(cwd, gatePath);
     case "stage-06":  return stampStage06(cwd, gatePath);
+    case "stage-06d": return stampStage06d(cwd, gatePath);
     default:          return { ok: false, error: `no orchestrator stamping defined for ${stageId}` };
   }
 }
 
 // Stages this module knows how to verify. Callers can use this to
 // decide whether to invoke stamp() at all.
-const STAMPABLE_STAGES = new Set(["stage-03b", "stage-04a", "stage-04c", "stage-06"]);
+const STAMPABLE_STAGES = new Set(["stage-03b", "stage-04a", "stage-04c", "stage-06", "stage-06d"]);
 
 module.exports = {
   stamp,
@@ -993,6 +1163,7 @@ module.exports = {
   stampStage04a,
   stampStage04c,
   stampStage06,
+  stampStage06d,
   STAMPABLE_STAGES,
   // 31.1: multi-workstream (stage-04) per-role + merged stamping.
   stampWorkstream,

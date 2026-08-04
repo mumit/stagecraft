@@ -7,6 +7,7 @@ Mutation testing also has a second, narrower entry point: an opt-in **mechanical
 - [What it does](#what-it-does)
 - [Gate fields](#gate-fields)
 - [Track inclusion](#track-inclusion)
+- [Orchestrator-verified stamping (stage-06d)](#orchestrator-verified-stamping-stage-06d)
 - [Mechanical mutation gate (stage-06, opt-in)](#mechanical-mutation-gate-stage-06-opt-in)
 - [References](#references)
 
@@ -61,13 +62,27 @@ Any of these populates `blocking_findings[]` and gates at FAIL.
 
 **Skipped methods:**
 
-Tooling not installed is recorded as `attempted_but_blocked:<method>` — a WARN, not a FAIL. Unavailability of time is not an accepted skip reason.
+Tooling not installed is recorded as `attempted_but_blocked:<method>` — a WARN, not a FAIL. Unavailability of time is not an accepted skip reason. As of phase 35 item 35.3, this can also be an orchestrator-driven downgrade after the fact: see the next section.
 
 ---
 
 ## Track inclusion
 
 `full` only. The `quick`, `nano`, `hotfix`, `config-only`, `dep-update`, and `loop` tracks rely on stage-06 example tests as their verification ceiling, trading rigour for speed. The `full` track runs this stage in addition to those tests.
+
+---
+
+## Orchestrator-verified stamping (stage-06d)
+
+Phase 35.3. Before this, `methods_attempted[]` was 100% model-asserted (phase 31 deliberately deferred it — see [phase-31-verification-depth.md](phase-31-verification-depth.md)). `core/verify/stamp.js#stampStage06d` now closes that gap: for every method the verifier claims with a bare tag (`"property"`, `"mutation"`, or `"formal"` — not an already-honest `attempted_but_blocked:*`), the orchestrator tries to produce real executable evidence.
+
+- **Property-based** (`core/verify/property.js`): detects fast-check (JS/TS, via a package.json dependency), hypothesis (Python, via requirements.txt/pyproject.toml), or proptest (Rust, via Cargo.toml) — never installs any of them. Runs the property tests found under `pipeline.verify.property.paths` (default `src/tests/property/`) and parses the runner's own summary for an executed-property count and pass/fail. fast-check runs via Node's built-in test runner (`node --test --test-reporter=tap`); the distinctive `Property failed after N tests` message is how a real counterexample is detected.
+- **Mutation**: reuses the phase-31.4 runner (`core/verify/mutation.js#runMutationGate`) directly rather than a second implementation. The verifier's own pre-declared `threshold` (schema: "Audit-grade: prevents goal-post moving") is honored — a re-run score below it FAILs the gate, unlike stage-06's smoke gate where below-threshold is advisory by default.
+- **Formal** (`core/verify/formal.js`): presence-and-exit-code only. TLA+/Alloy/Lean/Coq output is too varied to parse reliably, so the orchestrator stamps `{tool, ran, exit_code}` and nothing more — a non-zero exit is a warning for human triage, never an automatic FAIL. There's no manifest-based auto-detection here (no single signal the way fast-check has one); the project declares its check via `pipeline.verify.formal.command`.
+
+Evidence found and the method ran cleanly → the claim is confirmed and the orchestrator's own numbers overwrite the model's (observed wins over asserted). Evidence found but the run genuinely fails (a real counterexample, a mutation score under the declared bar) → the gate FAILs, same as the model-judged FAIL conditions above — the orchestrator just insists the failure be real. No evidence at all (no toolchain, no test files, zero properties executed, mutation gate not opted in, no formal command configured) → the claim downgrades to `attempted_but_blocked:<method>`, the model's original sub-object is preserved under `_orchestrator_stamped.runs.<method>.model_claim`, and a gate warning is raised.
+
+A method the model never claimed (a legitimate `methods_skipped` entry, or an already-honest `attempted_but_blocked:*`) is left untouched — the orchestrator verifies claims, it doesn't invent new ones.
 
 ---
 

@@ -12,9 +12,9 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §31
 | 31.4 mutation smoke gate | ✅ complete — opt-in, changed-files-only, time-boxed; WARN by default, FAIL when `threshold_hard` |
 | 31.5 stage-05 quorum re-derivation | ✅ complete — merged gate re-derives approvals from the review files on every host |
 
-Stamping now covers stage-03b, 04a, 04c, and 06. **Stage-06d is still not stamped** —
-property-based and formal-method results remain model-asserted. That is
-[phase 35](phase-35-existing-codebase-mode.md) item 35.3.
+Stamping now covers stage-03b, 04a, 04c, and 06. Stage-06d closed the remaining gap in
+[phase 35](phase-35-existing-codebase-mode.md) item 35.3 — `methods_attempted[]` is now
+orchestrator-derived there too.
 
 ## Why
 
