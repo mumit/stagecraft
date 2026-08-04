@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stagecraft:schema:findings-report",
+  "title": "Findings Report (devteam report --findings)",
+  "description": "Severity-ordered findings collected from every review artifact present: security-review (stage-04b), red-team including the 31.2 mechanical floor (stage-04c), peer-review + critic (stage-05 / stage-05.critic), the 31.4 mutation smoke gate (stage-06), verification-beyond-tests (stage-06d), and docs/audit/*.md when the audit workflow has run. Phase 35 item 35.4. core/report/collect-findings.js is the authoritative reader; this file documents the same contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "counts", "findings"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generatedAt", "sourcesScanned"],
+      "properties": {
+        "generatedAt": { "type": "string", "description": "ISO timestamp of when the report was generated." },
+        "sourcesScanned": {
+          "type": "array",
+          "description": "One entry per review artifact type this collector knows how to read, regardless of whether it was present in this pipeline — lets a reader distinguish 'ran and found nothing' from 'never ran'.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "present"],
+            "properties": {
+              "source": { "type": "string", "enum": ["red-team", "security-review", "peer-review", "mutation", "verification-beyond-tests", "audit"] },
+              "present": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "bySeverity", "byProvenance"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "bySeverity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["critical", "high", "medium", "low", "unknown"],
+          "properties": {
+            "critical": { "type": "integer", "minimum": 0 },
+            "high": { "type": "integer", "minimum": 0 },
+            "medium": { "type": "integer", "minimum": 0 },
+            "low": { "type": "integer", "minimum": 0 },
+            "unknown": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "byProvenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["orchestrator-observed", "model-asserted"],
+          "properties": {
+            "orchestrator-observed": { "type": "integer", "minimum": 0 },
+            "model-asserted": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "Severity-ordered (critical→low→unknown), ties broken orchestrator-observed-first, then source, then id. Empty array is a valid, honest 'nothing found' result — never rendered as an error.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "file", "line", "summary", "mitigation", "effort", "provenance", "source", "sourceFile"],
+        "properties": {
+          "id": { "anyOf": [{ "type": "string" }, { "type": "null" }], "description": "Stable id from the originating artifact (e.g. 'RT-3', 'MUT-1', 'S-1'), null when the source had none." },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "unknown"] },
+          "file": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+          "line": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+          "summary": { "type": "string", "minLength": 1, "description": "What's wrong, in one line." },
+          "mitigation": { "anyOf": [{ "type": "string" }, { "type": "null" }], "description": "Suggested fix, when the source artifact stated one." },
+          "effort": { "anyOf": [{ "type": "string" }, { "type": "null" }], "description": "Rough effort as stated by the source (e.g. 'XS'/'S'/'M'/'L'), not a computed estimate." },
+          "provenance": {
+            "type": "string",
+            "enum": ["orchestrator-observed", "model-asserted"],
+            "description": "orchestrator-observed: traces to code the orchestrator itself ran (mechanical red-team floor, mutation gate, a confirmed stage-06d stamp, an approval-derivation-hook-derived peer-review mismatch). model-asserted: a model's judgment, even when well-evidenced in prose."
+          },
+          "source": { "type": "string", "minLength": 1, "description": "Human-readable origin, e.g. 'red-team (mechanical floor)', 'security-review', 'audit:06-security'." },
+          "sourceFile": { "type": "string", "minLength": 1, "description": "Path to the artifact this finding was read from." }
+        }
+      }
+    }
+  }
+}

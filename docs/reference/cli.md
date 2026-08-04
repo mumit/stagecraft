@@ -256,15 +256,16 @@ Chronological event timeline: every gate and artifact write in mtime order. --fo
 
 ### `devteam report [options]`
 
-Generate a self-contained HTML report of the most recent pipeline run. Embeds status, per-stage timing, dispatch counts, blocker log, and all pipeline documents. Written to pipeline/report.html and opened in the default browser.
+Generate a self-contained HTML report of the most recent pipeline run. Embeds status, per-stage timing, dispatch counts, blocker log, and all pipeline documents. Written to pipeline/report.html and opened in the default browser. With --findings, generates a severity-ordered findings report instead, collected across every review artifact present (security-review, red-team, peer-review/critic, verification-beyond-tests, mutation, docs/audit/*.md) and labelled orchestrator-observed vs model-asserted — written to pipeline/findings-report.html.
 
-| Flag      | Type   | Description                                 |
-| --------- | ------ | ------------------------------------------- |
-| --cwd     | string | Target project directory (default: cwd)     |
-| --out     | string | Output path (default: pipeline/report.html) |
-| --feature | string | Feature name (for bounded-isolation runs)   |
-| --json    | bool   | Print raw data as JSON; skip HTML           |
-| --no-open | bool   | Write file but don't open browser           |
+| Flag       | Type   | Description                                                                                      |
+| ---------- | ------ | ------------------------------------------------------------------------------------------------ |
+| --cwd      | string | Target project directory (default: cwd)                                                          |
+| --out      | string | Output path (default: pipeline/report.html, or pipeline/findings-report.html with --findings)    |
+| --feature  | string | Feature name (for bounded-isolation runs)                                                        |
+| --findings | bool   | Generate the severity-ordered findings report (Phase 35.4) instead of the pipeline status report |
+| --json     | bool   | Print raw data as JSON; skip HTML                                                                |
+| --no-open  | bool   | Write file but don't open browser                                                                |
 
 ### `devteam performance critical-path [options]`
 

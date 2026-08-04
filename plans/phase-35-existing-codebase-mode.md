@@ -10,7 +10,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §35
 | 35.1 `review-only` track + artifact-tolerant readFirst | not started |
 | 35.2 `devteam review-pr` | not started |
 | 35.3 mechanical stamping for stage-06d | ✅ complete — `methods_attempted[]` is orchestrator-derived (see `core/verify/stamp.js#stampStage06d`) |
-| 35.4 findings report with mitigations | not started |
+| 35.4 findings report with mitigations | ✅ complete — `devteam report --findings` (see `core/report/collect-findings.js`) |
 | 35.5 `refactor` track | not started |
 
 ## Why
