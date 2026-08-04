@@ -13,7 +13,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
-const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel, isAdversarialReviewMode } = require("./pipeline/stages");
+const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel, isAdversarialReviewMode, isFrameworkReadFirstPath } = require("./pipeline/stages");
+const { resolveFrameworkPath } = require("./adapters/render-helpers");
 const { loadConfig, changeIdFromFeature, escalateModel } = require("./config");
 const { gatesDir: getGatesDir, logsDir: getLogsDir, pipelineRoot, prefixPipelineRelative } = require("./paths");
 const { resolveAdapter } = require("./router");
@@ -369,6 +370,24 @@ function existsForReadFirst(cwd, relPath) {
   }
 }
 
+// Phase-36 item 36.2: resolve one readFirst entry to its final rendered
+// string. An entry's root is "subject" (the repo being worked on/reviewed)
+// unless it explicitly says `root: "framework"` or its path is one of
+// stages.js's well-known framework files (isFrameworkReadFirstPath —
+// currently the two .devteam/rules/*.md entries; AGENTS.md is deliberately
+// excluded there, see its why-comment). Framework entries get run through
+// resolveFrameworkPath(), which only changes anything when `opts.processCwd`
+// (the subject, 36.1's codeRoot) differs from `opts.cwd` (the review
+// workspace, stateRoot) — every pre-36.3 caller leaves processCwd unset, so
+// this is a no-op there and the returned string is byte-identical to today.
+function resolveReadFirstItem(item, prefix, opts) {
+  const isObj = typeof item === "object" && item !== null;
+  const rawPath = isObj ? item.path : item;
+  const root = (isObj && item.root) || (isFrameworkReadFirstPath(rawPath) ? "framework" : "subject");
+  const prefixed = prefix(rawPath);
+  return root === "framework" ? resolveFrameworkPath(prefixed, opts) : prefixed;
+}
+
 function buildDescriptor(stageDef, role, opts = {}) {
   // ADR-009 Phase 2: when intent === "repair" and the stage declares a
   // repairOverride, merge override fields on top of the base stage definition.
@@ -406,7 +425,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
             typeof item !== "object" || !item.optional
               || existsForReadFirst(opts.cwd, prefix(item.path)),
           )
-          .map((item) => (typeof item === "object" ? prefix(item.path) : prefix(item)))
+          .map((item) => resolveReadFirstItem(item, prefix, opts))
       : effectiveDef.readFirst,
     allowedWrites: Array.isArray(allowedWrites) ? allowedWrites.map(prefix) : allowedWrites,
     artifact: prefix(effectiveDef.artifact),
@@ -654,7 +673,12 @@ function runStage(stageName, opts = {}) {
       // 32.5(b): computed per workstream at plan time — null on a
       // workstream's first-ever dispatch (nothing to diff against yet).
       const contextDelta = computeContextDelta({ cwd: ctx.cwd, changeId: ctx.changeId, workstreamId: entry.workstreamId });
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
+      // 36.2: processCwd rides along so buildDescriptor can tell a review
+      // workspace's stateRoot (ctx.cwd) apart from the subject it's reviewing
+      // (ctx.processCwd, 36.1's codeRoot) — see resolveReadFirstItem() above.
+      // Unset on every non-review path today, matching ctx.processCwd's own
+      // "not set by any orchestrator path yet" state (hosts/acp/adapter.js).
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature
