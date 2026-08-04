@@ -215,6 +215,11 @@ const COMMANDS = [
     description: "Materialize an inbound GitHub PR (diff, changed files, title/body) into pipeline/review-input/ and dispatch stage-05 against it: a single reviewer in panel mode, reviewer then critic when review.mode: adversarial. Local-only by default; --post publishes the review as a PR comment after printing the exact payload and requiring interactive confirmation (or --yes in a non-interactive context) — refuses outright on a partial/incomplete review. Requires the gh CLI, authenticated (plans/phase-35-existing-codebase-mode.md item 35.2).",
   },
   {
+    name:        "review",
+    synopsis:    "devteam review <path> [options]",
+    description: "Zero-install external review: no init, no config, nothing written to <path>. Creates (or reuses) a review workspace under ~/.stagecraft/reviews/<slug>/ and dispatches the track there with ctx.processCwd=<path>, ctx.cwd=<workspace>. Only --host acp mechanically prevents writes to <path> (hosts/acp/permissions.js); any other host prints a warning and refuses without --allow-unenforced-writes. Prints the 35.4 findings report path on completion. --list shows existing workspaces: subject path, last run date, last status.",
+  },
+  {
     name:        "stages",
     synopsis:    "devteam stages",
     description: "List known stage names.",

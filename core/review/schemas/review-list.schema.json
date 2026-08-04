@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:stagecraft:schema:review-list",
+  "title": "devteam review --list --json",
+  "description": "Enumerates every review workspace under core/review-workspace.js#reviewsRoot() (Phase 36 item 36.4). An empty workspaces[] array is a valid, honest 'no reviews yet' result — never rendered as an error.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "reviews_root", "workspaces"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "reviews_root": { "type": "string", "description": "core/review-workspace.js#reviewsRoot() — ~/.stagecraft/reviews or $STAGECRAFT_REVIEWS_DIR." },
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["slug", "workspace_path", "subject_path", "commit_sha", "last_run_at", "last_status"],
+        "properties": {
+          "slug": { "type": "string" },
+          "workspace_path": { "type": "string" },
+          "subject_path": { "anyOf": [{ "type": "string" }, { "type": "null" }], "description": "Null when subject.json is missing or unreadable." },
+          "commit_sha": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+          "last_run_at": { "anyOf": [{ "type": "string" }, { "type": "null" }], "description": "Null when the workspace exists but has never completed a run." },
+          "last_status": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+        }
+      }
+    }
+  }
+}

@@ -62,6 +62,7 @@ const COMMAND_MODULES = Object.freeze({
   corpus: "corpus",
   evals: "evals",
   "review-pr": "review-pr",
+  review: "review",
 });
 
 const commandCache = Object.create(null);

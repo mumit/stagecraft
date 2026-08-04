@@ -315,6 +315,19 @@ Commands:
                                    without --yes; refuses outright on a
                                    partial/incomplete review. Requires
                                    the gh CLI, authenticated.
+  review <path> [--scope <p>]      Zero-install external review: no init, no
+       [--track review-only]        config, nothing written to <path>. Creates
+       [--host acp] [--workspace]   (or reuses) a review workspace under
+       [--json] [--open]            ~/.stagecraft/reviews/<slug>/ and dispatches
+                                   the track there with ctx.processCwd=<path>,
+                                   ctx.cwd=<workspace>. Only --host acp
+                                   mechanically prevents writes to <path>
+                                   (hosts/acp/permissions.js); any other host
+                                   prints a warning and refuses without
+                                   --allow-unenforced-writes. Prints the 35.4
+                                   findings report path on completion.
+  review --list [--json]          Show existing review workspaces: subject
+                                   path, last run date, last status.
   stages                           List known stage names.
   hosts                            List available host adapters.
   help                             Show this message.
