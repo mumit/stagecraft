@@ -133,13 +133,13 @@ function mergeToolCallInfo(knownToolCalls, update) {
   knownToolCalls.set(update.toolCallId, merged);
 }
 
-async function handlePermissionRequest(params, descriptor, cwd, knownToolCalls, appendLog) {
+async function handlePermissionRequest(params, descriptor, roots, knownToolCalls, appendLog) {
   const requested = (params && params.toolCall) || {};
   const known = (requested.toolCallId && knownToolCalls.get(requested.toolCallId)) || {};
   const toolCall = { ...known, ...requested };
   const options = Array.isArray(params && params.options) ? params.options : [];
 
-  const { deny, reason } = evaluateToolCall(toolCall, descriptor, cwd);
+  const { deny, reason } = evaluateToolCall(toolCall, descriptor, roots);
   const chosen = selectOption(options, deny);
   appendLog(
     `[devteam] permission-request kind=${toolCall.kind || "?"} ` +
@@ -163,6 +163,25 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
   const processCwd = ctx.processCwd || ctx.cwd;
   const sessionCwd = path.resolve(processCwd);
   const gatePath = path.join(gatesDir(ctx.cwd, ctx.changeId), `${descriptor.workstreamId}.json`);
+
+  // Two-root permission model (36.1, plans/phase-36-external-review-mode.md
+  // §36.1). ctx.externalReviewMode is not set by any orchestrator path yet
+  // (36.3/36.4 wire the review workspace that sets it) — until then this is
+  // always "normal" mode, codeRoot === stateRoot === processCwd, which is
+  // byte-identical to the single-cwd behaviour this replaces.
+  let reviewExecAllowlist = [];
+  try {
+    const raw = loadConfig(ctx.cwd || process.cwd())?._raw?.hosts?.acp || {};
+    reviewExecAllowlist = Array.isArray(raw.review?.exec_allowlist) ? raw.review.exec_allowlist : [];
+  } catch {
+    reviewExecAllowlist = [];
+  }
+  const permissionRoots = {
+    codeRoot: processCwd,
+    stateRoot: ctx.cwd,
+    mode: ctx.externalReviewMode === true ? "review" : "normal",
+    execAllowlist: reviewExecAllowlist,
+  };
   const start = Date.now();
   const timeoutMs = typeof ctx.timeoutMs === "number" ? ctx.timeoutMs : DEFAULT_TIMEOUT_MS;
 
@@ -253,7 +272,7 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
       },
       async onRequest(method, params) {
         if (method === "session/request_permission") {
-          return handlePermissionRequest(params, descriptor, processCwd, knownToolCalls, appendLog);
+          return handlePermissionRequest(params, descriptor, permissionRoots, knownToolCalls, appendLog);
         }
         // We declared clientCapabilities.fs = {readTextFile:false,
         // writeTextFile:false} and terminal:false — an agent that calls
