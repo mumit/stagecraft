@@ -1,7 +1,16 @@
 # Phase 29 — Scale-Adaptive Ceremony
 
-Status: **proposed** (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §1, §3.2).
+Status: **complete** (2026-08-01) — all five items shipped
+(from [landscape-review-2026-07.md](landscape-review-2026-07.md) §1, §3.2).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §29.
+
+| Item | Status |
+|---|---|
+| 29.1 `loop` track | ✅ complete — 4 slots: requirements → build → qa → peer-review |
+| 29.2 assess-by-default on `devteam run` | ✅ complete — ADR-016 accepted; inferred track provenance |
+| 29.3 ceremony cost preview | ✅ complete — static estimate, empirical median once the corpus has ≥5 comparable runs |
+| 29.4 compact QA fold | ✅ complete — `stage-06x` verification sweep on `compact_qa` tracks |
+| 29.5 docs repositioning | ✅ complete — `loop` is the day-to-day default, `full` is the audited path |
 
 ## Why
 

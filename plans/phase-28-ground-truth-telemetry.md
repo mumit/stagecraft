@@ -1,7 +1,21 @@
 # Phase 28 — Ground Truth: Token/Cost Telemetry, Run Corpus, Host Continuity
 
-Status: **proposed** (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.1, §3.7).
+Status: **complete** (2026-08-01) — all six items shipped
+(from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.1, §3.7).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §28.
+
+| Item | Status |
+|---|---|
+| 28.1 claude-code observed usage | ✅ complete — stream-json parsing, `_orchestrator_observed` on the gate |
+| 28.2 openai-compat usage accumulation | ✅ complete — summed across the tool loop, incl. cached tokens |
+| 28.3 codex + antigravity usage or labelled estimate | ✅ complete — native where offered, `tokens_estimated: true` otherwise |
+| 28.4 budget on observed cost | ✅ complete — `--budget-usd` prefers observed, records `cost_basis` |
+| 28.5 run corpus | ✅ complete — `.devteam/corpus/dispatches.jsonl`, `devteam corpus stats` |
+| 28.6 Antigravity host adapter | ✅ complete — `hosts/antigravity/`, doctor deprecation warning for gemini-cli |
+
+The gap this phase closed: `--budget-usd` used to enforce against the cost the model
+reported about itself, and no adapter captured token usage even where the host offered
+it. Cost is now measured by the orchestrator wherever the host reports it.
 
 ## Why this phase is first
 

@@ -1,7 +1,20 @@
 # Phase 31 — Verification Depth
 
-Status: **proposed** (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.4).
+Status: **complete** (2026-08-02) — all five items shipped
+(from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.4).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §31.
+
+| Item | Status |
+|---|---|
+| 31.1 per-role stamping | ✅ complete — stage-04 workstreams stamped individually plus a merged stamp; receipts prevent duplicate suite runs |
+| 31.2 mechanical red-team floor | ✅ complete — dependency audit, secret scan, semgrep-if-configured, dependency diff; stage-04c now stampable |
+| 31.3 adversarial review pair | ✅ complete — opt-in `review.mode: adversarial`, reviewer then critic, cross-host by default |
+| 31.4 mutation smoke gate | ✅ complete — opt-in, changed-files-only, time-boxed; WARN by default, FAIL when `threshold_hard` |
+| 31.5 stage-05 quorum re-derivation | ✅ complete — merged gate re-derives approvals from the review files on every host |
+
+Stamping now covers stage-03b, 04a, 04c, and 06. **Stage-06d is still not stamped** —
+property-based and formal-method results remain model-asserted. That is
+[phase 35](phase-35-existing-codebase-mode.md) item 35.3.
 
 ## Why
 

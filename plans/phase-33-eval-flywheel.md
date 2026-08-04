@@ -2,7 +2,8 @@
 
 Status: **complete** (2026-08-03) — 33.1/33.2/33.3/33.4 shipped
 (from [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.6;
-BACKLOG bet #3 "evals are the rate-limit" made concrete).
+makes BACKLOG bet #3 concrete — eval coverage is what limits how fast this project can
+safely change its own prompts).
 Depends on: Phase 28 (corpus), Phase 30 (learning loop) recommended first.
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §33.
 
@@ -22,7 +23,8 @@ suite → nothing ships that re-breaks it — and Stagecraft's failed gates are 
 structured failure records. Downstream, GEPA-style reflective prompt evolution (ICLR
 2026 oral; ~13% over MIPROv2 at 35× fewer rollouts) needs exactly two things per case:
 a scalar outcome and textual feedback. Gate status and blocker text are those two
-things. Nobody else in the category has this signal; using it is the moat.
+things. No competing framework produces this data, so it is the hardest capability here
+for anyone else to copy.
 
 ## Work items
 

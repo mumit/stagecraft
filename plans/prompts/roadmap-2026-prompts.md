@@ -1,7 +1,7 @@
-# Stagecraft Execution Prompts — Phases 28–34 (2026-H2 Roadmap)
+# Stagecraft Execution Prompts — Phases 28–35 (2026-H2 Roadmap)
 
 Companion to [landscape-review-2026-07.md](../landscape-review-2026-07.md) and the
-phase plans `plans/phase-28-*` … `plans/phase-34-*`. Same execution model as
+phase plans `plans/phase-28-*` … `plans/phase-35-*`. Same execution model as
 [ALL-PROMPTS.md](ALL-PROMPTS.md): paste the **PREAMBLE** (§0) plus one item prompt into a
 fresh Claude (Sonnet) session at the repo root. One item = one session = one branch = one PR.
 
@@ -14,17 +14,20 @@ Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see 
 | 30 | Closed learning loop | 30.1–30.5 | ✅ complete |
 | 31 | Verification depth | 31.1–31.5 | ✅ complete |
 | 32 | Performance & parallelism | 32.1–32.5 | ⚠️ 32.1 ✅ · 32.2 ⏸ ADR-017 drafted only (status Proposed), wave execution not built · 32.3 ✅ · 32.4 ⏸ deferred, no host adapter exposes worktree-isolation capability · 32.5 ✅ |
-| 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ⏸ 33.3 after 28.5 (done); 33.4 after 33.1–33.3 |
-| 34 | Interop & auditable SDLC | 34.1–34.4 | 🔲 34.4 after 28.6 ships one release |
-| 35 | Existing-codebase mode | 35.1–35.5 | 🔲 all ready |
+| 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ✅ complete |
+| 34 | Interop & auditable SDLC | 34.1–34.4 | ✅ complete |
+| 35 | Existing-codebase mode | 35.1–35.5 | 🔲 all ready — next up |
 
-Recommended order: 28 → 29 → (30 ∥ 31) → 32 → 33 → 34, with 35 insertable at any point
-(it depends on 31.4's mutation runner for 35.3/35.5 and on nothing else). Items within a
-phase are independently mergeable unless the item says otherwise.
+Only two items from phases 28–34 remain open: **32.2** (needs ADR-017 accepted first —
+it is written but still Proposed) and **32.4** (deferred; no host adapter exposes
+worktree-isolated dispatch, so the item's own precondition cannot be met). Phase 35 is
+ready to run and depends only on 31.4's mutation runner, which has shipped. Items within
+a phase are independently mergeable unless the item says otherwise.
 
-**Status chips lag reality.** Implementation sessions don't update this table, so verify
-before running an item:
-`git log --no-merges --oneline --reverse a8e071a..main` lists what has actually landed.
+**Verify before running an item.** Implementation sessions do not update this table, so
+it can lag: `git log --no-merges --oneline --reverse a8e071a..main` lists what has
+actually landed, and [../README.md](../README.md#what-is-not-delivered-yet) tracks open
+work.
 
 ---
 
@@ -1014,8 +1017,8 @@ PUBLISHING IS OPT-IN AND GATED. Default: local only, nothing sent anywhere. --po
 publishes findings as PR review comments and MUST (a) print the exact payload and require
 interactive confirmation, (b) refuse in a non-interactive context unless --yes is ALSO
 passed, (c) refuse outright if the review did not complete or any gate is FAIL-to-render.
-Posting to a PR is outward-facing and hard to retract — the confirmation is load-bearing,
-not decorative. Never post on a partial review.
+Posting to a PR is public and hard to undo, so the confirmation has to actually stop the
+command — not a prompt that defaults to yes. Never post on a partial review.
 
 Tests: a scripted `gh` stub on PATH drives an end-to-end review of a fixture PR producing
 a valid stage-05 gate; adversarial mode adds the critic; --post without confirmation posts
