@@ -65,6 +65,13 @@ permission, or silently return nothing? Repeat with B as a symlink inside A.
   costs tokens and interacts with the 32.1 cache-first layout).
 - No production code changes. Do not implement 36.2 in the same session.
 
+**Done — see [`plans/acp-read-scope.md`](acp-read-scope.md).** Real agent
+(`@agentclientprotocol/claude-agent-acp` 0.64.2), real model, real cost (~$0.58 across four
+dispatches). Reads outside session cwd succeed unsandboxed, with or without a symlink,
+gated only by one `session/request_permission` round-trip that Stagecraft's own
+`hosts/acp/permissions.js` already auto-allows for `read`/`execute`-kind calls today.
+**Recommendation: absolute paths** — no permission-layer change needed for 36.2.
+
 ### 36.1 Two-root permission model with a real read-only mode
 
 [verify-first] Claims to confirm in `hosts/acp/permissions.js`: `evaluateToolCall` takes a
