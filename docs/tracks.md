@@ -56,6 +56,7 @@ hotfix                        ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓ 
 loop          ✓               ✓ˢ                  ✓ˢ  ✓                               
 review-only                           ✓⁺  ✓       ✓                                   
 review-pr                                         ✓ˢ                                  
+refactor                      ✓                   ✓   ✓                               
 
    Legend:
    ✓⁺ = conditional stage — only runs when stage-04a triggers it

@@ -10,7 +10,12 @@
 // output are all honest recorded skips — never a fabricated score, same
 // doctrine as runDependencyAudit's offline handling in ./redteam-floor.js.
 //
-// See plans/phase-31-verification-depth.md §31.4.
+// 35.5: the opt-in default flips to ON for the `refactor` track only (see
+// defaultMutationEnabledFor below) — every other track's default is
+// unchanged. An explicit `enabled` in config always wins over the track
+// default.
+//
+// See plans/phase-31-verification-depth.md §31.4, plans/phase-35-existing-codebase-mode.md §35.5.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -29,10 +34,19 @@ const STRYKER_SCORE_RE = /(\d+)\/(\d+)\s+mutants?\s+killed\s+\(([\d.]+)%\)/i;
 // 🤔 <suspicious>  🙁 <survived>  🔇 <skipped>".
 const MUTMUT_SCORE_RE = /(\d+)\/(\d+)\s*🎉\s*(\d+)\s*⏰\s*(\d+)\s*🤔\s*(\d+)\s*🙁\s*(\d+)\s*🔇\s*(\d+)/u;
 
-function resolveMutationConfig(config) {
+// 35.5: the `refactor` track flips this gate's opt-in default to ON — "a
+// refactor that survives mutation testing is one that preserved behavior"
+// is the whole point of that track. Every other track keeps the pre-35.5
+// default (off). An explicit `enabled` in config always wins over the
+// track default, in either direction.
+function defaultMutationEnabledFor(track) {
+  return track === "refactor";
+}
+
+function resolveMutationConfig(config, track) {
   const raw = (config && config.pipeline && config.pipeline.verify && config.pipeline.verify.mutation) || {};
   return {
-    enabled: raw.enabled === true,
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaultMutationEnabledFor(track),
     threshold: typeof raw.threshold === "number" ? raw.threshold : DEFAULT_THRESHOLD,
     threshold_hard: raw.threshold_hard === true,
     timeout_ms: Number.isInteger(raw.timeout_ms) && raw.timeout_ms > 0 ? raw.timeout_ms : DEFAULT_TIMEOUT_MS,
@@ -124,10 +138,13 @@ function parseScore(output) {
 // shaped like every other mechanical check in this codebase (see
 // ./redteam-floor.js's `record()`), plus score/runner/scope/mutants when a
 // run actually completed and parsed.
-async function runMutationGate(cwd, config, changedFiles) {
-  const mCfg = resolveMutationConfig(config);
+async function runMutationGate(cwd, config, changedFiles, track) {
+  const mCfg = resolveMutationConfig(config, track);
   if (!mCfg.enabled) {
-    return { ran: false, skipped: true, reason: "mutation gate disabled (pipeline.verify.mutation.enabled=false, default)" };
+    const reason = track === "refactor"
+      ? "mutation gate disabled (pipeline.verify.mutation.enabled=false, explicitly overridden off on the refactor track)"
+      : "mutation gate disabled (pipeline.verify.mutation.enabled=false, default)";
+    return { ran: false, skipped: true, reason };
   }
 
   const files = changedFiles || [];

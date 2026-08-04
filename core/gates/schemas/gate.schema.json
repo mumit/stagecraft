@@ -53,7 +53,7 @@
     },
     "track": {
       "type": "string",
-      "enum": ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "review-only", "review-pr"],
+      "enum": ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "review-only", "review-pr", "refactor"],
       "description": "Pipeline track the gate belongs to. Tracks differ on which stages run and how many approvals each gate requires."
     },
     "scope": {
