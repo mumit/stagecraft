@@ -184,6 +184,22 @@ const STAGES = {
       pr_summaries_written: [],
       local_verification: [],
     },
+    // Phase-35 item 35.5: `refactor` track — the one difference from nano
+    // at this stage. Same gate shape, same allowedWrites/readFirst (nano's
+    // gap of listing pipeline/brief.md as a required-but-often-absent
+    // readFirst entry is unchanged here — not one of the two authorized
+    // differences from nano, see the why-comment on STAGES_BY_TRACK.refactor
+    // above), only the objective/template change: before touching structure,
+    // the build plan must characterize CURRENT behavior — inputs/outputs,
+    // edge cases, error handling, existing test coverage — as the baseline
+    // the refactor is on the hook to preserve. QA's trackOverride (below)
+    // is what actually checks that baseline held.
+    trackOverrides: {
+      refactor: {
+        objective: "Behavior-preservation refactor. Before making any structural change, characterize the CURRENT behavior of the code under refactor in the 'Current Behavior (Characterization)' section of pipeline/build-plan.md: inputs/outputs, edge cases, error handling, and existing test coverage, as they are TODAY. Only after that baseline is captured, implement the structural change. No new acceptance criteria are being added — the goal is identical externally-observable behavior with improved internal structure. Record local verification the same as any build.",
+        template: "characterization-template.md",
+      },
+    },
   },
   "pre-review": {
     stage: "stage-04a",
@@ -437,6 +453,38 @@ const STAGES = {
       all_scenarios_have_tests: false,
       noted_for_followup: [],
     },
+    // Phase-35 item 35.5: `refactor` track's QA bar is BEHAVIOR-PRESERVED,
+    // not new-behavior-verified. No ACs are being added (stage-01 never ran,
+    // same as nano), so all_acceptance_criteria_met and
+    // criterion_to_test_mapping_is_one_to_one go null — the 35.1 precedent
+    // for fields that don't apply when their upstream artifact doesn't exist
+    // (core/verify/stamp.js#checkAcceptanceCriteria already treats a missing
+    // brief.md as "not applicable" and leaves whatever the model wrote
+    // untouched; null is the honest initial value here, not false, because
+    // false reads as "criteria were checked and failed"). The bar instead:
+    // the existing suite passes UNCHANGED (stampStage06's ordinary
+    // test-command blocker — a behavior-changing edit fails it exactly like
+    // any other track's failing test does) AND the 31.4 mutation smoke gate
+    // (core/verify/mutation.js#resolveMutationConfig) defaults to enabled
+    // on this track specifically, so a surviving mutant is surfaced by
+    // default instead of requiring opt-in config.
+    trackOverrides: {
+      refactor: {
+        objective: "Verify the refactor preserved behavior: the existing test suite must pass UNCHANGED (no ACs apply — this track adds none). The 31.4 mutation smoke gate runs by default here — a refactor that survives mutation testing is one that preserved behavior. Set all_acceptance_criteria_met and criterion_to_test_mapping_is_one_to_one to null (not applicable, no brief.md).",
+        gate: {
+          all_acceptance_criteria_met: null,
+          tests_total: 0,
+          tests_passed: 0,
+          tests_failed: 0,
+          failing_tests: [],
+          criterion_to_test_mapping_is_one_to_one: null,
+          scenarios_total: 0,
+          scenarios_covered: 0,
+          all_scenarios_have_tests: false,
+          noted_for_followup: [],
+        },
+      },
+    },
   },
   "accessibility-audit": {
     stage: "stage-06b",
@@ -632,7 +680,7 @@ const STAGES = {
   },
 };
 
-const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop", "review-only", "review-pr"];
+const TRACKS = ["full", "quick", "nano", "config-only", "dep-update", "hotfix", "loop", "review-only", "review-pr", "refactor"];
 
 const ORDERED_STAGE_NAMES = [
   "requirements",
@@ -730,6 +778,29 @@ const STAGES_BY_TRACK = {
   // wins over this sizing exactly as it does everywhere else (rolesForStage
   // checks isAdversarialReviewMode() first), giving reviewer-then-critic.
   "review-pr": ["peer-review"],
+  // Phase-35 item 35.5: behavior-preservation track for refactors — same
+  // three-stage shape as `nano` (no requirements/design/build-with-new-ACs;
+  // a single build + a single-reviewer peer-review + qa), but NOT a nano
+  // alias. Two differences, both on top of the shared shape:
+  //   (1) build (stage-04): trackOverrides.refactor swaps the objective/
+  //       template to a CHARACTERIZATION brief — capture what the code does
+  //       TODAY before restructuring it — instead of nano's "just implement
+  //       it" framing. See the `build` stage def above.
+  //   (2) qa (stage-06): trackOverrides.refactor swaps the objective to the
+  //       behavior-preserved bar (existing suite must pass UNCHANGED) and
+  //       nulls the AC-mapping fields (all_acceptance_criteria_met,
+  //       criterion_to_test_mapping_is_one_to_one) — a refactor asserts no
+  //       new ACs, same null-permitted treatment 35.1 established for
+  //       review-only's artifact-tolerant readFirst (see the why-comment on
+  //       security-review's readFirst). The 31.4 mutation smoke gate
+  //       (core/verify/mutation.js#resolveMutationConfig) additionally
+  //       defaults to enabled on this track ONLY — "a refactor that survives
+  //       mutation testing is one that preserved behavior" — every other
+  //       track keeps the pre-35.5 opt-in-off default.
+  // PEER_REVIEW_SIZING.refactor below mirrors nano's (single reviewer, 1
+  // approval) — everything NOT called out above is intentionally identical
+  // to nano, not a third undocumented difference.
+  refactor: ["build", "peer-review", "qa"],
 };
 
 // 29.4: tracks flagged compact_qa fold whichever of QA_SWEEP_STAGES they
@@ -798,6 +869,13 @@ const PEER_REVIEW_SIZING = {
   // review.mode values for this track). One approval: there's no second
   // area to cross-check on a single materialized PR diff.
   "review-pr":   { roles: ["reviewer"], required_approvals: 1 },
+  // 35.5: refactor mirrors nano's sizing exactly — a single reviewer is the
+  // right amount of ceremony for a behavior-preserving structural change,
+  // same as a trivial nano change. Without this entry rolesForStage() would
+  // fall back to PEER_REVIEW_SIZING.full's four-area matrix (the same
+  // fallback review-only relies on deliberately) — refactor wants nano's
+  // shape here, not full's, so the entry is required.
+  refactor:      { roles: ["backend"], required_approvals: 1 },
   // loop's sizing is derived from loopBuildRole(config) instead of a static
   // roles list — see rolesForStage()/requiredApprovalsFor() below — because
   // the single reviewed area must always match the single role that build

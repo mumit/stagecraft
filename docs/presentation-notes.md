@@ -196,7 +196,7 @@ Don't explain every stage. Cover three properties of the whole:
             │
             ▼
    Core (model-agnostic spine, never invokes a model)
-     * 18 stages, 9 tracks
+     * 18 stages, 10 tracks
      * gate schemas + validator
      * routing + orchestrator
             │

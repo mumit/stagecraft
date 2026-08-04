@@ -28,8 +28,8 @@
       "description": "G2: True iff every Scenario in spec.feature has a corresponding test. When stage-03b ran AND this is false, mark stage-06 FAIL. When stage-03b did not run (no spec.feature), set this true (vacuously)."
     },
     "all_acceptance_criteria_met": {
-      "type": "boolean",
-      "description": "Every brief acceptance criterion has at least one passing test. Required for the Stage 7 auto-fold."
+      "type": ["boolean", "null"],
+      "description": "Every brief acceptance criterion has at least one passing test. Required for the Stage 7 auto-fold. Null-permitted (35.5): on the `refactor` track no brief.md / ACs exist by design — core/verify/stamp.js#checkAcceptanceCriteria already treats a missing brief.md as not-applicable and leaves this field untouched rather than forcing a value."
     },
     "tests_total": {
       "type": "integer",
@@ -51,8 +51,8 @@
       "description": "Names of failing tests; the orchestrator routes each to the owning dev based on the test path."
     },
     "criterion_to_test_mapping_is_one_to_one": {
-      "type": "boolean",
-      "description": "True when every criterion maps to exactly one dedicated test and no test covers multiple criteria with distinct verify conditions. Drives the Stage 7 auto-fold; when in doubt, set false."
+      "type": ["boolean", "null"],
+      "description": "True when every criterion maps to exactly one dedicated test and no test covers multiple criteria with distinct verify conditions. Drives the Stage 7 auto-fold; when in doubt, set false. Null-permitted (35.5) on the `refactor` track only, for the same reason as all_acceptance_criteria_met above."
     },
     "mutation_score": {
       "type": ["number", "null"],

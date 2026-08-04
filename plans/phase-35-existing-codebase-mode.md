@@ -11,7 +11,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §35
 | 35.2 `devteam review-pr` | not started |
 | 35.3 mechanical stamping for stage-06d | ✅ complete — `methods_attempted[]` is orchestrator-derived (see `core/verify/stamp.js#stampStage06d`) |
 | 35.4 findings report with mitigations | ✅ complete — `devteam report --findings` (see `core/report/collect-findings.js`) |
-| 35.5 `refactor` track | not started |
+| 35.5 `refactor` track | ✅ complete — `STAGES_BY_TRACK.refactor` (see `core/pipeline/stages.js`); mutation-gate default flips on `core/verify/mutation.js#defaultMutationEnabledFor` |
 
 ## Why
 

@@ -315,8 +315,10 @@ async function stampStage06(cwd, gatePath) {
   // enabled=false), so an unconfigured project's stage-06 gate is unaffected
   // beyond this always-recorded, always-honest audit entry. See
   // core/verify/mutation.js and plans/phase-31-verification-depth.md §31.4.
+  // 35.5: the default flips to enabled on gate.track === "refactor" only
+  // (resolveMutationConfig/runMutationGate read the track to decide).
   const changedFiles = getChangedFiles(cwd);
-  const mutationResult = await runMutationGate(cwd, config, changedFiles);
+  const mutationResult = await runMutationGate(cwd, config, changedFiles, gate.track);
   stamp.runs.mutation = mutationResult;
   if (mutationResult.ran) {
     gate.mutation_score = mutationResult.score;
