@@ -1,8 +1,8 @@
 # Phase 36 — External Review Mode (ACP-first)
 
-Status: **in progress** (2026-08-04). Follows [phase-35](phase-35-existing-codebase-mode.md),
-which made brownfield review possible but still required installing Stagecraft into the
-repo being reviewed.
+Status: **complete** (2026-08-04) — all seven items (36.0–36.6) shipped. Follows
+[phase-35](phase-35-existing-codebase-mode.md), which made brownfield review possible but
+still required installing Stagecraft into the repo being reviewed.
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §36.
 
 | Item | Status |
@@ -309,5 +309,16 @@ devteam review ~/code/some-vendor-repo
 ```
 
 …produces an adversarial review plus a mechanical red-team floor, a ranked findings report
-with mitigations, and a signed attestation naming the reviewed commit — with `git status`
-in the subject repo still clean, and that fact enforced per tool call rather than asserted.
+with mitigations, and (aspirationally — see caveat below) a signed attestation naming the
+reviewed commit — with `git status` in the subject repo still clean on `--host acp`, and
+that fact enforced per tool call rather than asserted; on other hosts, `git status` is
+*checked* post-hoc rather than kept clean by construction (36.6's follow-up fix), except
+on `claude-code`, where it's neither.
+
+**Caveat (2026-08-04):** the "signed attestation naming the reviewed commit" clause is not
+wired today. `subject.json` (36.3) records the reviewed commit/remote, but
+`devteam evidence export --attestation` (34.2, `core/evidence/attestation.js`) does not yet
+read it — see `docs/external-review.md` § Where evidence lands. Today's evidence is the
+review workspace's gate chain (`devteam verify-chain --cwd <workspace>`), not an exported
+attestation. Wiring `subject.json` into attestation export is a real follow-up, not done
+in this phase.

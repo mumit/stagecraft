@@ -569,6 +569,17 @@ The inverse direction: instead of publishing local pipeline state to a PR, fetch
 - **Publishing is opt-in and gated.** Local-only by default — findings on disk, nothing sent. `--post` prints exactly what will be posted and requires interactive confirmation (refuses in non-interactive contexts unless `--yes` is also passed); a *partial* review (dispatch timeout, non-zero exit, no gate written) never posts regardless of flags — a completed review that says FAIL is still a legitimate, postable outcome, not a rendering failure
 - No `gh` on `PATH`, or not authenticated → a clear actionable error (`gh auth login` hint), never a silent skip
 
+### External review mode — `devteam review <path>` / `devteam review-pr` with no checkout (phase 36)
+
+Zero-install review: point Stagecraft at a repo you didn't build and never `init` — no `.devteam/`, no `pipeline/`, nothing written into the subject. Extends phase 35's `review-only`/`review-pr` tracks (which still required installing Stagecraft into the reviewed repo) with a **review workspace** (`~/.stagecraft/reviews/<slug>/`, `core/review-workspace.js`) that holds all state instead.
+
+- `devteam review <path> [--scope <path>] [--track review-only] [--host acp] [--workspace <path>] [--json] [--open] [--list]` — dispatches `review-only` (security-review + red-team + peer-review) against a fresh workspace; prints the 35.4 findings report path on completion
+- `devteam review-pr <number|url>` (phase 35.2) now works with **no local checkout and no initialised project** (item 36.5): when run outside a Stagecraft project, it materializes the PR into a review workspace instead of refusing — the diff *is* the subject, so there's no clone at all. Running from an already-initialised project is unchanged.
+- **Host honesty, not a uniform guarantee.** `acp` is the only host whose tool-call-time permission evaluator can *prevent* a write into the subject (`hosts/acp/permissions.js`'s two-root `codeRoot`/`stateRoot`/`mode: "review"` form, item 36.1 — writes into the subject denied outright, `execute` becomes a read-only allowlist). `codex`/`antigravity`/`omnigent`/`openai-compat` can only *detect* a subject write after the fact (a follow-up post-hoc write-audit fix, `core/adapters/headless.js`/`hosts/omnigent/adapter.js`); `claude-code` gets neither, since its hooks are cwd-discovered and review mode points its cwd at the subject, not the workspace where the hooks were installed. `--host` anything but `acp` requires `--allow-unenforced-writes` to proceed.
+- `subject.json` in the workspace records the reviewed commit SHA and remote — see [`docs/compliance.md`](compliance.md) § Reviewing code you don't own for how this fits an auditor's evidence trail.
+
+Full reference: [`docs/external-review.md`](external-review.md).
+
 ### GitHub Actions workflow — validate gates on every PR
 
 `devteam ci install` drops a reusable workflow into `.github/workflows/`.
