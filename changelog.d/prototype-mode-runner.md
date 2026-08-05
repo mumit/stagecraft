@@ -1,4 +1,4 @@
-## Prototype build command
+### Added
 
 - Add `devteam prototype build <id>` as an explicit host-run step for
   prototype packets. The command runs the packet's `build-prompt.md` through a
