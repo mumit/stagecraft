@@ -15,55 +15,13 @@
 const path = require("node:path");
 
 const { parseFlags } = require(path.join(__dirname, "..", "core", "cli", "flags"));
+const { nearestMatch } = require(path.join(__dirname, "..", "core", "cli", "nearest-match"));
 
 // Keep command discovery cheap: map command names to module names, then require
 // only the selected command after argv tells us what the user requested.
-const COMMAND_MODULES = Object.freeze({
-  help: "help",
-  stages: "stages",
-  hosts: "hosts",
-  doctor: "doctor",
-  summary: "summary",
-  log: "log",
-  stage: "stage",
-  preflight: "preflight",
-  advise: "advise",
-  next: "next",
-  run: "run",
-  commit: "commit",
-  compact: "compact",
-  validate: "validate",
-  "verify-chain": "verify-chain",
-  "stamp-chain": "stamp-chain",
-  merge: "merge",
-  "derive-approvals": "derive-approvals",
-  restart: "restart",
-  ruling: "ruling",
-  "fix-escalation": "fix-escalation",
-  init: "init",
-  ui: "ui",
-  memory: "memory",
-  architecture: "architecture",
-  reproduce: "reproduce",
-  verify: "verify",
-  replay: "replay",
-  ci: "ci",
-  spec: "spec",
-  consistency: "consistency",
-  assess: "assess",
-  standards: "standards",
-  hook: "hook",
-  status: "status",
-  evidence: "evidence",
-  report: "report",
-  prototype: "prototype",
-  performance: "performance",
-  patterns: "patterns",
-  corpus: "corpus",
-  evals: "evals",
-  "review-pr": "review-pr",
-  review: "review",
-});
+// The map itself lives in core/cli/command-list.js so help.js (phase 37.1:
+// `devteam help <command>`) can resolve the same names without duplicating them.
+const COMMAND_MODULES = require(path.join(__dirname, "..", "core", "cli", "command-list"));
 
 const commandCache = Object.create(null);
 
@@ -93,6 +51,8 @@ function main() {
   }
 
   console.error(`Unknown command: ${command}`);
+  const suggestion = nearestMatch(command, Object.keys(COMMAND_MODULES));
+  if (suggestion) console.error(`Did you mean "${suggestion}"?`);
   loadCommand("help").run([], {});
   process.exit(2);
 }

@@ -132,10 +132,10 @@ function generateHelp(commandLine, schema) {
       : def.type === "toggle" ? ` [<value>]`
       : ` <${flagName}>`;
       const desc = def.description || "";
-      lines.push(`  --${flagName}${valPart}${desc ? `  ${desc}` : ""}`);
+      lines.push(`  --${flagName}${valPart} (${def.type})${desc ? `  ${desc}` : ""}`);
     }
   }
-  lines.push("  --help  Show this help");
+  lines.push("  --help (boolean)  Show this help");
   return lines.join("\n");
 }
 
