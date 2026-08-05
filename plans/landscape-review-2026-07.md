@@ -1,9 +1,9 @@
 # Landscape Review & Strategic Roadmap — July 2026
 
-Status: **largely delivered** (updated 2026-08-03). Phases 28–31, 33, and 34 shipped;
-phase 32 has two open items; phase 35 is written and not started. Per-phase detail is in
-§5; open work is tracked in [README.md](README.md#what-is-not-delivered-yet). The market
-analysis below is a July 2026 snapshot and has not been re-researched since.
+Status: **largely delivered** (updated 2026-08-04). Phases 28–31, 33, 34, 35, and 36
+shipped; phase 32 has two open items. Per-phase detail is in §5; open work is tracked in
+[README.md](README.md#what-is-not-delivered-yet). The market analysis below is a July 2026
+snapshot and has not been re-researched since.
 
 Produced 2026-07-31 from four research streams: an internals deep-dive of this repo
 (code-verified, tests run), and three web-research surveys covering (a) coding harnesses,
@@ -117,8 +117,9 @@ Explicitly **not** pursuing (reaffirmed): becoming an IDE, session UIs, sandbox 
 ## 5. Roadmap at a glance
 
 Delivery status added 2026-08-03, updated 2026-08-04. This review was written 2026-07-31;
-phases 28–31, 33, and 34 shipped within three days of it, and phase 35 followed shortly
-after, so the table below is a record of what was proposed *and* what happened.
+phases 28–31, 33, and 34 shipped within three days of it, and phases 35 and 36 followed
+shortly after — neither originally proposed here (36 grew out of 35's own limitations) —
+so the table below is a record of what was proposed *and* what happened.
 
 | Phase | Theme | Depends on | Size | Delivered? |
 |---|---|---|---|---|
@@ -130,6 +131,11 @@ after, so the table below is a record of what was proposed *and* what happened.
 | [33](phase-33-eval-flywheel.md) | Eval flywheel: failed-gate evals, `devteam evals`, GEPA-style prompt optimization | 28, 30 | L | ✅ all 4 items |
 | [34](phase-34-interop-auditable-sdlc.md) | Interop & compliance: ACP host, attestation export, control mapping | — | M | ✅ all 4 items |
 | [35](phase-35-existing-codebase-mode.md) | Existing-codebase mode: review-only track, `devteam review-pr`, 06d stamping, findings report, refactor track | 31.4 | M | ✅ all 5 items |
+| [36](phase-36-external-review-mode.md) | External review mode (ACP-first): two-root permission model, review workspace, zero-install `devteam review`/`devteam review-pr` | 34 (ACP host), 35 | M | ✅ all 7 items (36.0–36.6) |
+
+Not originally proposed by this review — item 7's "host continuity & interop" bucket named
+an ACP adapter as a hedge, but the read-only two-root permission model and the zero-install
+review commands it enabled were discovered while building phase 35, not anticipated here.
 
 Sequencing as originally proposed: **28 and 29 first** (28 unblocks everything downstream; 29 addresses the adoption risk). 30 and 31 next in either order. 32 after telemetry proves where time goes. 33 once corpus + learning loop exist. 34 opportunistic (28.6 covers the urgent Antigravity piece). This is roughly what happened, except 32 was run before 33/34 and left two items open.
 
