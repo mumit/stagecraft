@@ -58,6 +58,23 @@ function resolveWorkspacePath(subjectPath, workspaceOverride) {
   return path.join(reviewsRoot(), slugForSubject(subjectPath));
 }
 
+// Phase-36 item 36.5: a bare PR review has no filesystem path to slug —
+// `slugForSubject`'s `path.resolve()` would silently resolve a non-path
+// string against cwd, making the slug (and therefore the workspace) vary by
+// invocation directory instead of by PR. `identity` should be something
+// stable and PR-specific (the PR's URL, or a `pr:<number>` fallback) — hashed
+// directly, no path resolution.
+function slugForIdentity(identity) {
+  const text = String(identity || "");
+  const base = slugify(text) || "subject";
+  return `${base}-${shortHash(text)}`;
+}
+
+function resolveWorkspacePathForIdentity(identity, workspaceOverride) {
+  if (workspaceOverride) return path.resolve(workspaceOverride);
+  return path.join(reviewsRoot(), slugForIdentity(identity));
+}
+
 function runGit(cwd, args) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (result.status !== 0 || result.error) return null;
@@ -84,13 +101,20 @@ function subjectManifestPath(workspacePath) {
 // attestation.js's resolveSubjectCommits() expects; this file is what a
 // future attestation pass should read instead when ctx.externalReviewMode is
 // set (not wired in this item — see plan §36.3's why-comment).
+//
+// Phase-36 item 36.5: `subjectPath` may be `null` — a PR review with no
+// checkout has no subject directory on disk at all (the diff IS the
+// subject). `opts.remote`/`opts.commitSha` are required in that case since
+// there is nothing to `git remote`/`git rev-parse` against; `opts.pr` records
+// the PR identity (number/url/title) that stands in for a filesystem path.
 function writeSubjectManifest(workspacePath, subjectPath, opts = {}) {
-  const abs = path.resolve(subjectPath);
+  const abs = subjectPath !== null && subjectPath !== undefined ? path.resolve(subjectPath) : null;
   const manifest = {
     schema_version: "1.0",
     subject_path: abs,
-    remote: opts.remote !== undefined ? opts.remote : subjectRemote(abs),
-    commit_sha: opts.commitSha !== undefined ? opts.commitSha : subjectCommitSha(abs),
+    remote: opts.remote !== undefined ? opts.remote : (abs ? subjectRemote(abs) : null),
+    commit_sha: opts.commitSha !== undefined ? opts.commitSha : (abs ? subjectCommitSha(abs) : null),
+    ...(opts.pr ? { pr: opts.pr } : {}),
     recorded_at: new Date().toISOString(),
   };
   fs.mkdirSync(workspacePath, { recursive: true });
@@ -171,9 +195,17 @@ function listWorkspaces() {
 // core/corpus.js, core/evals/*) already mkdirSync(..., {recursive:true}) on
 // first write, same as a freshly-init'd project would behave; pre-creating
 // empty dirs here would just be dead weight nothing reads.
+// Phase-36 item 36.5: `opts.subjectPath` must be present as a key but may be
+// explicitly `null` — a PR review with no checkout has no subject directory
+// at all. Pass `opts.remote`/`opts.commitSha`/`opts.pr` in that case so
+// writeSubjectManifest() has something to record instead of shelling `git`
+// against a path that doesn't exist.
 function createReviewWorkspace(opts) {
-  const { subjectPath, workspacePath, host = "acp", track = "review-only", force = false } = opts;
-  if (!subjectPath) throw new Error("createReviewWorkspace: subjectPath is required");
+  const { workspacePath, host = "acp", track = "review-only", force = false, remote, commitSha, pr } = opts;
+  if (opts.subjectPath === undefined) {
+    throw new Error("createReviewWorkspace: subjectPath is required (pass null when there is no local checkout)");
+  }
+  const subjectPath = opts.subjectPath;
   if (!workspacePath) throw new Error("createReviewWorkspace: workspacePath is required");
 
   fs.mkdirSync(workspacePath, { recursive: true });
@@ -191,7 +223,7 @@ function createReviewWorkspace(opts) {
   const adapter = loadAdapter(host);
   const install = adapter.install(workspacePath, { force });
 
-  const subject = writeSubjectManifest(workspacePath, subjectPath);
+  const subject = writeSubjectManifest(workspacePath, subjectPath, { remote, commitSha, pr });
 
   return { workspacePath, install, subject };
 }
@@ -200,6 +232,8 @@ module.exports = {
   reviewsRoot,
   slugForSubject,
   resolveWorkspacePath,
+  slugForIdentity,
+  resolveWorkspacePathForIdentity,
   createReviewWorkspace,
   writeSubjectManifest,
   readSubjectManifest,

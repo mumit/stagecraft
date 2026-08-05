@@ -1,7 +1,9 @@
 "use strict";
 
 // `devteam review-pr <number|url>` — phase-35 item 35.2
-// (plans/phase-35-existing-codebase-mode.md).
+// (plans/phase-35-existing-codebase-mode.md), extended by phase-36 item 36.5
+// (plans/phase-36-external-review-mode.md) to work with no checkout and no
+// initialised project.
 //
 // Materializes an inbound GitHub PR (unified diff, changed-file list, PR
 // title/body as the stated intent — the closest thing to a brief a PR
@@ -12,6 +14,19 @@
 // STAGES_BY_TRACK["review-pr"] in core/pipeline/stages.js. Output is a
 // normal stage-05 gate plus pipeline/code-review/by-*.md, exactly as any
 // other peer-review dispatch produces.
+//
+// 36.5: when `--cwd` (or the process cwd) isn't an initialised Stagecraft
+// project, this materializes into a 36.3 review workspace
+// (core/review-workspace.js) instead of the target directory — no
+// `.devteam/config.yml` required, nothing written outside
+// ~/.stagecraft/reviews/<slug>/. There is no clone: the diff *is* the
+// subject, so the workspace has no separate codeRoot at all
+// (ctx.noCodeRoot, core/orchestrator.js#runStage) — every write target is
+// under the workspace (stateRoot), which review mode already treats as
+// trivially satisfied once codeRoot is genuinely absent
+// (hosts/acp/permissions.js#findWriteViolation). Running from an already-
+// initialised project is completely unaffected — that path never touches
+// the workspace machinery.
 //
 // Local-only by default: nothing is sent anywhere unless --post is passed.
 // `gh` auth/error handling is reused from scripts/pr-publish.js (the only
@@ -28,23 +43,29 @@ const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
 const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
 const { loadGateSafe } = require(path.join(__dirname, "..", "..", "gates", "load-gate"));
 const { gh, ensureGh } = require(path.join(__dirname, "..", "..", "..", "scripts", "pr-publish"));
+const { resolveWorkspacePathForIdentity, createReviewWorkspace } = require(path.join(__dirname, "..", "..", "review-workspace"));
 
 const name = "review-pr";
 
 const flags = {
-  cwd:  { type: "string",  description: "Target project directory" },
-  post: { type: "boolean", description: "Publish the review as a PR comment (opt-in; see --yes)" },
-  yes:  { type: "boolean", description: "Auto-confirm --post; required in a non-interactive context" },
-  json: { type: "boolean", description: "JSON output" },
-  help: { type: "boolean", description: "Show this help" },
+  cwd:       { type: "string",  description: "Target project directory" },
+  post:      { type: "boolean", description: "Publish the review as a PR comment (opt-in; see --yes)" },
+  yes:       { type: "boolean", description: "Auto-confirm --post; required in a non-interactive context" },
+  workspace: { type: "string",  description: "Override the derived ~/.stagecraft/reviews/<slug> workspace path (only used when --cwd is not an initialised project)" },
+  json:      { type: "boolean", description: "JSON output" },
+  help:      { type: "boolean", description: "Show this help" },
 };
 
 // ---------------------------------------------------------------------------
-// Materialize the PR into pipeline/review-input/
+// Fetch the PR (gh view + gh diff) — no writes. `ghCwd` is always the
+// original invoking directory (not the 36.5 workspace, if any): `gh`
+// resolves a bare PR number from the git remote of the directory it runs in,
+// and a full URL works from anywhere, so keeping this fixed preserves that
+// behavior regardless of where dispatch state ends up landing.
 // ---------------------------------------------------------------------------
 
-function materializeReviewInput(cwd, prArg) {
-  const view = gh(["pr", "view", prArg, "--json", "number,title,body,url,headRefName,baseRefName,headRefOid,files"], { cwd });
+function fetchPR(ghCwd, prArg) {
+  const view = gh(["pr", "view", prArg, "--json", "number,title,body,url,headRefName,baseRefName,headRefOid,files"], { cwd: ghCwd });
   if (view.status !== 0) {
     throw new Error(`could not fetch PR "${prArg}": ${(view.stderr || "").trim() || "gh pr view failed"}`);
   }
@@ -55,14 +76,20 @@ function materializeReviewInput(cwd, prArg) {
     throw new Error(`could not parse \`gh pr view\` output for "${prArg}": ${err.message}`);
   }
 
-  const diff = gh(["pr", "diff", prArg], { cwd });
+  const diff = gh(["pr", "diff", prArg], { cwd: ghCwd });
   if (diff.status !== 0) {
     throw new Error(`could not fetch diff for PR "${prArg}": ${(diff.stderr || "").trim() || "gh pr diff failed"}`);
   }
 
-  // Clear+recreate: a re-run must never leave a previous PR's stale files
-  // sitting alongside the new ones.
-  const inputDir = path.join(pipelineRoot(cwd, null), "review-input");
+  return { meta, diffText: diff.stdout };
+}
+
+// Writes a fetched PR into <targetDir>/pipeline/review-input/ — `targetDir`
+// is `cwd` for an in-place run, or the 36.5 workspace path otherwise.
+// Clear+recreate: a re-run must never leave a previous PR's stale files
+// sitting alongside the new ones.
+function writeReviewInput(targetDir, meta, diffText) {
+  const inputDir = path.join(pipelineRoot(targetDir, null), "review-input");
   fs.rmSync(inputDir, { recursive: true, force: true });
   fs.mkdirSync(inputDir, { recursive: true });
 
@@ -94,7 +121,7 @@ function materializeReviewInput(cwd, prArg) {
     ].join("\n"),
   );
 
-  fs.writeFileSync(path.join(inputDir, "diff.patch"), diff.stdout);
+  fs.writeFileSync(path.join(inputDir, "diff.patch"), diffText);
 
   return {
     number: meta.number,
@@ -102,6 +129,15 @@ function materializeReviewInput(cwd, prArg) {
     url: meta.url || "",
     changedFileCount: files.length,
   };
+}
+
+// Best-effort `owner/repo.git`-shaped remote derived from the PR's URL, for
+// subject.json (core/review-workspace.js) — null when the URL doesn't parse,
+// same as a non-git filesystem subject already tolerates (36.3).
+function deriveRemoteFromPrUrl(url) {
+  if (typeof url !== "string") return null;
+  const m = url.match(/^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/\d+/);
+  return m ? `${m[1]}.git` : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +149,9 @@ function materializeReviewInput(cwd, prArg) {
 // itself did not complete cleanly (timeout / non-zero exit / no gate
 // written / merge failure) — NOT that the review's substance is FAIL. A
 // completed review that says FAIL is still a complete review.
-function collectGateInfo(cwd, result) {
+// `dataDir` is wherever dispatch actually wrote (cwd in-place, or the 36.5
+// workspace).
+function collectGateInfo(dataDir, result) {
   const { mergeWorkstreamGates } = getOrchestrator();
   const workstreams = result.results.map((r) => ({
     role: r.role, host: r.host, exitCode: r.exitCode, timedOut: Boolean(r.timedOut), gatePath: r.gatePath,
@@ -124,7 +162,7 @@ function collectGateInfo(cwd, result) {
   }
 
   if (result.results.length > 1) {
-    const merged = mergeWorkstreamGates("peer-review", { cwd, track: "review-pr" });
+    const merged = mergeWorkstreamGates("peer-review", { cwd: dataDir, track: "review-pr" });
     if (!merged.merged) {
       return { partial: true, gate: null, workstreams, reason: merged.reason };
     }
@@ -142,8 +180,8 @@ function collectGateInfo(cwd, result) {
 // --post gating: local-only by default; publishing is opt-in and confirmed.
 // ---------------------------------------------------------------------------
 
-function buildReviewBody(cwd) {
-  const dir = path.join(pipelineRoot(cwd, null), "code-review");
+function buildReviewBody(dataDir) {
+  const dir = path.join(pipelineRoot(dataDir, null), "code-review");
   const parts = [];
   for (const f of ["by-reviewer.md", "by-critic.md"]) {
     const p = path.join(dir, f);
@@ -168,15 +206,17 @@ function askYesNo(question) {
 // Never posts on a partial/incomplete review — the confirmation step below
 // is load-bearing (posting to someone else's PR is public and hard to
 // retract), not decorative, so every refusal here throws rather than
-// silently no-op'ing.
-function handlePost(cwd, prArg, gateInfo, _flags) {
+// silently no-op'ing. `ghCwd` is the original invoking directory (see
+// fetchPR's header comment); `dataDir` is where the review's
+// pipeline/code-review/by-*.md actually landed.
+function handlePost(ghCwd, dataDir, prArg, gateInfo, _flags) {
   if (!_flags.post) return Promise.resolve({ posted: false });
 
   if (gateInfo.partial || !gateInfo.gate) {
     throw new Error(`refusing to --post: the review did not complete (${gateInfo.reason || "no valid stage-05 gate"}).`);
   }
 
-  const body = buildReviewBody(cwd);
+  const body = buildReviewBody(dataDir);
   if (!body) {
     throw new Error("refusing to --post: no pipeline/code-review/by-*.md content found to publish.");
   }
@@ -200,7 +240,7 @@ function handlePost(cwd, prArg, gateInfo, _flags) {
       return { posted: false };
     }
     ensureGh();
-    const r = gh(["pr", "review", prArg, "--comment", "--body-file", "-"], { cwd, input: body });
+    const r = gh(["pr", "review", prArg, "--comment", "--body-file", "-"], { cwd: ghCwd, input: body });
     if (r.status !== 0) {
       throw new Error(`gh pr review failed: ${(r.stderr || "").trim()}`);
     }
@@ -223,31 +263,51 @@ function run(positional, _flags) {
     process.exit(2);
   }
   const cwd = _flags.cwd || process.cwd();
-
-  if (!_flags.json && !fs.existsSync(path.join(cwd, ".devteam", "config.yml"))) {
-    process.stderr.write(
-      `\n⚠️  ${cwd}\n` +
-      `   does not look like an initialised Stagecraft target project (no .devteam/config.yml).\n` +
-      `   Run \`devteam init --host <name> --cwd "${cwd}"\` first.\n\n`,
-    );
-  }
+  const initialized = fs.existsSync(path.join(cwd, ".devteam", "config.yml"));
 
   ensureGh();
 
+  // 36.5: an initialised project keeps today's exact in-place behavior
+  // (materialize + dispatch directly into cwd). Otherwise, materialize into
+  // a review workspace (core/review-workspace.js) instead — no
+  // .devteam/config.yml required, nothing written outside
+  // ~/.stagecraft/reviews/<slug>/.
   let prMeta;
+  let workspacePath = null;
+  let dataDir = cwd;
   try {
-    prMeta = materializeReviewInput(cwd, prArg);
+    const { meta, diffText } = fetchPR(cwd, prArg);
+    if (initialized) {
+      dataDir = cwd;
+    } else {
+      const identity = meta.url || `pr:${meta.number}`;
+      workspacePath = resolveWorkspacePathForIdentity(identity, _flags.workspace);
+      createReviewWorkspace({
+        subjectPath: null,
+        workspacePath,
+        host: "claude-code",
+        track: "review-pr",
+        remote: deriveRemoteFromPrUrl(meta.url),
+        commitSha: meta.headRefOid || null,
+        pr: { number: meta.number, url: meta.url || null, title: meta.title || "" },
+      });
+      dataDir = workspacePath;
+    }
+    prMeta = writeReviewInput(dataDir, meta, diffText);
   } catch (err) {
     console.error(`devteam review-pr: ${err.message}`);
     process.exit(1);
     return;
+  }
+  if (workspacePath) {
+    process.stderr.write(`[devteam review-pr] workspace: ${workspacePath}\n`);
   }
   process.stderr.write(
     `[devteam review-pr] materialized PR #${prMeta.number} (${prMeta.changedFileCount} changed file(s)) into pipeline/review-input/\n`,
   );
 
   const { runStageHeadless } = getOrchestrator();
-  const config = loadConfig(cwd);
+  const config = loadConfig(dataDir);
 
   // --json must emit exactly one parseable object on stdout. Dispatch has a
   // stdout side effect outside our control: runHeadless's post-dispatch
@@ -266,10 +326,19 @@ function run(positional, _flags) {
     return fn().then((v) => { restore(); return v; }, (err) => { restore(); throw err; });
   };
 
-  withJsonSafeStdout(() => runStageHeadless("peer-review", { cwd, track: "review-pr", config }))
+  // 36.5: workspacePath set means codeRoot is genuinely absent (no clone,
+  // no subject on disk — the diff is the subject); ctx.noCodeRoot tells
+  // hosts/acp/adapter.js not to fall back to treating stateRoot as codeRoot
+  // (which would deny every write). In-place dispatch is untouched — no
+  // processCwd/externalReviewMode/noCodeRoot, exactly as before 36.5.
+  const dispatchOpts = workspacePath
+    ? { cwd: dataDir, track: "review-pr", config, externalReviewMode: true, noCodeRoot: true }
+    : { cwd: dataDir, track: "review-pr", config };
+
+  withJsonSafeStdout(() => runStageHeadless("peer-review", dispatchOpts))
     .then((result) => {
-      const gateInfo = collectGateInfo(cwd, result);
-      return handlePost(cwd, prArg, gateInfo, _flags).then((postResult) => ({ gateInfo, postResult }));
+      const gateInfo = collectGateInfo(dataDir, result);
+      return handlePost(cwd, dataDir, prArg, gateInfo, _flags).then((postResult) => ({ gateInfo, postResult }));
     })
     .then(({ gateInfo, postResult }) => {
       const exitCode = gateInfo.partial
@@ -279,6 +348,7 @@ function run(positional, _flags) {
       if (_flags.json) {
         console.log(JSON.stringify({
           pr: prMeta,
+          workspace: workspacePath,
           stage: "stage-05",
           partial: gateInfo.partial,
           reason: gateInfo.reason || null,

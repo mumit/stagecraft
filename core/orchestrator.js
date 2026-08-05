@@ -591,6 +591,12 @@ function runStage(stageName, opts = {}) {
     // processCwd passthrough below) keeps this byte-identical to today.
     processCwd: opts.processCwd || null,
     externalReviewMode: opts.externalReviewMode === true,
+    // Phase-36 item 36.5: an explicit opt-in that this review genuinely has
+    // no subject on disk at all (a PR diff, not a checkout) — distinct from
+    // ctx.processCwd merely being unset, which hosts/acp/adapter.js still
+    // treats as "codeRoot === stateRoot, deny by default" for safety. Unset
+    // on every non-review caller, so byte-identical to pre-36.5 behavior.
+    noCodeRoot: opts.noCodeRoot === true,
   };
 
   if (!isStageInTrack(stageName, ctx.track)) {

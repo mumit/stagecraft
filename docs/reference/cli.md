@@ -460,12 +460,13 @@ Scan the project codebase and produce docs/project-conventions.md with detected 
 
 Materialize an inbound GitHub PR (diff, changed files, title/body) into pipeline/review-input/ and dispatch stage-05 against it: a single reviewer in panel mode, reviewer then critic when review.mode: adversarial. Local-only by default; --post publishes the review as a PR comment after printing the exact payload and requiring interactive confirmation (or --yes in a non-interactive context) — refuses outright on a partial/incomplete review. Requires the gh CLI, authenticated (plans/phase-35-existing-codebase-mode.md item 35.2).
 
-| Flag   | Type   | Description                                                |
-| ------ | ------ | ---------------------------------------------------------- |
-| --cwd  | string | Target project directory                                   |
-| --post | bool   | Publish the review as a PR comment (opt-in; see --yes)     |
-| --yes  | bool   | Auto-confirm --post; required in a non-interactive context |
-| --json | bool   | JSON output                                                |
+| Flag        | Type   | Description                                                                                                           |
+| ----------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| --cwd       | string | Target project directory                                                                                              |
+| --post      | bool   | Publish the review as a PR comment (opt-in; see --yes)                                                                |
+| --yes       | bool   | Auto-confirm --post; required in a non-interactive context                                                            |
+| --workspace | string | Override the derived ~/.stagecraft/reviews/<slug> workspace path (only used when --cwd is not an initialised project) |
+| --json      | bool   | JSON output                                                                                                           |
 
 ### `devteam review <path> [options]`
 

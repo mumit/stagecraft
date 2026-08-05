@@ -34,6 +34,8 @@ const {
   reviewsRoot,
   slugForSubject,
   resolveWorkspacePath,
+  slugForIdentity,
+  resolveWorkspacePathForIdentity,
   createReviewWorkspace,
   writeSubjectManifest,
   readSubjectManifest,
@@ -155,6 +157,54 @@ describe("36.3: core/review-workspace.js — slug + workspace path resolution", 
   });
 });
 
+// Phase-36 item 36.5 — a bare PR review has no filesystem path to slug.
+// slugForIdentity/resolveWorkspacePathForIdentity hash a stable identity
+// string directly (no path.resolve), so the derived workspace doesn't vary
+// by invocation directory the way slugForSubject would if handed a non-path
+// string.
+describe("36.5: slugForIdentity + resolveWorkspacePathForIdentity — no filesystem path required", () => {
+  it("is stable across calls for the same identity", () => {
+    const identity = "https://github.com/acme/widgets/pull/42";
+    assert.equal(slugForIdentity(identity), slugForIdentity(identity));
+  });
+
+  it("differs for two different identities", () => {
+    assert.notEqual(
+      slugForIdentity("https://github.com/acme/widgets/pull/42"),
+      slugForIdentity("https://github.com/acme/widgets/pull/43"),
+    );
+  });
+
+  it("does not depend on process.cwd() (unlike slugForSubject on a non-path string)", () => {
+    const identity = "https://github.com/acme/widgets/pull/42";
+    const before = process.cwd();
+    try {
+      process.chdir(tmpdir("devteam-test-identity-cwd-a-"));
+      const slugA = slugForIdentity(identity);
+      process.chdir(tmpdir("devteam-test-identity-cwd-b-"));
+      const slugB = slugForIdentity(identity);
+      assert.equal(slugA, slugB, "the same PR identity must derive the same workspace slug regardless of invocation directory");
+    } finally {
+      process.chdir(before);
+    }
+  });
+
+  it("resolveWorkspacePathForIdentity derives ~/.stagecraft/reviews/<slug> under STAGECRAFT_REVIEWS_DIR", async () => {
+    const reviewsDir = tmpdir("devteam-test-reviews-");
+    const identity = "pr:42";
+    await withEnvVars({ STAGECRAFT_REVIEWS_DIR: reviewsDir }, () => {
+      const resolved = resolveWorkspacePathForIdentity(identity);
+      assert.equal(resolved, path.join(reviewsDir, slugForIdentity(identity)));
+    });
+  });
+
+  it("--workspace override wins outright over the derived path", () => {
+    const override = path.join(tmpdir("devteam-test-workspace-"), "nested");
+    const resolved = resolveWorkspacePathForIdentity("pr:42", override);
+    assert.equal(resolved, path.resolve(override));
+  });
+});
+
 describe("36.3: createReviewWorkspace() — directory skeleton + subject.json", () => {
   it("creates pipeline/gates, a routing+track config.yml, and the ACP role/skill dirs from capabilities.json", () => {
     const subject = makeFixtureSubjectRepo();
@@ -207,6 +257,51 @@ describe("36.3: createReviewWorkspace() — directory skeleton + subject.json", 
     clearConfigCache();
     assert.equal(loadConfig(workspace).pipeline.default_track, "custom-marker", "existing config.yml must not be overwritten absent force");
   });
+
+  it("subjectPath key is required (throws with no subjectPath at all — not the same as explicit null)", () => {
+    const workspace = path.join(tmpdir("devteam-test-workspace-"), "ws");
+    assert.throws(
+      () => createReviewWorkspace({ workspacePath: workspace }),
+      /subjectPath is required/,
+    );
+  });
+});
+
+// Phase-36 item 36.5 — a PR review with no checkout has no subject directory
+// on disk at all: subjectPath must be explicitly null, and remote/commitSha/
+// pr are supplied directly since there's nothing to `git remote`/`git
+// rev-parse` against.
+describe("36.5: createReviewWorkspace()/writeSubjectManifest() with subjectPath: null (no checkout)", () => {
+  it("writes subject.json with subject_path: null and the explicitly-supplied remote/commitSha/pr", () => {
+    const workspace = path.join(tmpdir("devteam-test-workspace-"), "ws");
+    const { subject: manifest } = createReviewWorkspace({
+      subjectPath: null,
+      workspacePath: workspace,
+      host: "claude-code",
+      track: "review-pr",
+      remote: "https://github.com/acme/widgets.git",
+      commitSha: "abc123def",
+      pr: { number: 42, url: "https://github.com/acme/widgets/pull/42", title: "Fix the widget crash" },
+    });
+
+    assert.equal(manifest.subject_path, null);
+    assert.equal(manifest.remote, "https://github.com/acme/widgets.git");
+    assert.equal(manifest.commit_sha, "abc123def");
+    assert.deepEqual(manifest.pr, { number: 42, url: "https://github.com/acme/widgets/pull/42", title: "Fix the widget crash" });
+
+    const reread = readSubjectManifest(workspace);
+    assert.deepEqual(reread, manifest);
+  });
+
+  it("never shells out to git when subjectPath is null (no crash against a nonexistent path)", () => {
+    const workspace = path.join(tmpdir("devteam-test-workspace-"), "ws");
+    // No remote/commitSha/pr supplied either — writeSubjectManifest must not
+    // try to `git remote`/`git rev-parse` against a null path.
+    const manifest = writeSubjectManifest(workspace, null);
+    assert.equal(manifest.subject_path, null);
+    assert.equal(manifest.remote, null);
+    assert.equal(manifest.commit_sha, null);
+  });
 });
 
 // ─── 2. core/orchestrator.js runStage() ctx wiring ─────────────────────────
@@ -230,6 +325,28 @@ describe("36.3: runStage() threads opts.processCwd/opts.externalReviewMode into 
     const plan = runStage("security-review", { cwd, track: "review-only" });
     assert.equal(plan.ctx.processCwd, null);
     assert.equal(plan.ctx.externalReviewMode, false);
+  });
+});
+
+// Phase-36 item 36.5 — ctx.noCodeRoot, the explicit opt-in that a review
+// genuinely has no subject on disk (mirrors the processCwd/externalReviewMode
+// passthrough directly above).
+describe("36.5: runStage() threads opts.noCodeRoot into ctx", () => {
+  it("carries the field onto ctx unchanged", () => {
+    const workspace = tmpdir("devteam-test-workspace-");
+    const plan = runStage("security-review", {
+      cwd: workspace,
+      externalReviewMode: true,
+      noCodeRoot: true,
+      track: "review-only",
+    });
+    assert.equal(plan.ctx.noCodeRoot, true);
+  });
+
+  it("defaults to false when absent — byte-identical to every pre-36.5 caller", () => {
+    const cwd = tmpdir("devteam-test-workspace-");
+    const plan = runStage("security-review", { cwd, track: "review-only" });
+    assert.equal(plan.ctx.noCodeRoot, false);
   });
 });
 

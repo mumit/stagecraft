@@ -385,3 +385,59 @@ describe("hosts/acp: review mode wiring end-to-end (36.1)", () => {
     });
   });
 });
+
+// Phase-36 item 36.5 (plans/phase-36-external-review-mode.md §36.5) — a PR
+// review with no checkout has no subject on disk at all, so codeRoot must be
+// genuinely absent, not merely defaulted to ctx.cwd. hosts/acp/permissions.js
+// already special-cased a falsy codeRoot ("codeRoot absent (36.5's diff-only
+// review) skips straight to the stateRoot check", above) — but adapter.js's
+// own `codeRoot: processCwd` (where `processCwd = ctx.processCwd || ctx.cwd`)
+// never actually produced a falsy codeRoot: with ctx.processCwd unset,
+// codeRoot silently became ctx.cwd itself, which is exactly the "same write
+// allowed in normal mode, denied in review mode" test above proves gets
+// denied. ctx.noCodeRoot is the explicit opt-in that flips that off.
+describe("hosts/acp: review mode wiring end-to-end (36.5 — codeRoot genuinely absent)", () => {
+  it("ctx.noCodeRoot:true allows a write under ctx.cwd matching allowedWrites, with no ctx.processCwd set", async () => {
+    const cwd = tmpdir();
+    const allowedPath = path.join(cwd, "pipeline", "build-plan.md"); // matches makeDescriptor()'s allowedWrites
+    fs.mkdirSync(path.dirname(allowedPath), { recursive: true });
+    const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json"); // matches makeDescriptor()'s workstreamId
+    const gateJson = JSON.stringify({ stage: "stage-04", status: "PASS" });
+
+    await withEnvVars({
+      DEVTEAM_HEADLESS_COMMAND: `node "${STUB_PATH}"`,
+      ACP_STUB_MODE: "normal",
+      ACP_STUB_ALLOWED_PATH: allowedPath,
+      ACP_STUB_GATE_PATH: gatePath,
+      ACP_STUB_GATE_JSON: gateJson,
+    }, async () => {
+      const result = await adapter.invoke(
+        makeDescriptor(),
+        makeCtx(cwd, { externalReviewMode: true, noCodeRoot: true }),
+        "rendered stage prompt",
+      );
+      assert.equal(result.gatePath, gatePath, "the write must be allowed and the gate written — without the adapter.js fix, codeRoot === stateRoot and this write is denied as `readOnlySubject`, exactly like the plain-omitted-processCwd test above");
+      assert.ok(fs.existsSync(gatePath));
+    });
+  });
+
+  it("omitting ctx.noCodeRoot keeps the fail-closed default even with the same paths (no accidental broadening)", async () => {
+    const cwd = tmpdir();
+    const allowedPath = path.join(cwd, "pipeline", "build-plan.md");
+    fs.mkdirSync(path.dirname(allowedPath), { recursive: true });
+    const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+
+    await withEnvVars({
+      DEVTEAM_HEADLESS_COMMAND: `node "${STUB_PATH}"`,
+      ACP_STUB_MODE: "normal",
+      ACP_STUB_ALLOWED_PATH: allowedPath,
+      ACP_STUB_GATE_PATH: gatePath,
+      ACP_STUB_GATE_JSON: JSON.stringify({ stage: "stage-04", status: "PASS" }),
+    }, async () => {
+      // ctx.noCodeRoot deliberately absent — externalReviewMode alone must
+      // not be enough to allow this write.
+      const result = await adapter.invoke(makeDescriptor(), makeCtx(cwd, { externalReviewMode: true }), "rendered stage prompt");
+      assert.equal(result.gatePath, null, "without ctx.noCodeRoot, codeRoot still falls back to ctx.cwd and the write is denied");
+    });
+  });
+});
