@@ -30,7 +30,8 @@ const { next, nextWave, runStageHeadless, mergeWorkstreamGates } = require("./or
 const { collect: collectPatterns } = require("./patterns");
 const { runReflector } = require("./learning/reflector");
 const { ingest: ingestMemory } = require("./memory");
-const { loadConfig, changeIdFromFeature, changeIdFromSymptom } = require("./config");
+const { loadConfig, changeIdFromFeature, changeIdFromSymptom, resolveRoute } = require("./config");
+const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require("./scheduler");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
 const {
@@ -1512,12 +1513,33 @@ async function run(opts = {}) {
       return "halt";
     }
 
-    // ADR-017 §6: run every wave member concurrently; the wave halts (driver
+    // ADR-017 §2/§6 (32.6 fix-up): run every wave member concurrently through
+    // core/scheduler.js's mapByHostConcurrency — the same dispatcher
+    // core/orchestrator.js already uses for within-stage workstream fan-out —
+    // rather than a second, bespoke concurrency mechanism (Alternative 2 in
+    // the ADR explicitly rejects "fork a second, wave-specific scheduler").
+    // Keyed by waveMemberKey (host, stage): every wave member is a distinct
+    // stage by construction (_nextWaveImpl never puts the same stage twice in
+    // one wave), so no two members ever share a key within one dispatchWave
+    // call — routing.host_concurrency therefore never throttles cross-stage
+    // wave concurrency (ADR-017 §2: that cap stays scoped to workstreams
+    // *within* one member's own dispatch, unchanged). The wave halts (driver
     // does not form a new wave next iteration) if ANY member halts, but every
     // member always runs to completion first — a fast/passing sibling is
     // never killed or invalidated because another member fails.
     async function dispatchWave(members, waveId) {
-      const outcomes = await Promise.all(members.map((r) => dispatchWaveMember(r, waveId)));
+      const items = members.map((r) => {
+        const role = Array.isArray(r.roles) ? r.roles[0] : null;
+        let host = null;
+        if (role) {
+          try { host = resolveRoute(config, r.stage, role).hostName || null; } catch { host = null; }
+        }
+        return { ...r, host };
+      });
+      const outcomes = await mapByHostConcurrency(items, {
+        key: waveMemberKey,
+        limit: (key) => hostConcurrencyLimit(config, String(key).split("::")[0]),
+      }, (item) => dispatchWaveMember(item, waveId));
       return outcomes.includes("halt") ? "halt" : "continue";
     }
 
