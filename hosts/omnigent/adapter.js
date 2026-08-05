@@ -421,6 +421,18 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
 
   const gatePath = path.join(gatesDir(ctx.cwd, ctx.changeId), `${descriptor.workstreamId}.json`);
   const beforeSnapshot = snapshotWritables(ctx.cwd);
+
+  // Phase-36 external review mode: mirrors core/adapters/headless.js's own
+  // subject-audit addition — see that file's why-comment for the full
+  // rationale. ctx.processCwd (the subject) is a different directory from
+  // ctx.cwd (the review workspace) in review mode, and the audit above never
+  // looks at it; add an independent snapshot/audit pass against the subject,
+  // post-hoc detection only (never prevention).
+  const subjectRoot = ctx.externalReviewMode === true && ctx.processCwd
+    ? path.resolve(ctx.processCwd)
+    : null;
+  const auditSubject = subjectRoot !== null && subjectRoot !== path.resolve(ctx.cwd);
+  const beforeSubjectSnapshot = auditSubject ? snapshotWritables(subjectRoot) : null;
   const start = Date.now();
   const timeoutMs = typeof ctx.timeoutMs === "number" ? ctx.timeoutMs : DEFAULT_TIMEOUT_MS;
 
@@ -531,6 +543,15 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
         const afterSnapshot = snapshotWritables(ctx.cwd);
         const { violations } = auditWrites(beforeSnapshot, afterSnapshot, descriptor.allowedWrites || []);
         writeViolations = violations.filter((v) => !isOrchestratorWrite(ctx, v) && !isOmnigentRuntimeWrite(v));
+      }
+      if (auditSubject && beforeSubjectSnapshot) {
+        // Empty allowedWrites ([]) makes every new path a violation
+        // unconditionally — codeRoot is read-only in review mode, there is
+        // no allowlist to check against. "subject:" prefix disambiguates
+        // these from the workspace-relative paths above once merged.
+        const afterSubjectSnapshot = snapshotWritables(subjectRoot);
+        const { violations: subjectViolations } = auditWrites(beforeSubjectSnapshot, afterSubjectSnapshot, []);
+        writeViolations = writeViolations.concat(subjectViolations.map((v) => `subject:${v}`));
       }
 
       const gateExists = fs.existsSync(gatePath);

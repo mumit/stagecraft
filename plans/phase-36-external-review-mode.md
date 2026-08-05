@@ -272,20 +272,27 @@ not own.
   file that implements it.
 
 **Done — see [`docs/external-review.md`](../docs/external-review.md).** Writing the
-per-host enforcement table surfaced a real gap worth recording here rather than
-silently glossing over: in review mode, the non-`acp` post-hoc write-audit
-(`core/adapters/headless.js`'s `snapshotWritables(ctx.cwd)`) snapshots the *workspace*,
-never `ctx.processCwd` (the subject) — so it cannot see a write into the subject at
-all, and typically no-ops outright since the workspace isn't a git repository. That's
-strictly weaker than the "post-hoc audit" `checkHostHonesty`'s own warning text implies
-for `--host` anything but `acp`. Also: `claude-code` loses its tool-call-time hooks
-entirely in review mode (they're installed into the workspace, but `.claude/`
-discovery walks up from `ctx.processCwd`, the subject) — already called out in this
-phase's Out-of-scope list (`--state-dir` for claude-code), not a new finding, but now
-documented for an operator picking `--host`. Cross-linked from
+per-host enforcement table surfaced a real gap, fixed in a follow-up commit on this
+branch rather than left merely documented (operator decision, same call as 36.4's own
+fix-ups): in review mode, the non-`acp` post-hoc write-audit
+(`core/adapters/headless.js`'s `snapshotWritables(ctx.cwd)`) snapshotted the *workspace*,
+never `ctx.processCwd` (the subject) — so it could not see a write into the subject at
+all, and typically no-op'd outright since the workspace isn't a git repository. **Fixed**:
+`core/adapters/headless.js` and `hosts/omnigent/adapter.js` (Omnigent's own dispatch path,
+same pattern) now run a second, independent snapshot/audit pass against `ctx.processCwd`
+when `ctx.externalReviewMode` is set, treating any new path there as a violation
+unconditionally (`subject:<path>`, gate → `FAIL`) — detection, not prevention; it still
+no-ops if the subject isn't a git repo, and still can't stop the write the way `acp`'s
+tool-call-time evaluator does. Covered by five new tests
+(`tests/write-audit.test.js`, `tests/omnigent-adapter.test.js`), confirmed to fail without
+the fix (stashed the two production files, reran, restored). Also: `claude-code` loses
+its tool-call-time hooks entirely in review mode (they're installed into the workspace,
+but `.claude/` discovery walks up from `ctx.processCwd`, the subject) — already called
+out in this phase's Out-of-scope list (`--state-dir` for claude-code), not fixed, since
+that item explicitly defers it to a later phase. Cross-linked from
 [`docs/compliance.md`](../docs/compliance.md) § Reviewing code you don't own; README's
-`--host acp` paragraph now notes it's the recommended host for reviewing code you do
-not own.
+`--host acp` paragraph now describes prevention (`acp`) vs. detection
+(`codex`/`antigravity`/`omnigent`/`openai-compat`) vs. neither (`claude-code`) precisely.
 
 ## Out of scope
 

@@ -159,6 +159,22 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
   // Snapshot dirty state before spawn; diff after close to find unauthorized writes.
   const shouldAudit = adapter.capabilities?.enforces?.allowed_writes === "post-hoc-audit";
   const beforeSnapshot = shouldAudit ? snapshotWritables(ctx.cwd) : null;
+
+  // Phase-36 item 36.1's review mode makes ctx.processCwd (the subject) a
+  // genuinely different directory from ctx.cwd (the review workspace) — the
+  // audit above never looks at it, so a non-acp host's write-audit was blind
+  // to the one directory review mode exists to protect. Mirror
+  // hosts/acp/permissions.js's own review-mode rule (codeRoot is
+  // unconditionally read-only, independent of allowedWrites) with a second,
+  // independent snapshot/audit pass against the subject: post-hoc detection
+  // only, same as the audit above — it cannot prevent the write, only flip
+  // the gate to FAIL after the fact. No-ops (same as the audit above) when
+  // the subject isn't a git repo.
+  const subjectRoot = shouldAudit && ctx.externalReviewMode === true && ctx.processCwd
+    ? path.resolve(ctx.processCwd)
+    : null;
+  const auditSubject = subjectRoot !== null && subjectRoot !== path.resolve(ctx.cwd);
+  const beforeSubjectSnapshot = auditSubject ? snapshotWritables(subjectRoot) : null;
   const start = Date.now();
   const timeoutMs = typeof ctx.timeoutMs === "number" ? ctx.timeoutMs : DEFAULT_TIMEOUT_MS;
 
@@ -320,6 +336,15 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
         // Logging deferred to orchestrator so sibling-workstream false positives
         // (parallel stage writes captured in this snapshot window) can be filtered
         // before any ⛔ line is emitted.
+      }
+      if (auditSubject && beforeSubjectSnapshot) {
+        // Empty allowedWrites ([]) makes every new path a violation
+        // unconditionally — codeRoot is read-only in review mode, there is
+        // no allowlist to check against. "subject:" prefix disambiguates
+        // these from the workspace-relative paths above once merged.
+        const afterSubjectSnapshot = snapshotWritables(subjectRoot);
+        const { violations: subjectViolations } = auditWrites(beforeSubjectSnapshot, afterSubjectSnapshot, []);
+        writeViolations = writeViolations.concat(subjectViolations.map((v) => `subject:${v}`));
       }
 
       // Derive peer-review gates from any by-*.md files written during this

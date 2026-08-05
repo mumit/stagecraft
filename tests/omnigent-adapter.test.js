@@ -1,8 +1,10 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
-const { REPO_ROOT, makeTargetProject, cleanup } = require("./_helpers");
+const { execFileSync } = require("node:child_process");
+const { REPO_ROOT, makeTargetProject, cleanup, writeMutationScript } = require("./_helpers");
 
 const adapter = require(path.join(REPO_ROOT, "hosts", "omnigent", "adapter.js"));
 
@@ -519,5 +521,88 @@ describe("omnigent adapter", () => {
 
     assert.match(prompt, /\.omnigent\/stagecraft\/roles\/pm\.md/);
     assert.match(prompt, /"host": "omnigent"/);
+  });
+});
+
+// Phase-36 external review mode: invoke()'s own write-audit snapshotted only
+// ctx.cwd (the review workspace), never ctx.processCwd (the subject) — the
+// same gap fixed in core/adapters/headless.js, mirrored here for Omnigent's
+// separate dispatch path. See that file's why-comment for the full
+// rationale.
+describe("omnigent adapter — subject-write detection in review mode", () => {
+  it("flags a write into the subject even though the workspace isn't a git repo", async () => {
+    const workspaceDir = makeTargetProject({
+      config: "routing:\n  default_host: omnigent\npipeline:\n  default_track: review-only\n",
+    });
+    const subjectDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-omnigent-subject-"));
+    const originalCmd = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      execFileSync("git", ["init"], { cwd: subjectDir });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: subjectDir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: subjectDir });
+      fs.writeFileSync(path.join(subjectDir, "README.md"), "hi");
+      execFileSync("git", ["add", "README.md"], { cwd: subjectDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: subjectDir });
+
+      // buildOmnigentInvocation's env-override branch spawns this with
+      // ["--prompt", "<rendered prompt>"] appended, and the child's cwd is
+      // ctx.processCwd (subjectDir) — the script ignores argv either way.
+      const scriptPath = writeMutationScript(workspaceDir);
+      process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${scriptPath}`;
+
+      const descriptor = {
+        stage: "stage-01", role: "pm", rolesInStage: ["pm"], workstreamId: "stage-01",
+        objective: "test", readFirst: [], allowedWrites: ["pipeline/brief.md"],
+        artifact: "pipeline/brief.md", template: null, goalCondition: null, expectedGate: {}, changeId: null,
+      };
+      const ctx = {
+        cwd: workspaceDir, processCwd: subjectDir, externalReviewMode: true,
+        track: "review-only", orchestrator: "test", changeId: null, log: false,
+      };
+      const r = await adapter.invoke(descriptor, ctx);
+      assert.deepEqual(r.writeViolations, ["subject:mutated.txt"],
+        "expected exactly one subject-prefixed violation for the subject write");
+    } finally {
+      if (originalCmd !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = originalCmd;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      cleanup(workspaceDir);
+      fs.rmSync(subjectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not flag a subject write when externalReviewMode is unset", async () => {
+    const workspaceDir = makeTargetProject({
+      config: "routing:\n  default_host: omnigent\npipeline:\n  default_track: full\n",
+    });
+    const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-omnigent-target-"));
+    const originalCmd = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      execFileSync("git", ["init"], { cwd: targetDir });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: targetDir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: targetDir });
+      fs.writeFileSync(path.join(targetDir, "README.md"), "hi");
+      execFileSync("git", ["add", "README.md"], { cwd: targetDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: targetDir });
+
+      const scriptPath = writeMutationScript(workspaceDir);
+      process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${scriptPath}`;
+
+      const descriptor = {
+        stage: "stage-01", role: "pm", rolesInStage: ["pm"], workstreamId: "stage-01",
+        objective: "test", readFirst: [], allowedWrites: ["pipeline/brief.md"],
+        artifact: "pipeline/brief.md", template: null, goalCondition: null, expectedGate: {}, changeId: null,
+      };
+      const ctx = {
+        cwd: workspaceDir, processCwd: targetDir, // externalReviewMode deliberately absent
+        track: "full", orchestrator: "test", changeId: null, log: false,
+      };
+      const r = await adapter.invoke(descriptor, ctx);
+      assert.deepEqual(r.writeViolations, [], "no subject audit should run without externalReviewMode");
+    } finally {
+      if (originalCmd !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = originalCmd;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      cleanup(workspaceDir);
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
   });
 });

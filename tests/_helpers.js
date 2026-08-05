@@ -72,6 +72,21 @@ function installGeminiCliPluginFixture(cwd) {
   return destDir;
 }
 
+// Writes a small Node script at <dir>/mutate.js that writes `filename` into
+// whatever directory it's actually run from (its own process.cwd(), not
+// `dir`) — used by write-audit integration tests to simulate a headless
+// agent mutating a directory via `DEVTEAM_HEADLESS_COMMAND=<node> <script>`.
+// Returns the script's absolute path.
+function writeMutationScript(dir, filename = "mutated.txt") {
+  const scriptPath = path.join(dir, "mutate.js");
+  fs.writeFileSync(scriptPath, [
+    "const fs = require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(filename)}, 'mutated by test\\n');`,
+    "",
+  ].join("\n"), "utf8");
+  return scriptPath;
+}
+
 function runCLI(args, opts = {}) {
   const result = spawnSync("node", [BIN, ...args], {
     cwd: opts.cwd || process.cwd(),
@@ -85,4 +100,4 @@ function runCLI(args, opts = {}) {
   };
 }
 
-module.exports = { REPO_ROOT, BIN, makeTargetProject, seedGate, cleanup, runCLI, installGeminiCliPluginFixture };
+module.exports = { REPO_ROOT, BIN, makeTargetProject, seedGate, cleanup, runCLI, installGeminiCliPluginFixture, writeMutationScript };

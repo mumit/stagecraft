@@ -88,14 +88,16 @@ a mechanical guarantee.**
 |---|---|---|
 | `acp` | `evaluateToolCall`'s two-root form: any `edit`/`delete`/`move` resolving inside `codeRoot` is denied before it reaches disk, and `execute` becomes deny-by-default with a read-only allowlist. Checked on **every tool call**, before it runs. | [`hosts/acp/permissions.js`](../hosts/acp/permissions.js) (`findWriteViolation`, `findReviewExecViolation`) |
 | `claude-code` | **Nothing.** `devteam review` sets `ctx.processCwd` to the subject, so the spawned `claude` process's cwd *is* the subject (`core/adapters/headless.js`'s `spawn(bin, args, { cwd: ctx.processCwd \|\| ctx.cwd })`) — but claude-code discovers `.claude/settings.local.json` (where its tool-call-time hooks live) by walking up from cwd, and that file was installed into the *workspace*, not the subject. The hook that would normally block the write is never found. This is a known, explicit gap — see the phase-36 plan's "Out of scope" list (`--state-dir` for claude-code). | [`hosts/claude-code/adapter.js`](../hosts/claude-code/adapter.js), [`plans/phase-36-external-review-mode.md`](../plans/phase-36-external-review-mode.md) § Out of scope |
-| `codex`, `antigravity`, `omnigent`, `openai-compat` | Their normal enforcement is a **post-hoc write-audit**: snapshot `git status --porcelain` before and after the dispatch and flag anything new outside `allowedWrites`. In review mode that snapshot is taken of `ctx.cwd` (the workspace) — `snapshotWritables(ctx.cwd)` — never `ctx.processCwd` (the subject), so it structurally cannot see a write into the subject at all. In the common case the workspace also isn't a git repository, so `snapshotWritables` returns `ok:false` and `auditWrites` returns zero violations regardless of what happened — the audit silently no-ops. | [`core/adapters/headless.js`](../core/adapters/headless.js) (`shouldAudit`/`beforeSnapshot`), [`core/guards/write-audit.js`](../core/guards/write-audit.js) (`snapshotWritables`, `auditWrites`) |
+| `codex`, `antigravity`, `omnigent`, `openai-compat` | **Detection, not prevention** — a second, independent post-hoc write-audit snapshots `ctx.processCwd` (the subject) before and after the dispatch, in addition to the pre-existing audit of `ctx.cwd` (the workspace). Any new path in the subject is a violation unconditionally — no `allowedWrites` check, since the subject is read-only outright in review mode — and flips the gate to `FAIL` with a `subject:<path>` blocker. This can only ever detect a write *after* it already landed; unlike `acp`, nothing stops the write from happening. It also inherits the write-audit's existing blind spots: no-ops if the subject isn't a git repository, and can't see a re-edit of a file that was already dirty before the review started. | [`core/adapters/headless.js`](../core/adapters/headless.js) (`auditSubject`/`beforeSubjectSnapshot`), [`hosts/omnigent/adapter.js`](../hosts/omnigent/adapter.js) (same pattern, its own dispatch path), [`core/guards/write-audit.js`](../core/guards/write-audit.js) (`snapshotWritables`, `auditWrites`) |
 | `generic` | No headless execution at all — `devteam review --host generic` isn't a meaningful combination. | — |
 
 This is exactly why `devteam review` refuses `--host <anything but acp>`
 unless you pass `--allow-unenforced-writes`
-(`core/cli/commands/review.js#checkHostHonesty`): every non-`acp` host's
-fallback is weaker than "post-hoc audit" alone would suggest, for the
-structural reasons above, not just because a hook fires late.
+(`core/cli/commands/review.js#checkHostHonesty`): the post-hoc detection above
+tells you *after the fact* that the subject was mutated (so you can `git
+diff`/`git checkout` it back clean), it does not prevent the mutation — only
+`acp`'s tool-call-time evaluator does that. `claude-code` still gets nothing
+at all, for the structural reason in the row above.
 
 ## Workspace layout
 
@@ -185,12 +187,14 @@ export path in this phase (`core/review-workspace.js`'s why-comment on
   review impractical (a linter or type-checker you need isn't on it), that is
   a real limitation of this phase, not a bug to work around by loosening the
   list silently.
-- **Only `acp` can back the read-only claim.** See
-  [§ Per-host enforcement](#per-host-enforcement) — every other host either
-  loses its normal enforcement outright (`claude-code`) or has a write-audit
-  that cannot see the subject at all (`codex`/`antigravity`/`omnigent`/`openai-compat`).
-  `--allow-unenforced-writes` exists precisely so this is never silently
-  claimed.
+- **Only `acp` can back a *prevention* claim.** See
+  [§ Per-host enforcement](#per-host-enforcement) — `claude-code` loses its
+  normal enforcement outright; `codex`/`antigravity`/`omnigent`/`openai-compat`
+  can now *detect* a subject write after it happens (gate → `FAIL`, blocker
+  names the path) but cannot stop it, and that detection still no-ops if the
+  subject isn't a git repository. `--allow-unenforced-writes` exists
+  precisely so a detection-only guarantee is never silently claimed as
+  prevention.
 - **Reads are not confined to `codeRoot` — by design, and untouched by review
   mode.** `hosts/acp/permissions.js`'s `WRITE_KINDS` is `edit`/`delete`/`move`
   only; `read`-kind ACP tool calls carry no location check at all, in review
