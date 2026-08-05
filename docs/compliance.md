@@ -41,10 +41,30 @@ the row says so instead of implying otherwise.
 - No hosted evidence service. Bundles are local files you export and hand to your own
   auditor or evidence store; Stagecraft does not upload, retain, or serve them anywhere.
 
+## Reviewing code you don't own
+
+The mapping above assumes you're auditing a change Stagecraft shipped. An
+auditor's evidence bundle for a *review* — code you didn't build and never
+`init`-ed Stagecraft into — belongs in the **review workspace**
+(`~/.stagecraft/reviews/<slug>/`, [`core/review-workspace.js`](../core/review-workspace.js)):
+its `subject.json` names the exact commit SHA and remote reviewed, and
+because `acp` review mode denies every write into the reviewed repo at
+tool-call time, the workspace is the only place a review's gates, findings
+report, and `pipeline/code-review/by-*.md` output can land — the audited repo
+is never mutated by construction, not by convention. See
+[docs/external-review.md](external-review.md) for the entry points, the
+per-host enforcement table (only `acp` backs this mechanically), and the
+current gap: `devteam evidence export --attestation` does not yet read a
+review workspace's `subject.json`, so today the evidence is the workspace's
+gate chain (`devteam verify-chain --cwd <workspace>`), not an exported
+attestation.
+
 ## See also
 
 - [docs/evidence.md](evidence.md) — the full `devteam evidence` reference (readiness
   status, export, identity, attestation)
+- [docs/external-review.md](external-review.md) — `devteam review`/`devteam review-pr`:
+  entry points, per-host enforcement, workspace layout, and honest limits
 - [ADR-011](adr/011-authenticated-gate-chain.md) — authenticated gate chain
 - [ADR-012](adr/012-explicit-resolution-acceptance.md) — explicit resolution acceptance
 - [docs/tracks.md](tracks.md) — why `full` is the audited path and what the lighter

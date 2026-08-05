@@ -10,6 +10,7 @@ Navigation index for the `docs/` directory. Nothing here is load-bearing for a p
 - [walkthroughs/soc2-evidence-collector.md](walkthroughs/soc2-evidence-collector.md) — end-to-end showcase: building a SOC 2 evidence collector through the full 18-stage pipeline
 - [walkthroughs/stage-04-split-host.md](walkthroughs/stage-04-split-host.md) — multi-host contract stress-test trace
 - [compliance.md](compliance.md) — control-family → pipeline artifact → verifying command mapping for auditors (evidence you can map, not certified compliance)
+- [external-review.md](external-review.md) — `devteam review`/`devteam review-pr`: zero-install entry points for reviewing code you don't own, per-host enforcement, workspace layout, and honest limits
 
 ## Operator — I run pipelines daily
 
