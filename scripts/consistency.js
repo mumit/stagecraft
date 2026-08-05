@@ -1122,15 +1122,25 @@ function checkStageRuleFileCoverage(scanRoot) {
   }
 }
 
-// --- Check 7: docs/README.md orphan detection (D2) ---
+// --- Check 7: docs/README.md orphan detection (D2, generalized 37.5) ---
 //
-// Every .md file under docs/ (excluding historical/, audit-archive/, reference/,
-// and audit/ which holds generated output) must be reachable from docs/README.md.
-// A file is "reachable" if:
+// Every .md file under docs/ must be reachable from docs/README.md, with a single
+// deliberate exception (audit-archive/, see below). A file is "reachable" if:
 //   (a) docs/README.md contains a markdown link whose target matches its relative
 //       path from docs/, OR
 //   (b) the file lives in a subdirectory that has a README.md which IS directly
 //       linked from docs/README.md (directory-index coverage).
+//
+// 37.5 closed this check's original wholesale exemptions for historical/, reference/,
+// and audit/ — each now has its own README.md (docs/historical/README.md,
+// docs/reference/README.md, docs/audit/README.md) linked from docs/README.md, so (b)
+// covers their contents without hand-listing every file.
+//
+// audit-archive/ remains excluded: it is a dated-snapshot archive written by the audit
+// skill's Step 0.0 (skills/audit/SKILL.md), one subdirectory per historical run, indexed
+// by its own audit-archive/HISTORY.md (not a README.md, so rule (b) wouldn't cover it
+// anyway) — it is pipeline output, not hand-authored documentation, and isn't part of the
+// doc-sprawl problem this check exists to catch.
 //
 // The check is a no-op when docs/ does not exist or has no non-excluded .md
 // files, so it is safe to run against fixture trees that have no docs/ at all.
@@ -1144,7 +1154,7 @@ function checkDocsIndexCoverage(scanRoot, trackedSet) {
   const ts = trackedSet !== undefined ? trackedSet : gitTrackedFiles(root);
 
   // Subdirectory names (direct children of docs/) that are fully excluded.
-  const EXCLUDED_TOP_DIRS = ["historical", "audit-archive", "reference", "audit"];
+  const EXCLUDED_TOP_DIRS = ["audit-archive"];
 
   // Collect .md files under docs/: tracked → blocking, untracked non-ignored → advisory.
   const docFiles = []; // paths relative to docsDir, using "/" separators

@@ -15,6 +15,9 @@ devteam next                           # → "▶️ run-stage design (stage-02)
 
 > The CLI binary is `devteam`. Stagecraft is the project; `devteam` is what you type.
 
+New here? **[docs/START-HERE.md](docs/START-HERE.md)** names the five documents you actually
+need before you touch anything else in `docs/`.
+
 ## Table of contents
 
 - [First 30 minutes](#first-30-minutes)
@@ -55,7 +58,9 @@ Step 4 above deliberately walks the full 18-stage track so you see every kind of
 
 ## Documentation map
 
-Four reader paths. Every doc belongs to exactly one. ([docs/README.md](docs/README.md) is the docs-only index.)
+This is the exhaustive map, not the fast path — see [docs/START-HERE.md](docs/START-HERE.md) for
+that. Four reader paths below; every doc belongs to exactly one. ([docs/README.md](docs/README.md)
+is the docs-only index.)
 
 ### Evaluator — should we adopt?
 

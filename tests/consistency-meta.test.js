@@ -941,12 +941,65 @@ test("check 7 docs-index: file in subdirectory covered by parent README.md exits
   }
 });
 
-test("check 7 docs-index: file under excluded dir (historical/) is not required", () => {
+test("check 7 docs-index: file under excluded dir (audit-archive/) is not required", () => {
+  // 37.5 narrowed the wholesale exclusion from {historical, audit-archive, reference,
+  // audit} down to just audit-archive/ — historical/, reference/, and audit/ each got
+  // their own README.md and must now be reachable like any other subdirectory (covered
+  // by the "subdirectory file without parent README.md is an orphan" test below, and by
+  // the real-repo regression guard). audit-archive/ remains the one deliberate exception
+  // (dated-snapshot archive indexed by its own HISTORY.md, not a README.md).
   const root = mkFixtureRoot();
   try {
-    // docs/README.md has no links; docs/historical/old.md is excluded
+    // docs/README.md has no links; docs/audit-archive/old.md is excluded
+    writeFile(root, "docs/README.md", "# docs/\n\nNo links.\n");
+    writeFile(root, "docs/audit-archive/old.md", "# Old doc\n");
+
+    const r = runChecker(root, { noBaseline: true });
+    assert.equal(r.status, 0,
+      `expected exit 0 but got ${r.status}:\n${r.stdout}\n${r.stderr}`);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("check 7 docs-index: file under formerly-excluded dir (historical/) is now an orphan without an index", () => {
+  const root = mkFixtureRoot();
+  try {
+    // docs/README.md has no links; docs/historical/ is no longer wholesale-excluded
     writeFile(root, "docs/README.md", "# docs/\n\nNo links.\n");
     writeFile(root, "docs/historical/old.md", "# Old doc\n");
+
+    const r = runChecker(root, { noBaseline: true });
+    assert.equal(r.status, 1,
+      `expected exit 1 but got ${r.status}:\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, /docs-index/, "expected docs-index violation");
+    assert.match(r.stdout, /historical\/old\.md/, "expected the orphan historical doc in output");
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("check 7 docs-index: historical/, reference/, and audit/ are covered once their own README.md is linked", () => {
+  // 37.5: these three used to be wholesale-excluded; now they're covered by the same
+  // directory-index-coverage rule as adr/ — exercise all three by name in one test so a
+  // future re-introduction of a per-name exclusion (rather than the audit-archive/-only
+  // exception) is caught.
+  const root = mkFixtureRoot();
+  try {
+    writeFile(root, "docs/README.md", [
+      "# docs/",
+      "",
+      "- [historical/README.md](historical/README.md) — archive",
+      "- [reference/README.md](reference/README.md) — generated reference",
+      "- [audit/README.md](audit/README.md) — self-audit output",
+      "",
+    ].join("\n"));
+    writeFile(root, "docs/historical/README.md", "# historical\n");
+    writeFile(root, "docs/historical/old-doc.md", "# Old doc\n");
+    writeFile(root, "docs/reference/README.md", "# reference\n");
+    writeFile(root, "docs/reference/cli.md", "# CLI reference\n");
+    writeFile(root, "docs/audit/README.md", "# audit\n");
+    writeFile(root, "docs/audit/00-project-context.md", "# Project context\n");
 
     const r = runChecker(root, { noBaseline: true });
     assert.equal(r.status, 0,
