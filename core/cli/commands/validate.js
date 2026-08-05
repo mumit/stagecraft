@@ -12,6 +12,9 @@ const flags = {
 
 function run(positional, _flags) {
   if (_flags.help) { console.log(generateHelp("devteam validate [options]", flags)); process.exit(0); }
+  const cwd = _flags.cwd || process.cwd();
+  const { requireProjectContext } = require(path.join(__dirname, "..", "project-guard"));
+  requireProjectContext(cwd, _flags, "validate");
   if (_flags.cwd) process.chdir(_flags.cwd);
   const { runMain } = require(path.join(__dirname, "..", "..", "gates", "validator"));
   runMain();

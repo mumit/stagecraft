@@ -14,8 +14,11 @@ const flags = {
 
 function run(positional, _flags) {
   if (_flags.help) { console.log(generateHelp("devteam summary [options]", flags)); process.exit(0); }
+  const cwd = _flags.cwd || process.cwd();
+  const { requireProjectContext } = require(path.join(__dirname, "..", "project-guard"));
+  requireProjectContext(cwd, _flags, "summary");
   const { summary } = getOrchestrator();
-  const result = summary({ cwd: _flags.cwd });
+  const result = summary({ cwd });
   if (_flags.json) {
     console.log(JSON.stringify(result, null, 2));
     return;

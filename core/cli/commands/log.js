@@ -33,6 +33,8 @@ function formatLogEvent(event, cwd) {
 function run(positional, _flags) {
   if (_flags.help) { console.log(generateHelp("devteam log [options]", flags)); process.exit(0); }
   const cwd = _flags.cwd || process.cwd();
+  const { requireProjectContext } = require(path.join(__dirname, "..", "project-guard"));
+  requireProjectContext(cwd, _flags, "log");
   const { loadConfig, checkBoundedFence } = require(path.join(__dirname, "..", "..", "config"));
   const config = loadConfig(cwd);
   checkBoundedFence(config, "log");
