@@ -13,7 +13,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §36
 | 36.3 review workspace + orchestrator plumbing | ✅ complete — `core/review-workspace.js`; `ctx.processCwd`/`ctx.externalReviewMode` threaded through `core/orchestrator.js#runStage`/`core/driver.js#run` |
 | 36.4 `devteam review <path>` | ✅ complete — `core/cli/commands/review.js`; host honesty gated by `--allow-unenforced-writes` |
 | 36.5 `devteam review-pr` without an initialised project | ✅ complete — `core/review-workspace.js`'s `subjectPath: null`/`slugForIdentity` extension; `ctx.noCodeRoot` (`core/orchestrator.js#runStage`, `hosts/acp/adapter.js`) |
-| 36.6 docs: external review guide | proposed |
+| 36.6 docs: external review guide | ✅ complete — [`docs/external-review.md`](../docs/external-review.md) |
 
 ## Why
 
@@ -270,6 +270,22 @@ not own.
 
 - Acceptance: `npm run consistency` doc checks pass; every enforcement claim names the
   file that implements it.
+
+**Done — see [`docs/external-review.md`](../docs/external-review.md).** Writing the
+per-host enforcement table surfaced a real gap worth recording here rather than
+silently glossing over: in review mode, the non-`acp` post-hoc write-audit
+(`core/adapters/headless.js`'s `snapshotWritables(ctx.cwd)`) snapshots the *workspace*,
+never `ctx.processCwd` (the subject) — so it cannot see a write into the subject at
+all, and typically no-ops outright since the workspace isn't a git repository. That's
+strictly weaker than the "post-hoc audit" `checkHostHonesty`'s own warning text implies
+for `--host` anything but `acp`. Also: `claude-code` loses its tool-call-time hooks
+entirely in review mode (they're installed into the workspace, but `.claude/`
+discovery walks up from `ctx.processCwd`, the subject) — already called out in this
+phase's Out-of-scope list (`--state-dir` for claude-code), not a new finding, but now
+documented for an operator picking `--host`. Cross-linked from
+[`docs/compliance.md`](../docs/compliance.md) § Reviewing code you don't own; README's
+`--host acp` paragraph now notes it's the recommended host for reviewing code you do
+not own.
 
 ## Out of scope
 
