@@ -112,6 +112,8 @@ function run(positional, _flags) {
   if (_flags.help) { console.log(generateHelp("devteam next [options]", flags)); process.exit(0); }
   const { next } = getOrchestrator();
   const cwd = _flags.cwd || process.cwd();
+  const { requireProjectContext } = require(path.join(__dirname, "..", "project-guard"));
+  requireProjectContext(cwd, _flags, "next");
   const { loadConfig, checkBoundedFence } = require(path.join(__dirname, "..", "..", "config"));
   const config = loadConfig(cwd);
   checkBoundedFence(config, "next");

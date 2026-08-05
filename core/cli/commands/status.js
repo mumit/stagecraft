@@ -69,6 +69,8 @@ function workstreamText(ws) {
 function run(positional, _flags) {
   if (_flags.help) { console.log(generateHelp("devteam status [options]", flags)); process.exit(0); }
   const cwd = _flags.cwd || process.cwd();
+  const { requireProjectContext } = require(path.join(__dirname, "..", "project-guard"));
+  requireProjectContext(cwd, _flags, "status");
 
   const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
   const { runStatePath, runLogPath } = require(path.join(__dirname, "..", "..", "driver"));
