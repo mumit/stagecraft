@@ -76,4 +76,21 @@ async function mapByHostConcurrency(items, { key = (item) => item.host, limit = 
   });
 }
 
-module.exports = { hostConcurrencyLimit, mapByHostConcurrency };
+// ADR-017 (32.6): a wave dispatches multiple STAGES concurrently, not
+// multiple workstreams of one stage. Reusing mapByHostConcurrency's default
+// `key: item => item.host` for wave-level dispatch would let
+// routing.host_concurrency — designed by ADR-015 to bound workstream fan-out
+// WITHIN one stage — incorrectly throttle cross-stage wave concurrency too:
+// two different wave members that happen to route to the same host would
+// collide in the same host-only queue. Keying by (host, stage) instead gives
+// each wave member its own queue. autonomy.max_parallel_stages is the only
+// cap on wave-level concurrency (enforced at ready-set formation in
+// core/orchestrator.js#_nextWaveImpl, before any item reaches this
+// scheduler); routing.host_concurrency keeps capping concurrent workstreams
+// inside a single member's own dispatch, unchanged — the two caps compose
+// rather than one silently overriding the other.
+function waveMemberKey(item) {
+  return `${item.host || "unknown"}::${item.stage || "unknown"}`;
+}
+
+module.exports = { hostConcurrencyLimit, mapByHostConcurrency, waveMemberKey };

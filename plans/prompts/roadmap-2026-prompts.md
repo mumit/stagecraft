@@ -14,15 +14,14 @@ Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see 
 | 29 | Scale-adaptive ceremony | 29.1–29.5 | ✅ complete (29.2 landed ADR-016) |
 | 30 | Closed learning loop | 30.1–30.5 | ✅ complete |
 | 31 | Verification depth | 31.1–31.5 | ✅ complete |
-| 32 | Performance & parallelism | 32.1–32.5 | ⚠️ 32.1 ✅ · 32.2 ⏸ ADR-017 drafted only (status Proposed), wave execution not built · 32.3 ✅ · 32.4 ⏸ deferred, no host adapter exposes worktree-isolation capability · 32.5 ✅ |
+| 32 | Performance & parallelism | 32.1–32.6 | ⚠️ 32.1 ✅ · 32.2 ✅ ADR-017 Accepted 2026-08-05 · 32.3 ✅ · 32.4 ⏸ deferred, no host adapter exposes worktree-isolation capability · 32.5 ✅ · 32.6 ✅ wave execution implemented 2026-08-05 |
 | 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ✅ complete |
 | 34 | Interop & auditable SDLC | 34.1–34.4 | ✅ complete |
 | 35 | Existing-codebase mode | 35.1–35.5 | ✅ complete |
 | 36 | External review mode (ACP-first) | 36.0–36.6 | ✅ complete |
 | 37 | Interface & token efficiency | 37.1–37.6 | 🔲 ready — **adds no capability by design** |
 
-Only two items from phases 28–35 remain open: **32.2** (needs ADR-017 accepted first —
-it is written but still Proposed) and **32.4** (deferred; no host adapter exposes
+Only one item from phases 28–35 remains open: **32.4** (deferred; no host adapter exposes
 worktree-isolated dispatch, so the item's own precondition cannot be met). Phase 36 is
 ready, but 36.0 is a report-only spike whose answer decides how 36.2 is built — run it
 first and do not implement in the same session. Items within a phase are independently
@@ -662,7 +661,7 @@ Tests: prefix-stability test; cache_control emission fixture; budget doc regener
 full suite green.
 ```
 
-### 32.2 Stage DAG waves ⏸ (ADR-017 drafted, status Proposed — not Accepted; wave execution not built, PR #361 was ADR-only)
+### 32.2 Stage DAG waves ✅ (ADR-017 Accepted 2026-08-05; PR #361 was ADR-only, wave execution shipped as item 32.6)
 
 ```
 TASK: Implement plans/phase-32-performance-parallelism.md item 32.2 — ADR-017 stage

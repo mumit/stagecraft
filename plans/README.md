@@ -4,10 +4,10 @@ Phase plans produced from the 2026-06-10 full-framework review and subsequent au
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
 written to be executed one item at a time.
 
-**Current state (2026-08-04):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, and 35 are
-complete, as is phase 36. Phase 32 is mostly complete with two open items. Phase 37 is
-written and ready to run and deliberately adds no new capability. Phases 21, 25, and 26 are
-proposed and not authorized for implementation. See
+**Current state (2026-08-05):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, and 35 are
+complete, as is phase 36. Phase 32 is mostly complete with one open item (32.4, deferred).
+Phase 37 is in progress (37.6 done) and deliberately adds no new capability. Phases 21, 25,
+and 26 are proposed and not authorized for implementation. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
 listed under [Evidence reviews](#evidence-reviews).
@@ -45,7 +45,7 @@ listed under [Evidence reviews](#evidence-reviews).
 | 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | ✅ complete — 29.1 `loop` track · 29.2 assess-by-default (ADR-016) · 29.3 ceremony cost preview · 29.4 compact QA fold (`stage-06x`) · 29.5 docs repositioning |
 | 30 | [phase-30-closed-learning-loop.md](phase-30-closed-learning-loop.md) | [prompts](prompts/roadmap-2026-prompts.md) | Auto-collect patterns, outcome-feedback counters, memory injection, reflector pass, SKILL.md export | ✅ complete — 30.1 auto-collect at run end · 30.2 injected/recurrence counters + demotion · 30.3 reflector pass · 30.4 memory retrieval into prompts · 30.5 SKILL.md export |
 | 31 | [phase-31-verification-depth.md](phase-31-verification-depth.md) | [prompts](prompts/roadmap-2026-prompts.md) | Per-role stamping, mechanical red-team floor, adversarial review pair, mutation gate, quorum verification | ✅ complete — 31.1 per-role stamping · 31.2 mechanical red-team floor · 31.3 adversarial reviewer+critic · 31.4 mutation smoke gate · 31.5 stage-05 quorum re-derivation |
-| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | ⚠️ mostly complete — 32.1 ✅ cache-first prompts (PR #360) · 32.2 ✅ ADR-017 **Accepted** 2026-08-05, scoped to two named regions; wave-execution code moved to new item 32.6 (not started) · 32.3 ✅ model-tier routing (PR #362) · 32.4 ⏸ deferred (no host adapter exposes worktree-isolated dispatch; the item's own precondition can't be met yet) · 32.5 ✅ context.md diet (PR #363) |
+| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | ⚠️ mostly complete — 32.1 ✅ cache-first prompts (PR #360) · 32.2 ✅ ADR-017 **Accepted** 2026-08-05, scoped to two named regions · 32.3 ✅ model-tier routing (PR #362) · 32.4 ⏸ deferred (no host adapter exposes worktree-isolated dispatch; the item's own precondition can't be met yet) · 32.5 ✅ context.md diet (PR #363) · 32.6 ✅ wave-execution implemented 2026-08-05 |
 | 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | ✅ complete — 33.1 eval capture · 33.2 `devteam evals run` · 33.3 `prompt_pack_version` · 33.4 `scripts/prompt-optimize.js` |
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | ✅ complete — 34.1 ACP adapter (PR #368) · 34.2 attestation export (PR #369) · 34.3 compliance mapping (PR #370) · 34.4 gemini-cli → plugin package |
 | 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | ✅ complete — 35.1 review-only track (PR #373) · 35.2 `devteam review-pr` (PR #375) · 35.3 stage-06d stamping (PR #376) · 35.4 findings report (PR #377) · 35.5 refactor track (PR #378) |
@@ -63,14 +63,13 @@ session per branch.
 ## What is not delivered yet
 
 Everything below is either written-but-unbuilt or deliberately parked. Verified against
-`git log` on 2026-08-04, not inferred from status chips.
+`git log` on 2026-08-05, not inferred from status chips.
 
 | Work | Where | Why it is open |
 |---|---|---|
-| **32.6 stage DAG wave execution** | [phase-32](phase-32-performance-parallelism.md) · [ADR-017](../docs/adr/017-dag-wave-execution.md) | ADR-017 was **Accepted** 2026-08-05, scoped to exactly two curated regions (`{04a ∥ 04c}`, `{06b ∥ 06c ∥ 06d ∥ 06e}`) with `autonomy.max_parallel_stages` default 2 — but implementation (`dependsOn`, `max_parallel_stages`, `wave_id`, critical-path reporting) has not started. This is the largest remaining wall-clock win (~18 sequential stage slots → ~13). |
 | **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred: the item requires a host adapter that exposes worktree-isolated dispatch, and none does today. Its own precondition cannot be met, so it was not attempted. |
 | **Phase 36 — external review mode** | [phase-36](phase-36-external-review-mode.md) | Written 2026-08-04, not started. Seven items making review work without installing Stagecraft into the reviewed repo, built on ACP's negotiated session cwd. 36.0 is a report-only spike whose answer decides how 36.2 is built — run it first. |
-| **Phase 37 — interface & token efficiency** | [phase-37](phase-37-interface-and-token-efficiency.md) | Written 2026-08-04 from [experience-review-2026-08.md](experience-review-2026-08.md). Six items, no new capability: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, and a terminal decision on ADR-017. Item 37.6 (the ADR-017 decision) is done as of 2026-08-05 — see 32.6 above; the other five items are not started. |
+| **Phase 37 — interface & token efficiency** | [phase-37](phase-37-interface-and-token-efficiency.md) | Written 2026-08-04 from [experience-review-2026-08.md](experience-review-2026-08.md). Six items, no new capability: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, and a terminal decision on ADR-017. Item 37.6 (the ADR-017 decision) is done as of 2026-08-05, and 32.6 (the ADR-017 implementation it authorized) shipped the same day; the other five items are not started. |
 | **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Proposed ([#312](https://github.com/telus-labs/stagecraft/issues/312)). Partly overtaken by phases 28 and 32, which delivered telemetry, the run corpus, and cache-first prompts. Worth re-scoping rather than running as written. |

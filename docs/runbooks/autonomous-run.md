@@ -174,7 +174,7 @@ Read the `halt_action` (and `failure_class`) in the summary, or the last line of
 | `max-iterations` | The loop hit its guard (`--max-iterations`, default 100). | Almost always a stuck stage — inspect `run-log.jsonl`. |
 | `scope-gate` | The build wrote files outside the diagnosed `affected_files` list (ADR-009 structural scope gate). | See [repair-flow.md § Scope-gate FAIL recovery](repair-flow.md#scope-gate-fail-recovery). |
 
-**Non-halt events** you'll see in progress output / `run-log.jsonl` as the driver works autonomously: `skip-stage` (configured or conditional skip with trigger inputs; override with `pipeline.force_stages`), `fix-retry` (cleared the failing gate + re-dispatching a `code-defect`, up to `autonomy.max_retries`, default 2), `workstream-queued` (a ready workstream is waiting behind `routing.host_concurrency`), `transient-retry` (a no-gate dispatch is being retried after backoff, with `retry_reason` and `backoff_class`, up to once before it's deemed structural), and `auto-ruled` (an escalation was auto-resolved under an `--auto-rule` grant — carries `grant_class`, the `ruling`, and `authority`). After every non-skipped workstream dispatch, `dispatch-observation` retains only stage/role/host/model/status, gate-written and timeout flags, and optional numeric cost/duration for privacy-safe evidence analysis; it does not copy blockers, warnings, reasons, prompts, responses, paths, or transcripts.
+**Non-halt events** you'll see in progress output / `run-log.jsonl` as the driver works autonomously: `skip-stage` (configured or conditional skip with trigger inputs; override with `pipeline.force_stages`), `fix-retry` (cleared the failing gate + re-dispatching a `code-defect`, up to `autonomy.max_retries`, default 2), `workstream-queued` (a ready workstream is waiting behind `routing.host_concurrency`), `transient-retry` (a no-gate dispatch is being retried after backoff, with `retry_reason` and `backoff_class`, up to once before it's deemed structural), `wave-formed` (a real 2+ member stage wave was dispatched concurrently — see [Stage DAG waves](#stage-dag-waves-adr-017-phase-32-item-326) below), and `auto-ruled` (an escalation was auto-resolved under an `--auto-rule` grant — carries `grant_class`, the `ruling`, and `authority`). After every non-skipped workstream dispatch, `dispatch-observation` retains only stage/role/host/model/status, gate-written and timeout flags, and optional numeric cost/duration for privacy-safe evidence analysis; it does not copy blockers, warnings, reasons, prompts, responses, paths, or transcripts.
 
 ## The consequence ceiling
 
@@ -239,6 +239,56 @@ runs per project and retain the JSON output. Compute p50/p95 over
 wall time. Compare projects only by aggregate timing and stage/workstream
 categories; do not export prompts, transcript excerpts, blockers, feature text,
 or repository identity.
+
+## Stage DAG waves (ADR-017, phase-32 item 32.6)
+
+Two curated stage pairs/groups have a `dependsOn` entry
+(`core/pipeline/stages.js`) naming their real prerequisite instead of the
+implicit "immediately preceding stage in track order": `red-team` depends on
+`build`, and each of `accessibility-audit` / `observability-gate` /
+`verification-beyond-tests` / `performance-budget` depends on `qa`. Once a
+stage's named dependencies hold a PASS/WARN gate, the driver may dispatch it
+concurrently with whatever else is ready, instead of waiting for stages between
+it and its dependency in declared order to finish first:
+
+- `{pre-review ∥ red-team}` — both become ready as soon as `build` PASSes.
+- `{accessibility-audit ∥ observability-gate ∥ verification-beyond-tests ∥ performance-budget}`
+  — all four become ready as soon as `qa` PASSes.
+
+`autonomy.max_parallel_stages` (default **2**) caps how many ready stages are
+dispatched together as one wave, in declared STAGES-table order; members past
+the cap wait for the next wave. Setting it to `1` is the escape hatch — every
+wave degrades to a single dispatch, identical to pre-ADR-017 behavior, with no
+change to `dependsOn` or track structure. This is deliberately conservative:
+the four-stage QA region ships as two waves of two by default rather than one
+wave of four (ADR-017 Resolution §1) until real run-corpus data justifies
+raising it.
+
+A wave halts the run the same way a single dispatch would (a HALT-worthy
+failure, budget cap, `--until`, or the consequence ceiling) — the driver does
+not begin forming a *new* wave until every current member reaches a terminal
+PASS/WARN or an unresolved halt, but a member that already passed is never
+invalidated because a sibling failed. `state.iterations` and
+`--max-iterations` count one wave as one iteration, regardless of member
+count. Gate-chain order (`verify-chain`) is unaffected — it records
+declared-order-of-record, not execution order, so a wave changes *when*
+stages run, never their order-of-record for chain verification.
+
+Only fresh (`run-stage`) and resuming (`continue-stage`) dispatches are
+batched into a real, concurrently-dispatched wave. If a `fix-and-retry` (or
+any other non-dispatch action) would be part of the ready set, the wave
+collapses to that single action and is handled exactly like every dispatch
+before ADR-017 — concurrent retry bookkeeping for multiple simultaneously
+failing members is not implemented.
+
+`run-log.jsonl` gains a `wave_id` (monotonic per run) on every member's
+dispatch events when — and only when — a real 2+ member wave forms; a
+size-one wave carries no `wave_id` field at all, so it is byte-identical to a
+pre-ADR-017 log. `devteam performance critical-path`'s report gains a
+`waves` array and a `wave_realized_savings_ms` figure
+(`sum(member durations) - max(member durations)`, per wave) alongside its
+existing sequential dispatch-wall-time accounting — the sequential figure is
+not corrected by this number, it is additive context for reading it.
 
 ## Advisory sweep on completion (ADR-008)
 

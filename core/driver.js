@@ -10,6 +10,13 @@
 // driver persists the auto-fold gate and makes it visible in the audit log.
 // (item 1.2, plans/phase-1-trust-consolidation.md)
 //
+// ADR-017 (32.6): nextWave() forms a ready set of 1..autonomy.max_parallel_stages
+// actions per iteration instead of next()'s single action. A size-1 result is
+// byte-identical to next() and falls through the single-action code below
+// unchanged. A real (2+ member) wave is dispatched by dispatchWaveMember()
+// (only for run-stage/continue-stage members — see its own comment), sharing
+// one wave_id and one state.iterations increment for the whole wave.
+//
 // Run-scoped state this layer introduces (the pipeline is otherwise stateless
 // within a run): an exclusive lock (pipeline/run.lock), resumable run-state
 // (pipeline/run-state.json), and an append-only audit/debug log
@@ -19,11 +26,12 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
-const { next, runStageHeadless, mergeWorkstreamGates } = require("./orchestrator");
+const { next, nextWave, runStageHeadless, mergeWorkstreamGates } = require("./orchestrator");
 const { collect: collectPatterns } = require("./patterns");
 const { runReflector } = require("./learning/reflector");
 const { ingest: ingestMemory } = require("./memory");
-const { loadConfig, changeIdFromFeature, changeIdFromSymptom } = require("./config");
+const { loadConfig, changeIdFromFeature, changeIdFromSymptom, resolveRoute } = require("./config");
+const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require("./scheduler");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
 const {
@@ -904,6 +912,18 @@ async function run(opts = {}) {
   // Dependencies are injectable for deterministic testing of the loop without
   // spawning host CLIs; production passes none and gets the real orchestrator.
   const _next = opts.next || next;
+  // ADR-017 (32.6): the loop below calls _nextWave exclusively now (a size-1
+  // wave falls through the exact pre-017 single-action path — see the call
+  // site). Tests and callers that inject a legacy opts.next single-action
+  // stub (the pre-32.6 DI seam, still used throughout tests/) must keep
+  // working unchanged, so an explicit opts.next with no opts.nextWave is
+  // wrapped into a size-1 wave rather than silently ignored. Only when
+  // NEITHER is given (production, and any test that wants real waves) does
+  // this fall through to the real nextWave() — never to _next/next(), or
+  // waves would never form outside tests.
+  const _nextWave = opts.nextWave
+    ? opts.nextWave
+    : (opts.next ? ((callOpts) => ({ actions: [opts.next(callOpts)] })) : nextWave);
   const _runStageHeadless = opts.runStageHeadless || runStageHeadless;
   const _merge = opts.mergeWorkstreamGates || mergeWorkstreamGates;
   const _collectPatterns = opts.collectPatterns || collectPatterns;
@@ -1018,6 +1038,10 @@ async function run(opts = {}) {
   state.skipped_stages = Array.isArray(state.skipped_stages) ? state.skipped_stages : [];
   state.active_workstreams = {};
   state.last_workstream = state.last_workstream || null;
+  // ADR-017 (32.6): monotonic per-run counter, persisted like the other PR-B
+  // counters above so it survives `devteam run --resume` instead of
+  // restarting at 1 and colliding with wave_ids already in run-log.jsonl.
+  state.wave_id_counter = Number.isInteger(state.wave_id_counter) ? state.wave_id_counter : 0;
   // Phase 12.2: commit-cursor fields (resilient to resumed pre-12.2 states).
   if (!Array.isArray(state.stages_advanced)) state.stages_advanced = [];
   if (!("last_committed_stage_index" in state)) state.last_committed_stage_index = null;
@@ -1221,6 +1245,304 @@ async function run(opts = {}) {
       onEvent({ type: "track-confidence-check", source: trackSource, confidence: trackConfidence, bypassed: "force" });
     }
 
+    // ADR-017 (32.6): dispatch one wave member. Mirrors the run-stage/
+    // continue-stage handling in the single-action loop below exactly (guard
+    // checks, stall probe, _runStageHeadless call, dispatch classification,
+    // retry/halt decisions) but returns a control signal ("continue" | "halt")
+    // instead of directly break-ing/continue-ing the driver's for loop, so
+    // dispatchWave() can run N of these concurrently via Promise.all and
+    // decide the wave's overall outcome only after every member has settled
+    // (ADR-017 §6: a FAIL halts wave advancement without touching an
+    // already-passing sibling's gate — siblings are never killed mid-flight,
+    // they simply all finish before halt is decided). Only ever called for
+    // r.action === "run-stage" | "continue-stage" — see the wave-narrowing
+    // comment at the call site for why fix-and-retry/other actions never
+    // reach here as a secondary wave member.
+    async function dispatchWaveMember(r, waveId) {
+      const base = {
+        iteration: state.iterations,
+        stage: r.stage || null,
+        name: r.name || null,
+        action: r.action,
+        failure_class: r.failure_class || null,
+        reason: r.reason,
+        intent,
+        wave_id: waveId,
+      };
+
+      const _writeConvergenceEscalate = (stageId, stageName, reason) => {
+        try {
+          const p = path.join(gatesDir(cwd, changeId), `${stageId}.json`);
+          if (!fs.existsSync(p)) return;
+          const g = JSON.parse(fs.readFileSync(p, "utf8"));
+          g.status = "ESCALATE";
+          g.escalation_reason = reason;
+          g.decision_needed =
+            `Add fix instructions to pipeline/context.md above devteam markers, `
+            + `then: devteam restart ${stageName} && devteam run`;
+          fs.writeFileSync(p, JSON.stringify(g, null, 2) + "\n", "utf8");
+        } catch { /* best-effort */ }
+      };
+
+      const guardTransition = dispatchGuardTransition({
+        action: r,
+        base,
+        consequenceCeiling: CONSEQUENCE_CEILING,
+        allowStages,
+        order,
+        untilIndex,
+        until: opts.until,
+        budgetUsd,
+        spent: budgetUsd == null ? 0 : totalCostUsd(cwd, changeId),
+      });
+      if (guardTransition) {
+        applyTransition(guardTransition);
+        return "halt";
+      }
+
+      if (r.stage === "stage-04" && runStoplistCheck("pre-build")) return "halt";
+
+      if (intent === "repair" && !repairAtRaw && !state.affectedFiles) {
+        const diagGatePath = path.join(gatesDir(cwd, changeId), "stage-01.json");
+        try {
+          if (fs.existsSync(diagGatePath)) {
+            const diagGate = JSON.parse(fs.readFileSync(diagGatePath, "utf8"));
+            if (
+              diagGate.status === "PASS" &&
+              Array.isArray(diagGate.affected_files) &&
+              diagGate.affected_files.length > 0
+            ) {
+              state.affectedFiles = diagGate.affected_files;
+              repairPatchItems = diagGate.affected_files.map(
+                (f) => `Fix ${f}: ${diagGate.proposed_fix || opts.repair}`,
+              );
+              saveRunState(cwd, changeId, state);
+              logEvent(cwd, changeId, {
+                outcome: "diagnosis-activated",
+                affected_files: state.affectedFiles,
+              });
+            }
+          }
+        } catch { /* best-effort — diagnosis gate may not exist yet */ }
+      }
+
+      const t0 = Date.now();
+      logEvent(cwd, changeId, { ...base, outcome: "dispatch-started", queue_ms: 0 });
+      onEvent({ type: "dispatch", ...base });
+      // ADR-007 Tier 1: start the observe-only stall probe fire-and-forget.
+      // The probe emits stall-detected if the workstream log and gate are both
+      // flat for stallThresholdMs. It NEVER kills or alters the dispatch — the
+      // await below is always the sole resolution path (no Promise.race).
+      const cancelStallProbe = _stallProbe(r.name, r.stage, cwd, changeId, t0, {
+        stallThresholdMs,
+        stallMinGrowthBytes,
+        logEvent: (entry) => logEvent(cwd, changeId, entry),
+        onEvent,
+        iteration: state.iterations,
+        action: r.action,
+        sleep: _sleep,
+      });
+      let runResult;
+      const targetedFix = state.targetedFix
+        && state.targetedFix.stage === r.stage
+        && state.targetedFix.name === r.name
+        ? state.targetedFix
+        : null;
+      const targetedFixSnapshot = targetedFix
+        ? hashTargetedFixFiles(cwd, targetedFix.files)
+        : null;
+      const onWorkstreamEvent = (event) => {
+        const key = event.workstream_id || `${event.stage || r.stage}.${event.role || "unknown"}`;
+        const normalized = {
+          ...base,
+          ...event,
+          gate_path: relPath(cwd, event.gate_path),
+          log_path: relPath(cwd, event.log_path),
+        };
+        if (event.type === "workstream-started") {
+          state.active_workstreams[key] = {
+            stage: event.stage || r.stage,
+            name: event.name || r.name,
+            role: event.role || null,
+            host: event.host || null,
+            workstream_id: key,
+            gate_path: normalized.gate_path,
+            log_path: normalized.log_path,
+            prompt_bytes: event.prompt_bytes ?? null,
+            context_manifest_files: event.context_manifest_files ?? null,
+            context_manifest_omitted: event.context_manifest_omitted ?? null,
+            started_at: nowIso(),
+          };
+        } else if (event.type === "workstream-finished") {
+          delete state.active_workstreams[key];
+          state.last_workstream = {
+            stage: event.stage || r.stage,
+            name: event.name || r.name,
+            role: event.role || null,
+            host: event.host || null,
+            workstream_id: key,
+            gate_path: normalized.gate_path,
+            log_path: normalized.log_path,
+            duration_ms: event.duration_ms ?? null,
+            prompt_bytes: event.prompt_bytes ?? null,
+            context_manifest_files: event.context_manifest_files ?? null,
+            context_manifest_omitted: event.context_manifest_omitted ?? null,
+            exit_code: event.exit_code ?? null,
+            timed_out: Boolean(event.timed_out),
+            skipped: Boolean(event.skipped),
+            finished_at: nowIso(),
+          };
+        }
+        saveRunState(cwd, changeId, state);
+        logEvent(cwd, changeId, { ...normalized, outcome: event.type });
+        onEvent(normalized);
+      };
+      const stageDef = STAGES[r.name];
+      if (stageDef && stageDef.preSeedGate && r.stage) {
+        writeStubGate(gatesDir(cwd, changeId), r.stage, effectiveTrack);
+      }
+      try {
+        runResult = await _runStageHeadless(r.name, {
+          cwd,
+          track: effectiveTrack,
+          feature: opts.feature || "",
+          scope: opts.scope,
+          processCwd: opts.processCwd,
+          externalReviewMode: opts.externalReviewMode === true,
+          intent,
+          timeoutMs,
+          skipCompleted: r.action === "continue-stage",
+          runId: state.started_at,
+          isRetry: (state.fixRetries[r.name] || 0) > 0,
+          ...(targetedFix ? { workstream: [targetedFix.workstream] } : {}),
+          ...(repairPatchItems
+            ? { patchItems: repairPatchItems }
+            : targetedFix ? { patchItems: targetedFix.patchItems } : {}),
+          onWorkstreamEvent,
+        });
+      } finally {
+        cancelStallProbe();
+      }
+      if (targetedFix) {
+        state.targetedFix = null;
+        saveRunState(cwd, changeId, state);
+        logEvent(cwd, changeId, {
+          ...base,
+          outcome: "targeted-fix-dispatch",
+          workstream: targetedFix.workstream,
+          patch_items: targetedFix.patchItems.length,
+          source_stage: targetedFix.source_stage,
+        });
+      }
+      const dispatch = normalizeDispatchResults(runResult);
+      const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs } = dispatch;
+      const durationMs = Date.now() - t0;
+      for (const result of results) {
+        const observation = dispatchObservation(base, result);
+        if (observation) logEvent(cwd, changeId, observation);
+      }
+      state.retries[r.name] = (state.retries[r.name] || 0) + 1;
+      if (r.stage && !state.stages_advanced.includes(r.stage)) state.stages_advanced.push(r.stage);
+      saveRunState(cwd, changeId, state);
+      if (!summary.stages_advanced.includes(r.name)) summary.stages_advanced.push(r.name);
+      logEvent(cwd, changeId, {
+        ...base, outcome: "dispatched",
+        duration_ms: durationMs, workstreams: results.length,
+        timed_out: anyTimedOut, no_gate: !wroteGate,
+        queue_ms: queueWaitMs,
+      });
+      onEvent({ type: "dispatched", ...base, duration_ms: durationMs, timed_out: anyTimedOut, queue_ms: queueWaitMs });
+
+      const retryPlan = transientDelayPlan({
+        retryDelayMs,
+        timedOut: anyTimedOut,
+        stubGate: anyStubGate,
+        exitCode,
+      });
+      const outcomeTransition = dispatchOutcomeTransition({
+        action: r,
+        base,
+        transient: state.transient,
+        maxTransientRetries,
+        retryDelayMs: retryPlan.delayMs,
+        retryReason: retryPlan.retryReason,
+        backoffClass: retryPlan.backoffClass,
+        wroteGate,
+        exitCode,
+        timedOut: anyTimedOut,
+        stubGate: anyStubGate,
+      });
+      applyTransition(outcomeTransition);
+      saveRunState(cwd, changeId, state);
+      if (outcomeTransition.details.dispatchClass === "ok") {
+        if (
+          targetedFix
+          && targetedFixSnapshot
+          && targetedFixChanged(cwd, targetedFixSnapshot) === false
+        ) {
+          const evidence = targetedFixNoSourceChangeEvidence(targetedFixSnapshot);
+          applyTransition(targetedFixNoChangeTransition({
+            action: r,
+            base,
+            evidence,
+            workstream: targetedFix.workstream,
+          }));
+          _writeConvergenceEscalate(r.stage, r.name, summary.halt_reason);
+          return "halt";
+        }
+
+        const affectedFiles = opts.affectedFiles || state.affectedFiles || null;
+        if (r.stage === "stage-04" && affectedFiles) {
+          const outOfScope = _checkScopeGate(cwd, affectedFiles);
+          const scopeTransition = scopeGateTransition({ base, outOfScope });
+          if (scopeTransition) {
+            applyTransition(scopeTransition);
+            return "halt";
+          }
+        }
+
+        return "continue";
+      }
+      if (outcomeTransition.details.retry) {
+        if (outcomeTransition.details.removeStubGate && r.stage) {
+          try { fs.unlinkSync(path.join(gatesDir(cwd, changeId), `${r.stage}.json`)); } catch { /* already gone */ }
+        }
+        await _sleep(outcomeTransition.details.delayMs);
+        return "continue"; // retried in place; next wave-formation re-picks this stage up
+      }
+      return "halt";
+    }
+
+    // ADR-017 §2/§6 (32.6 fix-up): run every wave member concurrently through
+    // core/scheduler.js's mapByHostConcurrency — the same dispatcher
+    // core/orchestrator.js already uses for within-stage workstream fan-out —
+    // rather than a second, bespoke concurrency mechanism (Alternative 2 in
+    // the ADR explicitly rejects "fork a second, wave-specific scheduler").
+    // Keyed by waveMemberKey (host, stage): every wave member is a distinct
+    // stage by construction (_nextWaveImpl never puts the same stage twice in
+    // one wave), so no two members ever share a key within one dispatchWave
+    // call — routing.host_concurrency therefore never throttles cross-stage
+    // wave concurrency (ADR-017 §2: that cap stays scoped to workstreams
+    // *within* one member's own dispatch, unchanged). The wave halts (driver
+    // does not form a new wave next iteration) if ANY member halts, but every
+    // member always runs to completion first — a fast/passing sibling is
+    // never killed or invalidated because another member fails.
+    async function dispatchWave(members, waveId) {
+      const items = members.map((r) => {
+        const role = Array.isArray(r.roles) ? r.roles[0] : null;
+        let host = null;
+        if (role) {
+          try { host = resolveRoute(config, r.stage, role).hostName || null; } catch { host = null; }
+        }
+        return { ...r, host };
+      });
+      const outcomes = await mapByHostConcurrency(items, {
+        key: waveMemberKey,
+        limit: (key) => hostConcurrencyLimit(config, String(key).split("::")[0]),
+      }, (item) => dispatchWaveMember(item, waveId));
+      return outcomes.includes("halt") ? "halt" : "continue";
+    }
+
     if (!trackHalted) {
     for (let i = 0; i < maxIterations; i++) {
       // ADR-007 §2: emit heartbeat before next() so run-log.jsonl always has a
@@ -1254,14 +1576,51 @@ async function run(opts = {}) {
       // stage at the front. For feature runs, pass effectiveTrack so pipeline/track.json
       // and custom_stages selections propagate to next() without a second config read.
       const nextTrack = intent === "repair" ? order : effectiveTrack;
-      const r = _next({
+      const waveResult = _nextWave({
         cwd,
         track: nextTrack,
         changeId,
         auditSkips: true,
         auditedSkips: state.skipped_stages,
       });
-      state.iterations = (state.iterations || 0) + 1;
+      // ADR-017 (32.6): only run-stage/continue-stage members are dispatched
+      // concurrently. A ready set containing anything else (fix-and-retry,
+      // resolve-escalation, merge, skip-stage, fold-sign-off, pipeline-complete,
+      // ...) collapses to its first member, which then falls through the exact
+      // single-action path below unchanged — this is what makes a size-1 wave
+      // byte-identical to next(). Deliberate scope narrowing: dispatchWaveMember
+      // does not replicate the fix-and-retry branch's convergence/archiving
+      // bookkeeping, so 2+ simultaneous fix-and-retry members are not batched
+      // concurrently this session (see this session's DEVIATIONS note) — the
+      // fresh/resuming dispatch this ADR's wall-clock claim is built on is
+      // unaffected, since both authorized regions' first-ever readiness is
+      // always run-stage.
+      let waveActions = waveResult.actions;
+      if (waveActions.length > 1 && !waveActions.every((a) => a.action === "run-stage" || a.action === "continue-stage")) {
+        waveActions = [waveActions[0]];
+      }
+
+      state.iterations = (state.iterations || 0) + 1; // once per wave, not per member
+
+      if (waveActions.length > 1) {
+        state.wave_id_counter += 1;
+        const waveId = state.wave_id_counter;
+        state.last_action = waveActions[0].action;
+        state.current_stage = waveActions.map((a) => a.name).join("+");
+        saveRunState(cwd, changeId, state);
+        logEvent(cwd, changeId, {
+          iteration: state.iterations,
+          outcome: "wave-formed",
+          wave_id: waveId,
+          members: waveActions.map((a) => ({ stage: a.stage, name: a.name, action: a.action })),
+        });
+        onEvent({ type: "wave-formed", iteration: state.iterations, wave_id: waveId, members: waveActions.map((a) => a.name) });
+        const waveControl = await dispatchWave(waveActions, waveId);
+        if (waveControl === "halt") break;
+        continue;
+      }
+
+      const r = waveActions[0];
       state.last_action = r.action;
       state.current_stage = r.name || null;
       saveRunState(cwd, changeId, state);

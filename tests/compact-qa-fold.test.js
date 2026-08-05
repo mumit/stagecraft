@@ -91,10 +91,15 @@ describe("29.4: foldQaSweep / isCompactQaTrack", () => {
 // fold, this test's deep-equal catches it; the rendered-prompt comparison
 // additionally proves buildDescriptor()/renderStagePrompt() produce
 // byte-identical output for the live STAGES entry vs. this snapshot.
+//
+// ADR-017 (32.6, 2026-08-05): each of the four gains `dependsOn: ["qa"]` —
+// this snapshot is updated to match, deliberately, since that's new
+// intentional behavior this item adds, not drift the test should catch.
 const FULL_TRACK_QA_SNAPSHOT = {
   "accessibility-audit": {
     stage: "stage-06b",
     roles: ["qa"],
+    dependsOn: ["qa"],
     objective: "Audit UI changes for WCAG accessibility violations using axe-core / pa11y / lighthouse. PASS requires zero critical + zero serious findings.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
     allowedWrites: ["pipeline/accessibility-report.md", "pipeline/axe-report.json", "pipeline/gates/stage-06b.json"],
@@ -112,6 +117,7 @@ const FULL_TRACK_QA_SNAPSHOT = {
   "observability-gate": {
     stage: "stage-06c",
     roles: ["platform"],
+    dependsOn: ["qa"],
     objective: "Verify that every metric / log / trace the design-spec promised is actually emitted by the shipped code. Closes the gap where designs claim instrumentation that never lands.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
     allowedWrites: ["pipeline/observability-report.md", "pipeline/gates/stage-06c.json"],
@@ -127,6 +133,7 @@ const FULL_TRACK_QA_SNAPSHOT = {
   "verification-beyond-tests": {
     stage: "stage-06d",
     roles: ["verifier"],
+    dependsOn: ["qa"],
     objective: "Apply property-based testing, mutation testing, and/or formal verification to the changed code. Run AFTER stage-06 (qa) PASS — tests are the floor, this stage raises the ceiling. Surface counterexamples + surviving mutants + invariant violations as blocking findings.",
     // Phase-35 item 35.1: pipeline-artifact deps are optional (soft readFirst)
     // so this stage can also run standalone with no predecessor gates.
@@ -158,6 +165,7 @@ const FULL_TRACK_QA_SNAPSHOT = {
   "performance-budget": {
     stage: "stage-06e",
     roles: ["qa"],
+    dependsOn: ["qa"],
     objective: "Measure Lighthouse performance scores, bundle size delta, and load-test throughput against project budgets. FAIL if any budget is exceeded. PASS (with skipped_reason) when the change has no performance-relevant surface.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
     allowedWrites: ["pipeline/performance-report.md", "pipeline/lhci-result.json", "pipeline/gates/stage-06e.json"],

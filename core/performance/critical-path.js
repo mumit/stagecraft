@@ -41,6 +41,11 @@ function ensureDispatch(map, event) {
       stage: event.stage || null,
       name: event.name || event.stage || null,
       action: event.action || null,
+      // ADR-017 (32.6): present on dispatch-started/dispatched events emitted
+      // from a real (2+ member) wave; null for every pre-017 dispatch and for
+      // a wave that collapsed to size 1 (byte-identical to pre-017 — no
+      // wave_id field on those events at all, per dispatchWaveMember's base).
+      wave_id: typeof event.wave_id === "number" ? event.wave_id : null,
       started_at: null,
       finished_at: null,
       duration_ms: null,
@@ -52,7 +57,42 @@ function ensureDispatch(map, event) {
   }
   const rec = map.get(key);
   if (!rec.action && event.action) rec.action = event.action;
+  if (rec.wave_id === null && typeof event.wave_id === "number") rec.wave_id = event.wave_id;
   return rec;
+}
+
+// ADR-017 §4 (32.6): realized (not estimated) parallel savings from stage
+// waves, grouped by wave_id — sum(member durations) - max(member durations).
+// A wave wall time is the slowest member, not the sum of all members, unlike
+// the sequential dispatch_wall_ms/reported_critical_path_ms accounting above
+// (which still sums every dispatch as if run one-after-another — this is
+// additive information, not a correction to that figure, per the item's
+// "don't replace the existing sequential accounting, add to it" instruction).
+function computeWaveSavings(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (row.wave_id === null) continue;
+    if (!groups.has(row.wave_id)) groups.set(row.wave_id, []);
+    groups.get(row.wave_id).push(row);
+  }
+  const waves = [...groups.entries()]
+    .map(([waveId, members]) => {
+      const durations = members.map((m) => m.duration_ms).filter((v) => typeof v === "number");
+      const complete = durations.length === members.length && members.length > 0;
+      const sumMs = complete ? durations.reduce((total, v) => total + v, 0) : null;
+      const wallMs = complete ? Math.max(...durations) : null;
+      return {
+        wave_id: waveId,
+        member_count: members.length,
+        members: members.map((m) => ({ stage: m.stage, name: m.name, duration_ms: m.duration_ms })),
+        sum_member_duration_ms: sumMs,
+        wall_ms: wallMs,
+        realized_savings_ms: complete ? Math.max(0, sumMs - wallMs) : null,
+      };
+    })
+    .sort((a, b) => a.wave_id - b.wave_id);
+  const waveRealizedSavingsMs = waves.reduce((total, w) => total + (w.realized_savings_ms || 0), 0);
+  return { waves, waveRealizedSavingsMs };
 }
 
 function analyzeEvents(events, opts = {}) {
@@ -214,6 +254,7 @@ function analyzeEvents(events, opts = {}) {
   const workstreamComputeMs = rows.reduce((total, row) => total + (row.workstream_compute_ms || 0), 0);
   const parallelSavingsMs = rows.reduce((total, row) => total + (row.parallel_savings_ms || 0), 0);
   const queueWaitMs = rows.reduce((total, row) => total + (row.queue_ms || 0), 0);
+  const { waves, waveRealizedSavingsMs } = computeWaveSavings(rows);
 
   const report = {
     schema_version: SCHEMA_VERSION,
@@ -228,6 +269,11 @@ function analyzeEvents(events, opts = {}) {
     parallel_savings_ms: rows.length > 0 ? parallelSavingsMs : null,
     retry_delay_ms: retryDelayMs,
     queue_wait_ms: queueWaitMs,
+    // ADR-017 (32.6): empty array / 0 when the run predates waves or never
+    // formed one — distinct from `null`, since "no waves happened" is a valid
+    // (and, pre-32.6-rollout, the common) observed state, not missing data.
+    waves,
+    wave_realized_savings_ms: waveRealizedSavingsMs,
     telemetry_coverage: {
       dispatch_duration: dispatchDurationCoverage,
       workstream_duration: workstreamDurationCoverage,
@@ -331,6 +377,7 @@ function renderMarkdown(report) {
   out.push(`- Estimated parallel savings: ${durationLabel(report.parallel_savings_ms)}`);
   out.push(`- Queue wait time: ${durationLabel(report.queue_wait_ms)}`);
   out.push(`- Retry delay time: ${durationLabel(report.retry_delay_ms)}`);
+  out.push(`- Wave realized parallel savings: ${durationLabel(report.wave_realized_savings_ms)}`);
   out.push("");
 
   out.push("## Dispatches");
@@ -342,6 +389,18 @@ function renderMarkdown(report) {
     out.push(`| ${row.iteration ?? "—"} | ${row.name || row.stage || "—"} | ${row.action || "—"} | ${durationLabel(row.duration_ms)} | ${durationLabel(row.queue_ms)} | ${row.workstreams.length} | ${durationLabel(row.workstream_compute_ms)} | ${durationLabel(row.parallel_savings_ms)} | ${coverage} |`);
   }
   out.push("");
+
+  if (report.waves.length > 0) {
+    out.push("## Waves (ADR-017)");
+    out.push("");
+    out.push("| Wave | Members | Sum member duration | Wall (slowest member) | Realized savings |");
+    out.push("|---:|---|---:|---:|---:|");
+    for (const wave of report.waves) {
+      const names = wave.members.map((m) => m.name || m.stage || "—").join(" ∥ ");
+      out.push(`| ${wave.wave_id} | ${names} | ${durationLabel(wave.sum_member_duration_ms)} | ${durationLabel(wave.wall_ms)} | ${durationLabel(wave.realized_savings_ms)} |`);
+    }
+    out.push("");
+  }
 
   if (report.verification_reuse_candidates.length > 0) {
     out.push("## Verification Reuse Candidates");
@@ -375,6 +434,7 @@ module.exports = {
   analyzeEvents,
   analyzeProject,
   collectVerificationReuseCandidates,
+  computeWaveSavings,
   durationLabel,
   readJsonLines,
   renderMarkdown,
