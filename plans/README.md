@@ -5,8 +5,8 @@ PR-sized work items with file/line anchors, acceptance criteria, and verificatio
 written to be executed one item at a time.
 
 **Current state (2026-08-04):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, and 35 are
-complete. Phase 32 is mostly complete with two open items. Phase 36 is written and ready to
-run, starting with a report-only spike. Phases 21, 25, and 26 are
+complete, as is phase 36. Phase 32 is mostly complete with two open items. Phase 37 is
+written and ready to run and deliberately adds no new capability. Phases 21, 25, and 26 are
 proposed and not authorized for implementation. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
@@ -49,7 +49,8 @@ listed under [Evidence reviews](#evidence-reviews).
 | 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | ✅ complete — 33.1 eval capture · 33.2 `devteam evals run` · 33.3 `prompt_pack_version` · 33.4 `scripts/prompt-optimize.js` |
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | ✅ complete — 34.1 ACP adapter (PR #368) · 34.2 attestation export (PR #369) · 34.3 compliance mapping (PR #370) · 34.4 gemini-cli → plugin package |
 | 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | ✅ complete — 35.1 review-only track (PR #373) · 35.2 `devteam review-pr` (PR #375) · 35.3 stage-06d stamping (PR #376) · 35.4 findings report (PR #377) · 35.5 refactor track (PR #378) |
-| 36 | [phase-36-external-review-mode.md](phase-36-external-review-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | External review mode (ACP-first): two-root permissions with enforced read-only, framework paths across roots, review workspace, `devteam review <path>`, standalone `review-pr` | 📝 proposed (2026-08-04) — start with the 36.0 spike |
+| 36 | [phase-36-external-review-mode.md](phase-36-external-review-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | External review mode (ACP-first): two-root permissions with enforced read-only, framework paths across roots, review workspace, `devteam review <path>`, standalone `review-pr` | ✅ complete (2026-08-04) — all seven items 36.0–36.6; see [`acp-read-scope.md`](acp-read-scope.md) for the 36.0 spike findings |
+| 37 | [phase-37-interface-and-token-efficiency.md](phase-37-interface-and-token-efficiency.md) | [prompts](prompts/roadmap-2026-prompts.md) | Interface and token efficiency: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, ADR-017 decision | 📝 proposed (2026-08-04) — **adds no capability by design** |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt. Phases 1–4
 and the documentation phase use [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md); phases
@@ -69,6 +70,7 @@ Everything below is either written-but-unbuilt or deliberately parked. Verified 
 | **32.2 stage DAG waves** | [phase-32](phase-32-performance-parallelism.md) · [ADR-017](../docs/adr/017-dag-wave-execution.md) | ADR-017 is written but its status is **Proposed**, so wave execution was never built. This is the largest remaining wall-clock win (~18 sequential stage slots → ~13). Needs the ADR accepted first. |
 | **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred: the item requires a host adapter that exposes worktree-isolated dispatch, and none does today. Its own precondition cannot be met, so it was not attempted. |
 | **Phase 36 — external review mode** | [phase-36](phase-36-external-review-mode.md) | Written 2026-08-04, not started. Seven items making review work without installing Stagecraft into the reviewed repo, built on ACP's negotiated session cwd. 36.0 is a report-only spike whose answer decides how 36.2 is built — run it first. |
+| **Phase 37 — interface & token efficiency** | [phase-37](phase-37-interface-and-token-efficiency.md) | Written 2026-08-04 from [experience-review-2026-08.md](experience-review-2026-08.md), not started. Six items, no new capability: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, and a terminal decision on ADR-017. |
 | **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Proposed ([#312](https://github.com/telus-labs/stagecraft/issues/312)). Partly overtaken by phases 28 and 32, which delivered telemetry, the run corpus, and cache-first prompts. Worth re-scoping rather than running as written. |
@@ -97,7 +99,8 @@ They document why certain capability gates remain shut and what would open them.
 | File | Topic | Status |
 |---|---|---|
 | [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md) | End-to-end pipeline critical path and safe acceleration roadmap | Proposed; no implementation authorized — items #1/#5/#10 superseded by phase-32 |
-| [landscape-review-2026-07.md](landscape-review-2026-07.md) | Full competitive review vs the mid-2026 coding-agent landscape; strategy ("the auditable agent SDLC that learns") and the phase 28–34 roadmap | Proposed; no implementation authorized |
+| [landscape-review-2026-07.md](landscape-review-2026-07.md) | Full competitive review vs the mid-2026 coding-agent landscape; strategy ("the auditable agent SDLC that learns") and the phase 28–34 roadmap | Largely delivered — phases 28–31, 33–36 shipped |
+| [experience-review-2026-08.md](experience-review-2026-08.md) | Developer experience, productivity, and token cost measured by running the CLI after phases 28–36. Finds capability strong and the interface lagging: 44 commands, 244 flags, a 343-line help with no per-command help, and a 268-byte cacheable prompt prefix against ~22 KB re-read per dispatch | Proposed; produced [phase-37](phase-37-interface-and-token-efficiency.md) |
 
 ---
 
