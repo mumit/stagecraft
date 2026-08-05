@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const { listRoles, ROLES_DIR } = require("../roles");
 const baseInstall = require("./base-install");
-const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection } = require("./render-helpers");
+const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection } = require("./render-helpers");
 
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -128,22 +128,31 @@ function makeMarkdownHostAdapter(capabilities) {
   // that want to attach cache_control breakpoints (e.g. openai-compat
   // against Anthropic-compatible endpoints) call renderStagePromptLayers()
   // directly for the per-layer text.
+  //
+  // Phase 37.2: layers 1-2 now carry the framework/role-brief content itself
+  // (prompts.inline_framework, default true), not just their paths — 32.1
+  // made the prefix byte-identical but left it a 268-byte pointer block; the
+  // ~22 KB the model used to re-read via tool calls every dispatch now sits
+  // in this cacheable position instead. false reverts to the pre-37.2
+  // pointer text.
   function renderStagePromptLayers(descriptor, ctx) {
     const promptRole = descriptor.subagent || descriptor.role;
+    const rolePromptRelPath = `${capabilities.rolePromptsDir}/${promptRole}.md`;
     // 36.2: a role brief is always framework content — resolveFrameworkPath()
     // rewrites it to an absolute stateRoot path only when ctx.processCwd
     // (the subject) differs from ctx.cwd (the review workspace); every
     // other run gets this string back unchanged.
-    const rolePromptPath = resolveFrameworkPath(`${capabilities.rolePromptsDir}/${promptRole}.md`, ctx);
+    const rolePromptPath = resolveFrameworkPath(rolePromptRelPath, ctx);
     const lines = [];
 
     // --- Layer 1: framework preamble/rules (constant per version) ---
-    renderFrameworkPreamble(lines, descriptor);
+    renderFrameworkPreamble(lines, descriptor, ctx);
     const layer1End = lines.length;
 
     // --- Layer 2: role brief (constant per role) ---
-    lines.push(`Read the role prompt at \`${rolePromptPath}\` before acting on this stage.`);
-    lines.push("");
+    // 37.2: prompts.inline_framework appends the brief's content right after
+    // this pointer sentence — see renderRoleBriefBlock's why-comment.
+    renderRoleBriefBlock(lines, `Read the role prompt at \`${rolePromptPath}\` before acting on this stage.`, rolePromptRelPath, ctx);
     const layer2End = lines.length;
 
     // --- Layer 3: learned context (constant per run) ---

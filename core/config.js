@@ -120,6 +120,17 @@ const DEFAULTS = {
   evals: {
     capture: true,
   },
+  // 37.2 (plans/phase-37-interface-and-token-efficiency.md §37.2): inline the
+  // framework set (AGENTS.md, .devteam/rules/*.md) and the role brief into the
+  // prompt itself, ahead of everything stage-specific, so the block is
+  // byte-identical across every dispatch of the same role and providers can
+  // cache it. Default true. false reverts to the pre-37.2 path-pointer
+  // behaviour (the model reads the files itself via tool calls) — an escape
+  // hatch for a host with no prefix caching and a small context window, and
+  // for hosts where each dispatch is cheaper as a fresh, smaller prompt.
+  prompts: {
+    inline_framework: true,
+  },
 };
 
 function configPath(cwd) {
@@ -209,6 +220,9 @@ function loadConfig(cwd = process.cwd()) {
       },
       evals: {
         capture: parsed.evals?.capture !== false,
+      },
+      prompts: {
+        inline_framework: parsed.prompts?.inline_framework !== false,
       },
       _source: "file",
       _path: p,
@@ -520,6 +534,11 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #                                 # + run-end auto-ingest; false disables both");
   lines.push("  # inject_top_k: 3                # results queried per stage dispatch");
   lines.push("  # inject_similarity_floor: 0     # drop results below this cosine similarity");
+  lines.push("");
+  lines.push("# prompts:");
+  lines.push("  # inline_framework: true   # phase-37 item 37.2 — inline AGENTS.md, rules/, and");
+  lines.push("  #                           # the role brief into the cacheable prompt prefix;");
+  lines.push("  #                           # false reverts to the pre-37.2 path-pointer behaviour");
   lines.push("");
   lines.push("# evals:");
   lines.push("  # capture: true   # phase-33 item 33.1 — replayable case on gate FAIL/ESCALATE");

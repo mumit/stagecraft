@@ -39,7 +39,10 @@ function renderStagePromptLayers(descriptor, ctx) {
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
-  renderFrameworkPreamble(lines, descriptor);
+  // 37.2: prompts.inline_framework (default true) inlines this content too;
+  // layer 2 below was already always inlined (see its comment) and is
+  // unaffected by the flag.
+  renderFrameworkPreamble(lines, descriptor, ctx);
   const layer1End = lines.length;
 
   // --- Layer 2: role brief (constant per role) ---

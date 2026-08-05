@@ -184,6 +184,89 @@ for (const host of LAYERED_HOSTS) {
 }
 
 // ---------------------------------------------------------------------------
+// 6. Phase 37.2: prompts.inline_framework — inlined content is the
+//    byte-identical cacheable prefix; false reverts to the pre-37.2
+//    path-pointer rendering, byte-identical to before this item.
+// ---------------------------------------------------------------------------
+
+for (const host of LAYERED_HOSTS) {
+  test(`${host}: prompts.inline_framework (default true) makes the byte-identical prefix cover the full inlined framework+role-brief block`, () => {
+    const adapter = loadAdapter(host);
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-inline-framework-"));
+    try {
+      // Deliberately large, distinctive framework content — proves layers
+      // 1-2 carry actual bytes now, not just a path pointer.
+      fs.writeFileSync(path.join(cwd, "AGENTS.md"), "# Project\n" + "Context line.\n".repeat(50));
+      fs.mkdirSync(path.join(cwd, ".devteam", "rules"), { recursive: true });
+      fs.writeFileSync(path.join(cwd, ".devteam", "rules", "pipeline.md"), "# Pipeline rules\n" + "Rule line.\n".repeat(50));
+      fs.writeFileSync(path.join(cwd, ".devteam", "rules", "gates-core.md"), "# Gates rules\n" + "Gate line.\n".repeat(50));
+      if (typeof adapter.install === "function") adapter.install(cwd, {});
+
+      const ctx = { track: "full", feature: "add HTTP endpoint", orchestrator: "devteam@test", cwd };
+      // "build" and "pre-review" both dispatch "backend" — same-run,
+      // same-role, different-stage pair, same as the byte-identical test above.
+      const descA = descriptorFor("build", "backend");
+      const descB = descriptorFor("pre-review", "backend");
+
+      const rendA = adapter.renderStagePromptLayers(descA, ctx);
+      const rendB = adapter.renderStagePromptLayers(descB, ctx);
+      assert.equal(rendA.layers[0], rendB.layers[0], `${host}: inlined layer 1 must stay byte-identical`);
+      assert.equal(rendA.layers[1], rendB.layers[1], `${host}: inlined layer 2 must stay byte-identical`);
+
+      const promptA = adapter.renderStagePrompt(descA, ctx);
+      const promptB = adapter.renderStagePrompt(descB, ctx);
+      let shared = 0;
+      const min = Math.min(promptA.length, promptB.length);
+      while (shared < min && promptA[shared] === promptB[shared]) shared++;
+
+      // The acceptance bar is a length assertion, not a substring match: the
+      // measured shared prefix must cover at least the full inlined layer1+2
+      // block renderStagePromptLayers itself reports as the boundary (it can
+      // run a little longer — "build" is stage-04, "pre-review" is stage-04a,
+      // so "# Stage stage-04" coincidentally matches a few bytes into layer 4).
+      const expectedPrefixLen = rendA.layers[0].length + rendA.layers[1].length;
+      assert.ok(shared >= expectedPrefixLen,
+        `${host}: shared-prefix length must cover the full inlined layer1+layer2 block (${expectedPrefixLen} B), got ${shared} B`);
+      // Pre-37.2 measured pointer-only prefix was ~213 B (plans/phase-37 §37.2
+      // verify-first); the inlined fixture above is far larger than that.
+      assert.ok(shared > 1000,
+        `${host}: inlined prefix (${shared} B) must be far larger than the pre-37.2 pointer-only prefix (~213 B)`);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test(`${host}: prompts.inline_framework:false keeps the pre-37.2 path-pointer rendering byte-identical`, () => {
+    const adapter = loadAdapter(host);
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-inline-framework-off-"));
+    try {
+      fs.mkdirSync(path.join(cwd, ".devteam"), { recursive: true });
+      fs.writeFileSync(path.join(cwd, ".devteam", "config.yml"), "prompts:\n  inline_framework: false\n");
+      const ctx = { track: "full", feature: "x", orchestrator: "devteam@test", cwd };
+
+      const rend = adapter.renderStagePromptLayers(descriptorFor("build", "backend"), ctx);
+
+      assert.equal(
+        rend.layers[0],
+        ["## Framework (read first — every stage, every role)", "- AGENTS.md", "- .devteam/rules/pipeline.md", "- .devteam/rules/gates-core.md", ""].join("\n"),
+        `${host}: layer 1 must stay the pre-37.2 path-pointer text when inline_framework is false`,
+      );
+
+      if (host !== "generic") {
+        // generic has always inlined the role brief unconditionally — it has
+        // no native subagent/read_file mechanism to point at instead (see
+        // hosts/generic/adapter.js). inline_framework only ever gated its
+        // layer 1; layer 2 there is exempt from this pointer-mode check.
+        assert.equal(rend.layers[1].split("\n").length, 2,
+          `${host}: layer 2 must stay a single pointer line + blank line when inline_framework is false, got:\n${rend.layers[1]}`);
+      }
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 5. openai-compat cache_control emission fixture
 // ---------------------------------------------------------------------------
 
@@ -261,6 +344,65 @@ hosts:
     } finally {
       global.fetch = origFetch;
       delete process.env.PROMPT_LAYOUT_TEST_KEY;
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("invoke(): a stubbed cache-aware endpoint reports cached_tokens > 0 on the second dispatch of the same role (37.2)", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-cached-tokens-"));
+    const origFetch = global.fetch;
+    try {
+      fs.mkdirSync(path.join(cwd, ".devteam"), { recursive: true });
+      fs.mkdirSync(path.join(cwd, "pipeline", "gates"), { recursive: true });
+      fs.writeFileSync(path.join(cwd, ".devteam", "config.yml"), `
+routing:
+  default_host: openai-compat
+pipeline:
+  default_track: full
+hosts:
+  openai-compat:
+    base_url: https://example.invalid/v1
+    api_key_env: PROMPT_LAYOUT_TEST_CACHED_TOKENS_KEY
+    models:
+      default: test/model
+    caching:
+      enabled: true
+`);
+      process.env.PROMPT_LAYOUT_TEST_CACHED_TOKENS_KEY = "sk-stub";
+
+      // Simulates an Anthropic-style prompt-caching endpoint: the first
+      // dispatch reports nothing cached (cold cache); the second dispatch of
+      // the same role — byte-identical layers 1-2 prefix, per 37.2 — reports
+      // the whole prefix back as cached_tokens.
+      let callCount = 0;
+      global.fetch = async () => {
+        callCount++;
+        const cachedTokens = callCount === 1 ? 0 : 4000;
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Done." } }],
+            usage: { prompt_tokens: 5000, completion_tokens: 20, prompt_tokens_details: { cached_tokens: cachedTokens } },
+          }),
+          text: async () => "{}",
+        };
+      };
+
+      const { invoke } = require(path.join(REPO_ROOT, "hosts", "openai-compat", "invoke"));
+      // "build" and "pre-review" both dispatch "backend" — same role,
+      // different stage, same as the byte-identical prefix tests above.
+      const descA = descriptorFor("build", "backend", { workstreamId: "stage-04.backend" });
+      const descB = descriptorFor("pre-review", "backend", { workstreamId: "stage-04a.backend" });
+      const ctx = { track: "full", feature: "x", cwd, isolation: "in-place", changeId: null };
+
+      const first = await invoke(descA, ctx, null);
+      const second = await invoke(descB, ctx, null);
+
+      assert.equal(first.usage.cachedTokens, undefined, "first (cold) dispatch reports no cached tokens");
+      assert.ok(second.usage.cachedTokens > 0, "second dispatch of the same role must report cached_tokens > 0");
+    } finally {
+      global.fetch = origFetch;
+      delete process.env.PROMPT_LAYOUT_TEST_CACHED_TOKENS_KEY;
       fs.rmSync(cwd, { recursive: true, force: true });
     }
   });

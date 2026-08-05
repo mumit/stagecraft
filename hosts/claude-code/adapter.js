@@ -348,6 +348,10 @@ function status(targetDir) {
 // the prefix cacheable by the claude-code CLI/API automatically.
 // renderStagePrompt() below is a thin wrapper that returns the full joined
 // string.
+//
+// Phase 37.2: layers 1-2 carry the framework/role-brief content itself by
+// default (prompts.inline_framework) — see render-helpers.js's
+// renderFrameworkPreamble/renderRoleBriefBlock why-comments.
 function renderStagePromptLayers(descriptor, ctx) {
   // descriptor.subagent (when set) overrides the role-to-agent mapping —
   // used by stages like peer-review where every workstream-area dispatches
@@ -356,16 +360,19 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? ROLE_FRONTMATTER[descriptor.subagent]
     : ROLE_FRONTMATTER[descriptor.role];
   const agentName = fm ? fm.name : (descriptor.subagent || descriptor.role);
-  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderScopeLine, splitReadFirst } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPriorKnowledge, renderRoleBriefBlock, renderScopeLine, splitReadFirst } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
-  renderFrameworkPreamble(lines, descriptor);
+  renderFrameworkPreamble(lines, descriptor, ctx);
   const layer1End = lines.length;
 
   // --- Layer 2: role brief (constant per role) ---
-  lines.push(`Use the **${agentName}** subagent (\`.claude/agents/${agentName}.md\`) for this workstream.`);
-  lines.push("");
+  // 37.2: the pointer sentence is kept unchanged either way — beyond being
+  // the plan's required "short note," it also carries the Task-tool
+  // subagent-invocation instruction, which inlining must not remove.
+  // prompts.inline_framework appends the brief's content right after it.
+  renderRoleBriefBlock(lines, `Use the **${agentName}** subagent (\`.claude/agents/${agentName}.md\`) for this workstream.`, `.claude/agents/${agentName}.md`, ctx);
   const layer2End = lines.length;
 
   // --- Layer 3: learned context (constant per run) ---
