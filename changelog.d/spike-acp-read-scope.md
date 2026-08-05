@@ -1,5 +1,0 @@
-### Added
-
-- **docs(analysis):** ACP read-scope evidence review (`plans/acp-read-scope.md`), item 36.0. Ran the real `@agentclientprotocol/claude-agent-acp` agent (0.64.2, real model, real cost) against a session cwd with an unrelated absolute-path target outside it, plain and symlinked, plus a denial control. Finding: the agent's own filesystem access is not sandboxed to the ACP session cwd — reads succeed unsandboxed either way, gated by one `session/request_permission` round-trip that `hosts/acp/permissions.js`'s `WRITE_KINDS` (`edit`/`delete`/`move` only) already auto-allows for `read`/`execute`-kind calls today. Recommendation for 36.2: render framework paths as absolute paths into `stateRoot`, no permission-layer change required.
-
-  Honest scope note: report-only spike, no production code changed. Tool choice (Read vs. shell `cat`) was observed to be non-deterministic across turns for the same prompt — both succeeded identically once permission was granted, so this doesn't change the recommendation, but it means a single run isn't a guarantee of which tool a given dispatch will use.
