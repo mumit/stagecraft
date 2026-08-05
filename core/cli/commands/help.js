@@ -194,6 +194,20 @@ Commands:
   evidence identity               Inspect the pseudonymous project reference.
        [--rotate|--delete] --yes   Rotation/deletion require confirmation; raw
                                    identity entropy is never printed.
+  corpus stats [--json]            Summarize the run corpus
+                                   (.devteam/corpus/dispatches.jsonl): total
+                                   dispatches, per-stage pass rates, per-(role,
+                                   host) dispatch counts — D5/H3 evidence-gate
+                                   questions (docs/BACKLOG.md).
+  evals <gc|run|compare>           Eval flywheel (phase 33). gc removes
+       [--stub]                    unreferenced blobs. run replays captured
+       [--headless-host <h>]       cases against the CURRENT framework: --stub
+       [--pack A --pack B]         (default) scores structurally, free;
+       [--min-n N] [--json]        --headless-host <h> dispatches for real and
+                                   flags a resolved case that fails again as a
+                                   regression. compare --pack <A> --pack <B>
+                                   reports per-stage pass-rate deltas between
+                                   two prompt_pack_version values.
   summary [--json]                 One-screen pipeline state report.
   log [--follow] [--json]          Chronological event timeline: every gate
                                    and every artifact write, in mtime order,

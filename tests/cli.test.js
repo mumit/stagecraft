@@ -2,7 +2,7 @@ const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { makeTargetProject, seedGate, cleanup, runCLI } = require("./_helpers");
+const { makeTargetProject, seedGate, cleanup, runCLI, REPO_ROOT } = require("./_helpers");
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -29,6 +29,19 @@ describe("cli: help + listing", () => {
     assert.match(r.stdout, /merge/);
     assert.match(r.stdout, /summary/);
     assert.match(r.stdout, /doctor/);
+  });
+
+  it("help lists every registered command, not just a hand-picked sample", () => {
+    // Regression: corpus and evals are real, working, --help-documented
+    // commands (registered in core/cli/command-list.js) that were previously
+    // missing from this hand-written top-level listing entirely.
+    const COMMAND_MODULES = require(path.join(REPO_ROOT, "core", "cli", "command-list"));
+    const r = runCLI(["help"]);
+    assert.equal(r.status, 0);
+    for (const commandName of Object.keys(COMMAND_MODULES)) {
+      const re = new RegExp(`(^|\\n)\\s*${commandName.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}[\\s<[-]`);
+      assert.match(r.stdout, re, `help listing is missing command "${commandName}"`);
+    }
   });
 
   it("stages lists known stage names", () => {
