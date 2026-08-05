@@ -35,11 +35,17 @@ describe("cli: help + listing", () => {
     // Regression: corpus and evals are real, working, --help-documented
     // commands (registered in core/cli/command-list.js) that were previously
     // missing from this hand-written top-level listing entirely.
+    //
+    // 37.4: the default listing is now the grouped one-screen view (commands
+    // are " · "-separated within a group line rather than one per line), so
+    // the match is by word boundary instead of start-of-line. The exactly-
+    // once coverage guarantee itself is asserted more strongly in
+    // tests/help-cmd.test.js against core/cli/commands/help.js's GROUPS data.
     const COMMAND_MODULES = require(path.join(REPO_ROOT, "core", "cli", "command-list"));
     const r = runCLI(["help"]);
     assert.equal(r.status, 0);
     for (const commandName of Object.keys(COMMAND_MODULES)) {
-      const re = new RegExp(`(^|\\n)\\s*${commandName.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}[\\s<[-]`);
+      const re = new RegExp(`\\b${commandName.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`);
       assert.match(r.stdout, re, `help listing is missing command "${commandName}"`);
     }
   });

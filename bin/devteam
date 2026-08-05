@@ -39,9 +39,12 @@ function loadCommand(commandName) {
 function main() {
   const [, , command, ...rest] = process.argv;
 
-  // Help aliases bypass the registry lookup (no flag parsing needed).
+  // Help aliases bypass the registry lookup, but still need flag parsing so
+  // `devteam --help --all` (37.4) reaches the full reference.
   if (command === "-h" || command === "--help" || command === undefined) {
-    return loadCommand("help").run([], {});
+    const helpCmd = loadCommand("help");
+    const { positional, flags } = parseFlags(rest, helpCmd.flags);
+    return helpCmd.run(positional, flags);
   }
 
   const cmd = loadCommand(command);
