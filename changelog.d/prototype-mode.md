@@ -1,1 +1,0 @@
-- Add `devteam prototype`, a pre-SDLC workflow for fast prototype packets, feedback capture, and explicit promotion into normal Stagecraft tracks.
