@@ -1,7 +1,7 @@
 # ADR 017 — Stage DAG waves: `dependsOn` metadata + wave execution semantics
 
-**Status:** Proposed
-**Date:** 2026-08-02
+**Status:** Accepted (scoped — see Resolution)
+**Date:** 2026-08-02 (proposed) · 2026-08-05 (accepted)
 **Authors:** Mumit Khan (design), drafted with Claude Sonnet 5
 
 ## Context
@@ -322,3 +322,40 @@ without touching `dependsOn` or track structure.
    (see Consequences, "this ADR authorizes exactly two regions") but a reviewer may want
    that constraint stated even more explicitly in code (e.g., a comment on `dependsOn`
    itself, not just this ADR).
+
+## Resolution (2026-08-05)
+
+**Accepted, scoped exactly as drafted**: the two curated regions
+(`{stage-04a ∥ stage-04c}` and `{stage-06b ∥ stage-06c ∥ stage-06d ∥ stage-06e}`), with
+`autonomy.max_parallel_stages` defaulting to **2**. This satisfies ADR-015's deferral —
+"the next DAG-wave phase must add dependency metadata and invalidation rules in a separate
+ADR before stages are reordered or overlapped" — via §1–7 above, and unblocks
+`plans/phase-32-performance-parallelism.md` item 32.2. Implementation is out of scope for
+this decision (`plans/phase-37-interface-and-token-efficiency.md` item 37.6 explicitly
+requires deciding and implementing in separate sessions) and is tracked as a new,
+concretely-scoped follow-up: phase-32 item **32.6** ("Stage DAG wave execution").
+
+Answers to the three open reviewer questions, so none is left open:
+
+1. **`max_parallel_stages` stays at default 2**, not 4. There is no corpus evidence yet on
+   host/provider behavior under 4-way concurrent dispatch, and this repo's own pattern for
+   exactly this situation is to ship the conservative default and gate a change behind
+   evidence (see `plans/h3-ground-truth.md`, `plans/adaptive-routing-evidence.md`). The
+   `{06b,06c,06d,06e}` region shipping as two waves of two on its first iteration is an
+   acceptable, reversible cost — any operator can raise `autonomy.max_parallel_stages`
+   locally once they have their own evidence. Revisit the *shipped default* only with
+   run-corpus data on realized wave wall-time at N=4.
+2. **The `stage-04c` `readFirst` trim stays narrow** — drop exactly the two conflicting
+   artifacts (`pipeline/pre-review.md`, `pipeline/security-review.md`), nothing more. The
+   general "artifact-tolerant readFirst" rendering fix stays Phase 35's scope; folding it
+   into 32.6 would couple a scheduling change to a rendering change and make both harder to
+   review or revert independently.
+3. **This ADR's authorization stays strictly the two named regions.** Any future wave
+   region requires its own readFirst-vs-`dependsOn` curation pass, recorded in an ADR
+   amendment or a new ADR — never a mechanical extension of `dependsOn`. 32.6's
+   implementation must add a code comment on the `dependsOn` field in
+   `core/pipeline/stages.js` stating this constraint, so the boundary is visible to anyone
+   editing the STAGES table later, not just to a reader of this ADR.
+
+No wave-execution code is part of this decision. See phase-32 item 32.6 for the
+implementation scope.

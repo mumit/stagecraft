@@ -1,6 +1,7 @@
 # Phase 32 — Performance & Parallelism
 
-Status: **mostly complete** (2026-08-02) — 32.1, 32.3, 32.5 shipped; 32.2 partial; 32.4 deferred.
+Status: **mostly complete** (2026-08-05) — 32.1, 32.3, 32.5 shipped; 32.2 (ADR-017) accepted,
+implementation scope moved to 32.6; 32.4 deferred.
 From [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.5;
 supersedes the analysis-only [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md)
 items #1, #5, #10.
@@ -10,10 +11,11 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §32
 | Item | Status |
 |---|---|
 | 32.1 Cache-first prompt assembly | ✅ complete (PR #360) |
-| 32.2 Stage DAG waves | ⏸ partial — ADR-017 drafted (`docs/adr/017-dag-wave-execution.md`), still status `Proposed` (not Accepted); no wave-execution code (`dependsOn`, `max_parallel_stages`, `wave_id`, critical-path reporting) exists |
+| 32.2 Stage DAG waves (ADR) | ✅ complete — [ADR-017](../docs/adr/017-dag-wave-execution.md) **Accepted** 2026-08-05, scoped to exactly two curated regions (`{04a ∥ 04c}`, `{06b ∥ 06c ∥ 06d ∥ 06e}`), `autonomy.max_parallel_stages` default 2; wave-execution code is out of scope for this item and tracked as 32.6 |
 | 32.3 Model-tier routing | ✅ complete (PR #362) |
 | 32.4 Gate-verified best-of-N | ⏸ deferred — no host adapter (`hosts/*/adapter.js`) declares worktree-isolation capability, so the item's own precondition ("hosts with `worktrees: true`") can't be satisfied; nothing to build against yet |
 | 32.5 context.md diet | ✅ complete (PR #363) |
+| 32.6 Stage DAG wave execution (implementation) | 🆕 not started — concrete scope below, authorized by accepted ADR-017 |
 
 ## Why
 
@@ -46,7 +48,7 @@ are byte-identical across two different stages of the same run.
 - Verify: `npm test`, `CI=true DEVTEAM_HEADLESS_COMMAND=cat npm test`, `npx eslint .`,
   `npm run consistency`.
 
-### 32.2 Stage DAG waves (ADR required)
+### 32.2 Stage DAG waves (ADR required) — ✅ complete, decided 2026-08-05
 
 Write ADR-017: stage dependency metadata (`dependsOn: []` on the STAGES table, derived
 initially from `readFirst`/artifact-flow analysis) and wave execution semantics — the
@@ -62,6 +64,51 @@ parallel savings. Failure in any wave member halts the wave per existing failure
 - Acceptance: stubbed full-track run makes ≤13 sequential slots; single-stage semantics
   (locks, heartbeat, stall probe) hold per wave member; chain verification still passes;
   `--max-iterations` accounting documented (a wave = 1 iteration).
+
+**Resolved 2026-08-05** ([phase-37](phase-37-interface-and-token-efficiency.md) item 37.6):
+[ADR-017](../docs/adr/017-dag-wave-execution.md) is **Accepted**, scoped to exactly the two
+curated regions named above (`{04a ∥ 04c}` requires trimming `stage-04c`'s `readFirst`
+first; `{06b, 06c, 06d, 06e}` needs no `readFirst` changes) with
+`autonomy.max_parallel_stages` defaulting to 2, not the region size (4) — see the ADR's
+Resolution section for why. The acceptance criteria above (≤13 slots, per-member
+single-stage semantics, chain verification, iteration accounting) are unmet until 32.6
+ships; they now have a terminal design to build against instead of an open ADR.
+
+### 32.6 Stage DAG wave execution (implementation of accepted ADR-017)
+
+Follow-up to 32.2, added 2026-08-05 per [ADR-017](../docs/adr/017-dag-wave-execution.md)'s
+Resolution. Build exactly what the accepted ADR authorizes — no more:
+
+- `core/pipeline/stages.js`: `dependsOn: ["build"]` on `red-team` (stage-04c);
+  `dependsOn: ["qa"]` on each of `accessibility-audit`, `observability-gate`,
+  `verification-beyond-tests`, `performance-budget` (stage-06b/06c/06d/06e); trim
+  `stage-04c`'s `readFirst` to drop `pipeline/pre-review.md` and
+  `pipeline/security-review.md` in the same PR (this is a model-visible prompt change —
+  call it out in the changelog entry, not buried inside "added `dependsOn`," per the ADR's
+  Consequences section). Add a code comment on the `dependsOn` field stating that adding a
+  new wave region requires its own readFirst-vs-`dependsOn` curation pass (ADR-017
+  Resolution §3), not a mechanical extension.
+- `core/orchestrator.js`: a wave-aware variant of `next()` that returns the full ready set
+  (bounded by `autonomy.max_parallel_stages`) as a thin wrapper calling the existing
+  single-stage readiness check per candidate — not a parallel reimplementation.
+- `core/scheduler.js`: extend `mapByHostConcurrency`'s keying for wave-member × host
+  double-keying; no second scheduler.
+- `core/driver.js`: one `Promise.race([dispatch, stallProbe])` pair per wave member;
+  `wave_id` (monotonic per run) assigned once per formed wave and attached to every member
+  event; `state.iterations` incremented once per wave, not per member; `fix-and-retry`
+  targets only the failing member, never touching a passing sibling's gate.
+- `core/config.js`: `autonomy.max_parallel_stages`, default `2`, validated like
+  `max_retries` (non-negative integer, falls back to default on invalid input).
+- `devteam performance critical-path`: realized-savings computation
+  (`sum(member durations) - max(member durations)`) grouped by `wave_id`.
+- Docs: `docs/runbooks/autonomous-run.md` gains a wave section; `.devteam/config.yml`
+  schema docs gain `autonomy.max_parallel_stages`; `run-log.jsonl` schema reference gains
+  `wave_id`.
+
+- Acceptance: stubbed full-track run makes ≤13 sequential slots; single-stage semantics
+  (locks, heartbeat, stall probe) hold per wave member; chain verification still passes;
+  `--max-iterations` accounting documented and tested (a wave = 1 iteration); a wave of one
+  member behaves identically to today's dispatch (regression-tested).
 
 ### 32.3 Model-tier routing
 
