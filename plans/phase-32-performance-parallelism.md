@@ -1,7 +1,6 @@
 # Phase 32 — Performance & Parallelism
 
-Status: **mostly complete** (2026-08-05) — 32.1, 32.3, 32.5 shipped; 32.2 (ADR-017) accepted,
-implementation scope moved to 32.6; 32.4 deferred.
+Status: **mostly complete** (2026-08-05) — 32.1, 32.2, 32.3, 32.5, 32.6 shipped; 32.4 deferred.
 From [landscape-review-2026-07.md](landscape-review-2026-07.md) §3.5;
 supersedes the analysis-only [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md)
 items #1, #5, #10.
@@ -15,7 +14,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §32
 | 32.3 Model-tier routing | ✅ complete (PR #362) |
 | 32.4 Gate-verified best-of-N | ⏸ deferred — no host adapter (`hosts/*/adapter.js`) declares worktree-isolation capability, so the item's own precondition ("hosts with `worktrees: true`") can't be satisfied; nothing to build against yet |
 | 32.5 context.md diet | ✅ complete (PR #363) |
-| 32.6 Stage DAG wave execution (implementation) | 🆕 not started — concrete scope below, authorized by accepted ADR-017 |
+| 32.6 Stage DAG wave execution (implementation) | ✅ complete — both curated regions dispatch concurrently; see deviations note below |
 
 ## Why
 
@@ -109,6 +108,22 @@ Resolution. Build exactly what the accepted ADR authorizes — no more:
   (locks, heartbeat, stall probe) hold per wave member; chain verification still passes;
   `--max-iterations` accounting documented and tested (a wave = 1 iteration); a wave of one
   member behaves identically to today's dispatch (regression-tested).
+
+**Delivered 2026-08-05.** Both curated regions dispatch concurrently; `tests/dag-wave-execution.test.js`
+covers wave formation, `dependsOn` readiness, `wave_id`/iteration accounting, sibling-gate
+isolation on a member FAIL, `verify-chain` on a waved run, and critical-path realized
+savings. One deliberate scope narrowing from the spec above: only fresh/resuming
+dispatches (`run-stage`/`continue-stage`) are batched into a real concurrent wave — a
+ready set containing a `fix-and-retry` (or any other non-dispatch action) always
+collapses to a single-member wave and is handled by the exact pre-017 code path. Building
+concurrent convergence/archiving bookkeeping for multiple *simultaneously failing* wave
+members was judged materially riskier than this item's wall-clock claim requires — that
+claim comes from concurrent fresh dispatch, not concurrent retry — and ADR-017 §6 itself
+only says wave-aware `next()` "may" return more than one `fix-and-retry` action, not that
+it must. `core/orchestrator.js`'s `_nextImpl` was refactored (loop body extracted into
+`evaluateStageInPipeline`) to let the wave-aware `nextWave()` reuse the identical
+single-stage readiness check per candidate, verified behavior-preserving by the full
+pre-existing test suite before any wave logic was added on top.
 
 ### 32.3 Model-tier routing
 

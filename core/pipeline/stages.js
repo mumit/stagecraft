@@ -48,6 +48,23 @@ function isFrameworkReadFirstPath(relPath) {
   return typeof relPath === "string" && FRAMEWORK_ROOTED_READ_FIRST.has(relPath);
 }
 
+// ADR-017 (accepted 2026-08-05): `dependsOn: string[]` on a STAGES entry names
+// this stage's actual prerequisite(s) — not the full linear prefix of stages
+// before it in declared order. A stage becomes ready when EVERY named
+// dependency holds a PASS/WARN gate, regardless of its position in declared
+// order (core/orchestrator.js's wave-aware readiness check). A stage with no
+// `dependsOn` keeps the pre-017 behavior unchanged: implicitly gated on its
+// immediate declared-order predecessor (plus any `conditionalOn`).
+//
+// `dependsOn` is a CURATED allow-list, not a mechanical readFirst mirror —
+// ADR-017 demonstrates that deriving it mechanically from `readFirst` can
+// produce the opposite of a safe parallel pairing (a stage's readFirst can
+// list another stage's artifact as supplementary context without that
+// artifact being a true hard prerequisite). This ADR authorizes it on
+// exactly the two regions marked below (`red-team`, and the
+// `QA_SWEEP_STAGES` four). Adding `dependsOn` anywhere else requires its own
+// readFirst-vs-dependsOn curation pass recorded in an ADR amendment or a new
+// ADR — never a mechanical extension of this field (ADR-017 Resolution §3).
 const STAGES = {
   requirements: {
     stage: "stage-01",
@@ -297,18 +314,35 @@ const STAGES = {
     //
     // Diversity matters: route red-team to a different host than the
     // builders (`routing.roles.red-team` in .devteam/config.yml).
+    //
+    // ADR-017 wave region {stage-04a pre-review ∥ stage-04c red-team}: this
+    // stage's real prerequisite is `build`, not `pre-review` (its immediate
+    // declared-order predecessor) — explicit `dependsOn` breaks it out of the
+    // implicit chain so it becomes ready as soon as build PASSes, concurrently
+    // with pre-review. Do not add more entries here without a fresh
+    // readFirst-vs-dependsOn curation pass (see the STAGES-table header
+    // comment above).
+    dependsOn: ["build"],
     objective: "Adversarial review of what was just built. Enumerate concrete attack scenarios, hostile inputs, race conditions, abuse cases, scale failures, downstream effects, and observability gaps the spec didn't cover. Produces must-fix items the implementer addresses before Stage 5 peer review begins.",
     // Phase-35 item 35.1: see the why-comment on security-review's readFirst
     // above. Also runs standalone on `review-only` (brownfield, no brief/
     // design-spec/pre-review/security-review artifacts).
+    //
+    // ADR-017: `pipeline/pre-review.md` and `pipeline/security-review.md` are
+    // deliberately NOT listed (even as optional) — this is a model-visible
+    // prompt change, not an oversight. Read literally, listing them made this
+    // stage's prompt content depend on stage-04a/04b's artifacts, which is
+    // exactly the dependency the {04a ∥ 04c} wave must not have. Red-team's
+    // objective (adversarial review of what was just built) needs the brief,
+    // design spec, and build output, not pre-review's lint findings or a
+    // security approval note — see ADR-017 Resolution §2 for why this stays a
+    // narrow trim rather than the general artifact-tolerant-readFirst fix.
     readFirst: [
       "AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md",
       { path: "pipeline/context.md", optional: true },
       { path: "pipeline/brief.md", optional: true },
       { path: "pipeline/design-spec.md", optional: true },
       { path: "pipeline/pr-*.md", optional: true },
-      { path: "pipeline/pre-review.md", optional: true },
-      { path: "pipeline/security-review.md", optional: true },
     ],
     allowedWrites: ["pipeline/red-team-report.md", "pipeline/gates/stage-04c.json"],
     artifact: "pipeline/red-team-report.md",
@@ -512,6 +546,10 @@ const STAGES = {
   "accessibility-audit": {
     stage: "stage-06b",
     roles: ["qa"],
+    // ADR-017 wave region {06b ∥ 06c ∥ 06d ∥ 06e}: real prerequisite is `qa`
+    // (stage-06), not each other. See the STAGES-table header comment above
+    // before adding a dependsOn entry anywhere else.
+    dependsOn: ["qa"],
     objective: "Audit UI changes for WCAG accessibility violations using axe-core / pa11y / lighthouse. PASS requires zero critical + zero serious findings.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
     allowedWrites: ["pipeline/accessibility-report.md", "pipeline/axe-report.json", "pipeline/gates/stage-06b.json"],
@@ -529,6 +567,8 @@ const STAGES = {
   "observability-gate": {
     stage: "stage-06c",
     roles: ["platform"],
+    // ADR-017 wave region {06b ∥ 06c ∥ 06d ∥ 06e} — see accessibility-audit.
+    dependsOn: ["qa"],
     objective: "Verify that every metric / log / trace the design-spec promised is actually emitted by the shipped code. Closes the gap where designs claim instrumentation that never lands.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
     allowedWrites: ["pipeline/observability-report.md", "pipeline/gates/stage-06c.json"],
@@ -553,6 +593,11 @@ const STAGES = {
   "verification-beyond-tests": {
     stage: "stage-06d",
     roles: ["verifier"],
+    // ADR-017 wave region {06b ∥ 06c ∥ 06d ∥ 06e} — see accessibility-audit.
+    // (This stage's readFirst already optionally reads red-team-report.md,
+    // which is always earlier than qa in every track that includes both, so
+    // it's unaffected by this wave — ADR-017 §1.)
+    dependsOn: ["qa"],
     objective: "Apply property-based testing, mutation testing, and/or formal verification to the changed code. Run AFTER stage-06 (qa) PASS — tests are the floor, this stage raises the ceiling. Surface counterexamples + surviving mutants + invariant violations as blocking findings.",
     // Phase-35 item 35.1: see the why-comment on security-review's readFirst
     // above. Not part of the `review-only` track, but shares the same
@@ -594,6 +639,8 @@ const STAGES = {
   "performance-budget": {
     stage: "stage-06e",
     roles: ["qa"],
+    // ADR-017 wave region {06b ∥ 06c ∥ 06d ∥ 06e} — see accessibility-audit.
+    dependsOn: ["qa"],
     objective: "Measure Lighthouse performance scores, bundle size delta, and load-test throughput against project budgets. FAIL if any budget is exceeded. PASS (with skipped_reason) when the change has no performance-relevant surface.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
     allowedWrites: ["pipeline/performance-report.md", "pipeline/lhci-result.json", "pipeline/gates/stage-06e.json"],

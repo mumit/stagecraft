@@ -71,6 +71,12 @@ const DEFAULTS = {
     // produces an unconfirmed-track halt (requires --track or --force to proceed).
     // Off by default — opt in via .devteam/config.yml autonomy.require_confirmed_track.
     require_confirmed_track: false,
+    // ADR-017: caps how many ready stages the driver dispatches together as one
+    // wave. Default 2 is the ADR's own conservative choice — no corpus evidence
+    // yet on host/provider behavior under wider concurrency (ADR-017 Resolution
+    // §1). 1 is the escape hatch: every wave degrades to a single-member wave,
+    // identical to pre-wave dispatch.
+    max_parallel_stages: 2,
   },
   deploy: null,
   patterns: {
@@ -193,6 +199,9 @@ function loadConfig(cwd = process.cwd()) {
           : DEFAULTS.autonomy.max_retries,
         // ADR-006: explicit opt-in flag; not CI=true (CI is already overloaded)
         require_confirmed_track: parsed.autonomy?.require_confirmed_track === true,
+        max_parallel_stages: Number.isInteger(parsed.autonomy?.max_parallel_stages) && parsed.autonomy.max_parallel_stages >= 0
+          ? parsed.autonomy.max_parallel_stages
+          : DEFAULTS.autonomy.max_parallel_stages,
       },
       deploy: (parsed.deploy && typeof parsed.deploy === "object") ? parsed.deploy : null,
       patterns: {

@@ -1577,6 +1577,53 @@ function next(opts = {}) {
   });
 }
 
+// ADR-017 (32.6): wave-aware variant of next(). Same config/track/changeId
+// resolution as next() above; returns { actions: [...] } — 1..
+// autonomy.max_parallel_stages entries — instead of a single action. A
+// result with exactly one entry is byte-identical to calling next() (see
+// _nextWaveImpl's doc comment). Callers that don't care about waves (tests,
+// `devteam next`, `devteam summary`) should keep using next(); only the
+// driver's dispatch loop needs this.
+function nextWave(opts = {}) {
+  const cwd = opts.cwd || process.cwd();
+  const config = opts.config || loadConfig(cwd);
+  const isolation = config.pipeline.isolation;
+  const changeId = opts.changeId !== undefined
+    ? opts.changeId
+    : (isolation === "bounded" ? changeIdFromFeature(opts.feature || "") : null);
+  const gatesDir = getGatesDir(cwd, changeId);
+  const track = opts.track
+    || (Array.isArray(config.pipeline.custom_stages) ? config.pipeline.custom_stages : null)
+    || config.pipeline.default_track
+    || "full";
+  const skipStages = config.pipeline.skip_stages || [];
+  const forceStages = config.pipeline.force_stages || [];
+  const stageList = orderedStageNamesForTrack(track);
+  const maxRetries = (config.autonomy && Number.isInteger(config.autonomy.max_retries))
+    ? config.autonomy.max_retries
+    : MAX_RETRIES_DEFAULT;
+  const maxParallelStages = (config.autonomy && Number.isInteger(config.autonomy.max_parallel_stages))
+    ? config.autonomy.max_parallel_stages
+    : 2;
+
+  return withSpan("pipeline.next-wave", {
+    "devteam.track": trackLabel(track),
+  }, () => {
+    const result = _nextWaveImpl(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId, {
+      auditSkips: opts.auditSkips === true,
+      auditedSkips: opts.auditedSkips || [],
+      forceStages,
+      rightSizing: config.pipeline.right_sizing !== false,
+      config,
+    }, maxParallelStages);
+    setSpanAttributes({
+      "devteam.next_wave.actions_count": result.actions.length,
+      "devteam.next_wave.first_action": result.actions[0] && result.actions[0].action,
+    });
+    return result;
+  });
+}
+
 // Are any of a multi-role stage's per-workstream gates present? Used by
 // the auto-fold path to avoid clobbering work the PM/Platform agents
 // have already started.
@@ -1883,284 +1930,369 @@ function tryAutoLocalDeployRecord(cwd, gatesDir, track, changeId) {
 // pipeline root (bounded: pipeline/changes/<changeId>/; in-place: pipeline/).
 // Previously cwd was derived from gatesDir via path.resolve("..", ".."), which
 // was wrong in bounded mode (gatesDir is .../pipeline/changes/<id>/gates/).
-function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX_RETRIES_DEFAULT, cwd, changeId, opts = {}) {
-  const auditSkips = opts.auditSkips === true;
-  const auditedSkips = new Set(opts.auditedSkips || []);
-  const forceStages = new Set(opts.forceStages || []);
-  const rightSizingEnabled = opts.rightSizing !== false;
-  for (const stageName of stageList) {
-    const stageDef = getStage(stageName);
-    const stageGatePath = path.join(gatesDir, `${stageDef.stage}.json`);
+// ADR-017 (32.6): the single-stage readiness/action check, extracted out of
+// _nextImpl's loop body so a wave-aware caller can invoke it directly for an
+// out-of-order `dependsOn` candidate instead of only ever walking stageList
+// from the top. Pure function of disk state + ctx; returns the action this
+// stage would produce if it were the loop's current position, or null to mean
+// "this stage is done/skipped — a sequential caller should continue past it."
+// _nextImpl below is now a thin loop over this; behavior is unchanged from
+// before this extraction (verified by the full existing test suite).
+function evaluateStageInPipeline(stageName, ctx) {
+  const { gatesDir, track, stageList, skipStages, forceStages, rightSizingEnabled, auditSkips, auditedSkips, maxRetries, cwd, changeId, opts } = ctx;
+  const stageDef = getStage(stageName);
+  const stageGatePath = path.join(gatesDir, `${stageDef.stage}.json`);
 
-    // Explicitly skipped via pipeline.skip_stages in config.
-    if (skipStages.includes(stageName) && !forceStages.has(stageName)) {
+  // Explicitly skipped via pipeline.skip_stages in config.
+  if (skipStages.includes(stageName) && !forceStages.has(stageName)) {
+    if (auditSkips && !auditedSkips.has(stageName)) {
+      return {
+        action: "skip-stage",
+        stage: stageDef.stage,
+        name: stageName,
+        skip_kind: "pipeline.skip_stages",
+        trigger_inputs: {
+          skip_stages: skipStages,
+          force_stages: Array.from(forceStages),
+        },
+        reason: "stage listed in pipeline.skip_stages",
+        command: "devteam next",
+      };
+    }
+    return null;
+  }
+
+  if (rightSizingEnabled
+      && !forceStages.has(stageName)
+      && !fs.existsSync(stageGatePath)
+      && !workstreamGatesExistFor(stageDef, gatesDir)) {
+    const rightSized = deterministicSkipForStage(stageName, cwd, { changeId });
+    if (rightSized) {
       if (auditSkips && !auditedSkips.has(stageName)) {
         return {
           action: "skip-stage",
           stage: stageDef.stage,
           name: stageName,
-          skip_kind: "pipeline.skip_stages",
+          skip_kind: rightSized.skip_kind,
           trigger_inputs: {
-            skip_stages: skipStages,
+            ...rightSized.trigger_inputs,
             force_stages: Array.from(forceStages),
           },
-          reason: "stage listed in pipeline.skip_stages",
+          reason: rightSized.reason,
           command: "devteam next",
         };
       }
-      continue;
+      return null;
     }
+  }
 
-    if (rightSizingEnabled
-        && !forceStages.has(stageName)
-        && !fs.existsSync(stageGatePath)
-        && !workstreamGatesExistFor(stageDef, gatesDir)) {
-      const rightSized = deterministicSkipForStage(stageName, cwd, { changeId });
-      if (rightSized) {
+  // Stage 7 auto-fold. When Stage 6 cleanly satisfies the AC→test
+  // contract, return a "fold-sign-off" action carrying the gate content.
+  // The CALLER writes the gate and calls next() again — keeping this a
+  // pure function of disk state. (item 1.2, phase-1-trust-consolidation)
+  // Verified — not trusted: we re-derive the AC list from brief.md and
+  // the AC→test mapping from test-report.md ourselves, rather than
+  // rubber-stamping the QA agent's claim.
+  // See docs/concepts.md → "Auto-fold (Stage 7)" for the rationale.
+  if (stageName === "sign-off"
+      && !fs.existsSync(stageGatePath)
+      && !workstreamGatesExistFor(stageDef, gatesDir)) {
+    const folded = tryAutoFoldSignOff(cwd, gatesDir, track, changeId);
+    if (folded.ok) {
+      // Return fold-sign-off so the caller writes the gate and re-runs
+      // next(). Do NOT fall through here — stageGatePath doesn't exist
+      // yet; the caller must persist the gate before calling next().
+      return {
+        action: "fold-sign-off",
+        stage: stageDef.stage,
+        name: stageName,
+        gate_path: stageGatePath,
+        gate_content: folded.gate,
+        acCount: folded.acCount,
+        reason: `stage 6 satisfied the AC→test contract (${folded.acCount} criteria mapped)`,
+      };
+    }
+  }
+
+  if (stageName === "deploy"
+      && !fs.existsSync(stageGatePath)
+      && !workstreamGatesExistFor(stageDef, gatesDir)) {
+    const recorded = tryAutoLocalDeployRecord(cwd, gatesDir, track, changeId);
+    if (recorded.ok) {
+      const deployLogPath = path.join(pipelineRoot(cwd, changeId), "deploy-log.md");
+      return {
+        action: "record-local-deploy",
+        stage: stageDef.stage,
+        name: stageName,
+        gate_path: stageGatePath,
+        gate_content: recorded.gate,
+        deploy_log_path: deployLogPath,
+        deploy_log_content: recorded.deployLog,
+        reason: "stage 7 requested no external deploy; recording local/no-deploy outcome",
+      };
+    }
+  }
+
+  // Conditional stages: skip when the prerequisite gate's named field
+  // is not equal to the required value. The prerequisite gate must
+  // already exist — if it doesn't, the pipeline would be advancing
+  // out of order, so we surface that as needing the prerequisite first.
+  if (stageDef.conditionalOn) {
+    const c = stageDef.conditionalOn;
+    const prereqGatePath = path.join(gatesDir, `${c.stage}.json`);
+    if (!fs.existsSync(prereqGatePath)) {
+      // Prereq not done yet; a sequential scan's earlier iteration should
+      // have returned for it. If we got here, fall through to normal
+      // run-stage handling — but flag the issue.
+    } else {
+      const { gate: prereq, error } = loadGateSafe(prereqGatePath);
+      if (error) {
+        return {
+          action: "fix-and-retry", stage: stageDef.stage, name: stageName,
+          gate: prereqGatePath,
+          failure_class: "state-corruption",
+          blockers: [`prereq gate is unreadable: ${error}`],
+          reason: "cannot evaluate conditional stage — fix the prereq gate file",
+          command: `cat ${prereqGatePath}  # then repair or rewrite`,
+        };
+      }
+      if (prereq[c.field] !== c.equals && !forceStages.has(stageName)) {
         if (auditSkips && !auditedSkips.has(stageName)) {
           return {
             action: "skip-stage",
             stage: stageDef.stage,
             name: stageName,
-            skip_kind: rightSized.skip_kind,
+            skip_kind: "conditionalOn",
             trigger_inputs: {
-              ...rightSized.trigger_inputs,
+              prerequisite_stage: c.stage,
+              field: c.field,
+              expected: c.equals,
+              actual: prereq[c.field],
               force_stages: Array.from(forceStages),
             },
-            reason: rightSized.reason,
+            reason: `condition not met: ${c.stage}.${c.field} !== ${c.equals}`,
             command: "devteam next",
           };
         }
-        continue;
+        return null; // condition not met — skip this stage silently
       }
     }
+  }
 
-    // Stage 7 auto-fold. When Stage 6 cleanly satisfies the AC→test
-    // contract, return a "fold-sign-off" action carrying the gate content.
-    // The CALLER writes the gate and calls next() again — keeping _nextImpl
-    // a pure function of disk state. (item 1.2, phase-1-trust-consolidation)
-    // Verified — not trusted: we re-derive the AC list from brief.md and
-    // the AC→test mapping from test-report.md ourselves, rather than
-    // rubber-stamping the QA agent's claim.
-    // See docs/concepts.md → "Auto-fold (Stage 7)" for the rationale.
-    if (stageName === "sign-off"
-        && !fs.existsSync(stageGatePath)
-        && !workstreamGatesExistFor(stageDef, gatesDir)) {
-      const folded = tryAutoFoldSignOff(cwd, gatesDir, track, changeId);
-      if (folded.ok) {
-        // Return fold-sign-off so the caller writes the gate and re-runs
-        // next(). Do NOT fall through here — stageGatePath doesn't exist
-        // yet; the caller must persist the gate before calling next().
+  if (!fs.existsSync(stageGatePath)) {
+    if (stageDef.roles.length > 1) {
+      // 31.3: stage-05's actual dispatched roles vary with review.mode
+      // (adversarial dispatches ["reviewer","critic"], not the static
+      // 4-area stageDef.roles) — without this, the completed/remaining
+      // check below looks for stage-05.backend.json/etc that adversarial
+      // mode never writes, and the stage can never be recognized as done.
+      // Every other stage keeps using stageDef.roles unchanged.
+      const baseRoles = stageDef.stage === "stage-05"
+        ? rolesForStage(stageDef, track, opts.config)
+        : stageDef.roles;
+      // Apply active_roles filter: only expect gates for roles that were
+      // actually dispatched. Without this, a suppressed role (e.g. frontend
+      // when active_roles=[backend,platform,qa]) keeps `remaining` non-empty
+      // forever and the driver loops until max-iterations is exhausted.
+      let effectiveRoles = baseRoles;
+      const s1Path = path.join(gatesDir, "stage-01.json");
+      if (fs.existsSync(s1Path)) {
+        const { gate: s1Gate } = loadGateSafe(s1Path);
+        if (s1Gate) {
+          const filtered = inferActiveRoles(s1Gate, baseRoles, stageDef.alwaysDispatch);
+          if (filtered) effectiveRoles = filtered;
+        }
+      }
+      const completed = [];
+      const remaining = [];
+      for (const role of effectiveRoles) {
+        const p = path.join(gatesDir, `${stageDef.stage}.${role}.json`);
+        (fs.existsSync(p) ? completed : remaining).push(role);
+      }
+      if (remaining.length === 0) {
         return {
-          action: "fold-sign-off",
-          stage: stageDef.stage,
-          name: stageName,
-          gate_path: stageGatePath,
-          gate_content: folded.gate,
-          acCount: folded.acCount,
-          reason: `stage 6 satisfied the AC→test contract (${folded.acCount} criteria mapped)`,
+          action: "merge", stage: stageDef.stage, name: stageName,
+          reason: "all workstreams complete; merge to produce stage gate",
+          command: `devteam merge ${stageName}`,
         };
       }
-    }
-
-    if (stageName === "deploy"
-        && !fs.existsSync(stageGatePath)
-        && !workstreamGatesExistFor(stageDef, gatesDir)) {
-      const recorded = tryAutoLocalDeployRecord(cwd, gatesDir, track, changeId);
-      if (recorded.ok) {
-        const deployLogPath = path.join(pipelineRoot(cwd, changeId), "deploy-log.md");
+      if (completed.length === 0) {
         return {
-          action: "record-local-deploy",
-          stage: stageDef.stage,
-          name: stageName,
-          gate_path: stageGatePath,
-          gate_content: recorded.gate,
-          deploy_log_path: deployLogPath,
-          deploy_log_content: recorded.deployLog,
-          reason: "stage 7 requested no external deploy; recording local/no-deploy outcome",
-        };
-      }
-    }
-
-    // Conditional stages: skip when the prerequisite gate's named field
-    // is not equal to the required value. The prerequisite gate must
-    // already exist — if it doesn't, the pipeline would be advancing
-    // out of order, so we surface that as needing the prerequisite first.
-    if (stageDef.conditionalOn) {
-      const c = stageDef.conditionalOn;
-      const prereqGatePath = path.join(gatesDir, `${c.stage}.json`);
-      if (!fs.existsSync(prereqGatePath)) {
-        // Prereq not done yet; the earlier iteration of this loop should
-        // have returned for it. If we got here, fall through to normal
-        // run-stage handling — but flag the issue.
-      } else {
-        const { gate: prereq, error } = loadGateSafe(prereqGatePath);
-        if (error) {
-          return {
-            action: "fix-and-retry", stage: stageDef.stage, name: stageName,
-            gate: prereqGatePath,
-            failure_class: "state-corruption",
-            blockers: [`prereq gate is unreadable: ${error}`],
-            reason: "cannot evaluate conditional stage — fix the prereq gate file",
-            command: `cat ${prereqGatePath}  # then repair or rewrite`,
-          };
-        }
-        if (prereq[c.field] !== c.equals && !forceStages.has(stageName)) {
-          if (auditSkips && !auditedSkips.has(stageName)) {
-            return {
-              action: "skip-stage",
-              stage: stageDef.stage,
-              name: stageName,
-              skip_kind: "conditionalOn",
-              trigger_inputs: {
-                prerequisite_stage: c.stage,
-                field: c.field,
-                expected: c.equals,
-                actual: prereq[c.field],
-                force_stages: Array.from(forceStages),
-              },
-              reason: `condition not met: ${c.stage}.${c.field} !== ${c.equals}`,
-              command: "devteam next",
-            };
-          }
-          continue; // condition not met — skip this stage silently
-        }
-      }
-    }
-
-    if (!fs.existsSync(stageGatePath)) {
-      if (stageDef.roles.length > 1) {
-        // 31.3: stage-05's actual dispatched roles vary with review.mode
-        // (adversarial dispatches ["reviewer","critic"], not the static
-        // 4-area stageDef.roles) — without this, the completed/remaining
-        // check below looks for stage-05.backend.json/etc that adversarial
-        // mode never writes, and the stage can never be recognized as done.
-        // Every other stage keeps using stageDef.roles unchanged.
-        const baseRoles = stageDef.stage === "stage-05"
-          ? rolesForStage(stageDef, track, opts.config)
-          : stageDef.roles;
-        // Apply active_roles filter: only expect gates for roles that were
-        // actually dispatched. Without this, a suppressed role (e.g. frontend
-        // when active_roles=[backend,platform,qa]) keeps `remaining` non-empty
-        // forever and the driver loops until max-iterations is exhausted.
-        let effectiveRoles = baseRoles;
-        const s1Path = path.join(gatesDir, "stage-01.json");
-        if (fs.existsSync(s1Path)) {
-          const { gate: s1Gate } = loadGateSafe(s1Path);
-          if (s1Gate) {
-            const filtered = inferActiveRoles(s1Gate, baseRoles, stageDef.alwaysDispatch);
-            if (filtered) effectiveRoles = filtered;
-          }
-        }
-        const completed = [];
-        const remaining = [];
-        for (const role of effectiveRoles) {
-          const p = path.join(gatesDir, `${stageDef.stage}.${role}.json`);
-          (fs.existsSync(p) ? completed : remaining).push(role);
-        }
-        if (remaining.length === 0) {
-          return {
-            action: "merge", stage: stageDef.stage, name: stageName,
-            reason: "all workstreams complete; merge to produce stage gate",
-            command: `devteam merge ${stageName}`,
-          };
-        }
-        if (completed.length === 0) {
-          return {
-            action: "run-stage", stage: stageDef.stage, name: stageName,
-            roles: effectiveRoles,
-            reason: "multi-role stage not started",
-            command: `devteam stage ${stageName}`,
-          };
-        }
-        return {
-          action: "continue-stage", stage: stageDef.stage, name: stageName,
-          completed, remaining,
-          reason: `${completed.length}/${effectiveRoles.length} workstreams complete`,
-          command: `devteam stage ${stageName}  # roles still pending: ${remaining.join(", ")}`,
+          action: "run-stage", stage: stageDef.stage, name: stageName,
+          roles: effectiveRoles,
+          reason: "multi-role stage not started",
+          command: `devteam stage ${stageName}`,
         };
       }
       return {
-        action: "run-stage", stage: stageDef.stage, name: stageName,
-        roles: stageDef.roles,
-        reason: "stage not started",
-        command: `devteam stage ${stageName}`,
+        action: "continue-stage", stage: stageDef.stage, name: stageName,
+        completed, remaining,
+        reason: `${completed.length}/${effectiveRoles.length} workstreams complete`,
+        command: `devteam stage ${stageName}  # roles still pending: ${remaining.join(", ")}`,
       };
     }
+    return {
+      action: "run-stage", stage: stageDef.stage, name: stageName,
+      roles: stageDef.roles,
+      reason: "stage not started",
+      command: `devteam stage ${stageName}`,
+    };
+  }
 
-    const { gate, error: gateError } = loadGateSafe(stageGatePath);
-    if (gateError) {
-      return {
-        action: "fix-and-retry", stage: stageDef.stage, name: stageName,
-        gate: stageGatePath,
-        failure_class: "state-corruption",
-        blockers: [`gate file is unreadable: ${gateError}`],
-        reason: "cannot determine stage status — fix or rewrite the gate file",
-        command: `cat ${stageGatePath}  # then repair or rewrite`,
-      };
-    }
-    if (gate.status === "ESCALATE") {
+  const { gate, error: gateError } = loadGateSafe(stageGatePath);
+  if (gateError) {
+    return {
+      action: "fix-and-retry", stage: stageDef.stage, name: stageName,
+      gate: stageGatePath,
+      failure_class: "state-corruption",
+      blockers: [`gate file is unreadable: ${gateError}`],
+      reason: "cannot determine stage status — fix or rewrite the gate file",
+      command: `cat ${stageGatePath}  # then repair or rewrite`,
+    };
+  }
+  if (gate.status === "ESCALATE") {
+    return {
+      action: "resolve-escalation", stage: stageDef.stage, name: stageName,
+      gate: stageGatePath,
+      failure_class: "judgment-gate",
+      reason: gate.escalation_reason || "escalation required; pipeline halted",
+      command: `devteam ruling --topic "..." --target-gate ${stageGatePath} [--headless]`,
+    };
+  }
+  if (gate.status === "FAIL") {
+    const { clear_gates, steps: fix_steps } = getRecipe(stageDef.stage).diagnose(gate, { gatesDir, stageDef, stageList, changeId });
+
+    // Convergence ceiling (ADR-003 / H1 + 4.2).
+    //
+    // Use archive-based attempt count (agent-independent) instead of the
+    // model-written gate.retry_number — removes an agent-falsifiable input
+    // from the convergence decision on the interactive path (4.2 spec).
+    //
+    // Progress-based check runs first: if the last two archived attempts carry
+    // identical non-empty blocker sets the breaker trips immediately, even
+    // before the count ceiling is reached. This catches a stuck agent that
+    // keeps writing the same FAIL without making forward progress.
+    const archiveCount = countArchivedAttempts(gatesDir, stageDef.stage);
+    const progress = detectNoProgress(gatesDir, stageDef.stage);
+    if (progress.noProgress) {
+      const evidence = noProgressEvidence(progress.stuckBlockers, progress.attempts);
       return {
         action: "resolve-escalation", stage: stageDef.stage, name: stageName,
         gate: stageGatePath,
-        failure_class: "judgment-gate",
-        reason: gate.escalation_reason || "escalation required; pipeline halted",
+        failure_class: "convergence-exhausted",
+        blockers: gate.blockers || [],
+        no_progress_evidence: evidence,
+        reason: `no-progress convergence: ${evidence}; escalating for a ruling`,
         command: `devteam ruling --topic "..." --target-gate ${stageGatePath} [--headless]`,
       };
     }
-    if (gate.status === "FAIL") {
-      const { clear_gates, steps: fix_steps } = getRecipe(stageDef.stage).diagnose(gate, { gatesDir, stageDef, stageList, changeId });
-
-      // Convergence ceiling (ADR-003 / H1 + 4.2).
-      //
-      // Use archive-based attempt count (agent-independent) instead of the
-      // model-written gate.retry_number — removes an agent-falsifiable input
-      // from the convergence decision on the interactive path (4.2 spec).
-      //
-      // Progress-based check runs first: if the last two archived attempts carry
-      // identical non-empty blocker sets the breaker trips immediately, even
-      // before the count ceiling is reached. This catches a stuck agent that
-      // keeps writing the same FAIL without making forward progress.
-      const archiveCount = countArchivedAttempts(gatesDir, stageDef.stage);
-      const progress = detectNoProgress(gatesDir, stageDef.stage);
-      if (progress.noProgress) {
-        const evidence = noProgressEvidence(progress.stuckBlockers, progress.attempts);
-        return {
-          action: "resolve-escalation", stage: stageDef.stage, name: stageName,
-          gate: stageGatePath,
-          failure_class: "convergence-exhausted",
-          blockers: gate.blockers || [],
-          no_progress_evidence: evidence,
-          reason: `no-progress convergence: ${evidence}; escalating for a ruling`,
-          command: `devteam ruling --topic "..." --target-gate ${stageGatePath} [--headless]`,
-        };
-      }
-      if (archiveCount >= maxRetries) {
-        return {
-          action: "resolve-escalation", stage: stageDef.stage, name: stageName,
-          gate: stageGatePath,
-          failure_class: "convergence-exhausted",
-          blockers: gate.blockers || [],
-          reason: `retry budget exhausted (${archiveCount}/${maxRetries} attempts); escalating for a ruling`,
-          command: `devteam ruling --topic "..." --target-gate ${stageGatePath} [--headless]`,
-        };
-      }
-
+    if (archiveCount >= maxRetries) {
       return {
-        action: "fix-and-retry", stage: stageDef.stage, name: stageName,
+        action: "resolve-escalation", stage: stageDef.stage, name: stageName,
         gate: stageGatePath,
-        failure_class: classifyGate(gate, fix_steps),
+        failure_class: "convergence-exhausted",
         blockers: gate.blockers || [],
-        reason: "stage failed; address blockers and rewrite the gate",
-        command: `devteam stage ${stageName}`,
-        ...(fix_steps ? { fix_steps } : {}),
-        ...(clear_gates.length ? { clear_gates } : {}),
+        reason: `retry budget exhausted (${archiveCount}/${maxRetries} attempts); escalating for a ruling`,
+        command: `devteam ruling --topic "..." --target-gate ${stageGatePath} [--headless]`,
       };
     }
-    // PASS or WARN — proceed to next stage.
+
+    return {
+      action: "fix-and-retry", stage: stageDef.stage, name: stageName,
+      gate: stageGatePath,
+      failure_class: classifyGate(gate, fix_steps),
+      blockers: gate.blockers || [],
+      reason: "stage failed; address blockers and rewrite the gate",
+      command: `devteam stage ${stageName}`,
+      ...(fix_steps ? { fix_steps } : {}),
+      ...(clear_gates.length ? { clear_gates } : {}),
+    };
+  }
+  // PASS or WARN — proceed to next stage.
+  return null;
+}
+
+function _stageEvalCtx(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId, opts) {
+  return {
+    stageList, gatesDir, track, cwd, changeId,
+    skipStages,
+    forceStages: new Set(opts.forceStages || []),
+    rightSizingEnabled: opts.rightSizing !== false,
+    auditSkips: opts.auditSkips === true,
+    auditedSkips: new Set(opts.auditedSkips || []),
+    maxRetries,
+    opts,
+  };
+}
+
+function _nextImpl(stageList, gatesDir, track, skipStages = [], maxRetries = MAX_RETRIES_DEFAULT, cwd, changeId, opts = {}) {
+  const ctx = _stageEvalCtx(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId, opts);
+  for (const stageName of stageList) {
+    const action = evaluateStageInPipeline(stageName, ctx);
+    if (action) return action;
+  }
+  return { action: "pipeline-complete", reason: `all stages PASS or WARN (track: ${track})`, track };
+}
+
+// ADR-017 §1-2 (32.6): a stage is "ready" out of declared order only via an
+// explicit `dependsOn` — every named dependency must hold a PASS/WARN gate.
+// Stages with no `dependsOn` are never candidates here; they're only ever
+// discovered as the sequential-scan's first action (see _nextWaveImpl below).
+function dependsOnSatisfied(stageDef, gatesDir) {
+  if (!Array.isArray(stageDef.dependsOn) || stageDef.dependsOn.length === 0) return true;
+  return stageDef.dependsOn.every((depName) => {
+    const depDef = getStage(depName);
+    if (!depDef) return false;
+    const depGatePath = path.join(gatesDir, `${depDef.stage}.json`);
+    if (!fs.existsSync(depGatePath)) return false;
+    const { gate } = loadGateSafe(depGatePath);
+    return !!gate && (gate.status === "PASS" || gate.status === "WARN");
+  });
+}
+
+// Action types that represent a real LLM dispatch (or a retry of one) — the
+// only kinds of action a wave ever bundles together. Everything else
+// (merge, skip-stage, resolve-escalation, fold-sign-off, record-local-deploy,
+// pipeline-complete) is synchronous/orchestrator-only and always collapses a
+// wave back down to its single-member (pre-017) behavior.
+const WAVE_DISPATCH_ACTIONS = new Set(["run-stage", "continue-stage", "fix-and-retry"]);
+
+// ADR-017 §2 (32.6): wave-aware ready-set computation. A thin wrapper around
+// evaluateStageInPipeline (the exact same single-stage readiness check
+// _nextImpl uses) — not a parallel reimplementation. Returns
+// { actions: [...] }, 1..maxParallelStages entries, in declared
+// STAGES-table order. The first entry is always exactly what _nextImpl would
+// have returned (same sequential scan) — a size-1 result here is therefore
+// byte-identical to calling _nextImpl directly.
+function _nextWaveImpl(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId, opts, maxParallelStages) {
+  const ctx = _stageEvalCtx(stageList, gatesDir, track, skipStages, maxRetries, cwd, changeId, opts);
+
+  let first = null;
+  for (const stageName of stageList) {
+    const action = evaluateStageInPipeline(stageName, ctx);
+    if (action) { first = action; break; }
+  }
+  if (!first) {
+    return { actions: [{ action: "pipeline-complete", reason: `all stages PASS or WARN (track: ${track})`, track }] };
   }
 
-  return { action: "pipeline-complete", reason: `all stages PASS or WARN (track: ${track})`, track };
+  const cap = Number.isInteger(maxParallelStages) && maxParallelStages > 0 ? maxParallelStages : 1;
+  if (cap <= 1 || !WAVE_DISPATCH_ACTIONS.has(first.action)) {
+    return { actions: [first] };
+  }
+
+  const actions = [first];
+  for (const stageName of stageList) {
+    if (actions.length >= cap) break;
+    if (stageName === first.name) continue;
+    const stageDef = getStage(stageName);
+    if (!Array.isArray(stageDef.dependsOn) || stageDef.dependsOn.length === 0) continue;
+    if (!dependsOnSatisfied(stageDef, gatesDir)) continue;
+    const action = evaluateStageInPipeline(stageName, ctx);
+    if (!action || !WAVE_DISPATCH_ACTIONS.has(action.action)) continue;
+    actions.push(action);
+  }
+  return { actions };
 }
 
 // One-screen pipeline state for `devteam summary`. Walks the active
@@ -2297,6 +2429,7 @@ module.exports = {
   runStageHeadless,
   mergeWorkstreamGates,
   next,
+  nextWave,
   summary,
   buildDescriptor,
   computeDispatchPlan,
