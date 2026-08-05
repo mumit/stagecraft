@@ -1,9 +1,22 @@
 "use strict";
 
+const path = require("node:path");
+const COMMAND_MODULES = require(path.join(__dirname, "..", "command-list"));
+const { nearestMatch } = require(path.join(__dirname, "..", "nearest-match"));
+
 const name = "help";
 const flags = {};
 
-function run() {
+// Resolves a command module the same way bin/devteam does, from the shared
+// command-list.js map — so `devteam help <command>` and `devteam <command>
+// --help` (37.1) name-resolve identically without duplicating the list.
+function loadCommand(commandName) {
+  const moduleName = COMMAND_MODULES[commandName];
+  if (!moduleName) return null;
+  return require(path.join(__dirname, moduleName));
+}
+
+function printFullHelp() {
   console.log(`devteam — model-agnostic AI dev team orchestrator
 
 Usage: devteam <command> [args]
@@ -347,6 +360,31 @@ devteam never calls a model itself. Adapters under hosts/ are where the
 host-specific glue lives; the orchestrator just renders prompts and
 validates the gate JSON that comes back.
 `);
+}
+
+// devteam help <command> — 37.1: command-scoped help generated from that
+// command's own flag spec, not a hand-written parallel document. Delegates to
+// the target command's own `--help` handling so `devteam help <command>` and
+// `devteam <command> --help` are the exact same code path (byte-identical
+// output), rather than re-deriving a usage string here.
+function run(positional) {
+  const target = positional[0];
+  if (!target) { printFullHelp(); return; }
+
+  const cmd = loadCommand(target);
+  if (!cmd) {
+    printFullHelp();
+    const suggestion = nearestMatch(target, Object.keys(COMMAND_MODULES));
+    console.log(
+      suggestion
+        ? `\nUnknown command: "${target}" — did you mean "${suggestion}"?`
+        : `\nUnknown command: "${target}"`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  cmd.run([], { help: true });
 }
 
 module.exports = { name, flags, run };

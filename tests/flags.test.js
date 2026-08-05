@@ -295,4 +295,19 @@ describe("generateHelp", () => {
     const h = generateHelp("devteam foo", {});
     assert.doesNotMatch(h, /Options:/);
   });
+
+  // Phase 37.1: each flag line carries its declared type, so generated
+  // per-command help documents type + description without hand-written prose.
+  it("shows the declared type alongside each flag", () => {
+    const h = generateHelp("devteam foo", {
+      "budget-usd": { type: "number", description: "Cost cap in USD" },
+      tags: { type: "list", description: "Repeatable tag" },
+      "fail-on-advisory": { type: "toggle", description: "Exit code override" },
+      resume: { type: "boolean", description: "Resume an interrupted run" },
+    });
+    assert.match(h, /--budget-usd <budget-usd> \(number\)/);
+    assert.match(h, /--tags <tags> \(list\)/);
+    assert.match(h, /--fail-on-advisory \[<value>\] \(toggle\)/);
+    assert.match(h, /--resume \(boolean\)/);
+  });
 });
