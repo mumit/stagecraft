@@ -259,9 +259,13 @@ function scoreStub(caseEntry, rendered) {
   for (const marker of REQUIRED_SECTIONS) {
     if (!prompt.includes(marker)) findings.push(`missing structural section: ${marker}`);
   }
+  // 37.2: the framework heading reads "(inlined below" when
+  // prompts.inline_framework is true (the default) and "(read first" when
+  // false — either is a valid rendering, so accept both rather than pinning
+  // replay scoring to one setting.
   const { framework } = splitReadFirst(rendered.descriptor.readFirst);
-  if (framework.length > 0 && !prompt.includes("## Framework (read first")) {
-    findings.push("missing structural section: ## Framework (read first — every stage, every role)");
+  if (framework.length > 0 && !prompt.includes("## Framework (read first") && !prompt.includes("## Framework (inlined below")) {
+    findings.push("missing structural section: ## Framework (read first|inlined below — every stage, every role)");
   }
 
   const promptBytes = Buffer.byteLength(prompt, "utf8");

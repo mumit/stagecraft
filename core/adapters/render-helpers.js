@@ -155,15 +155,90 @@ function splitReadFirst(readFirst) {
   return { framework: list.slice(0, i), rest: list.slice(i) };
 }
 
+// Phase 37.2 (plans/phase-37-interface-and-token-efficiency.md §37.2):
+// prompts.inline_framework gates whether layers 1-2 inline framework/role-
+// brief content or keep pointing at paths (the pre-37.2 behaviour). Read
+// from `ctx.cwd` (stateRoot) the same way every other framework-config
+// lookup does (e.g. hosts/openai-compat/invoke.js's resolveConfig). No
+// `ctx.cwd` (a bare unit-test descriptor with no project) can't be inlined
+// at all — there is no root to read files from — so it falls back to the
+// pointer behaviour, which is also what makes tests/prompt-layout.test.js's
+// ctx-less unit tests of this module keep their pre-37.2 assertions valid.
+function shouldInlineFramework(ctx) {
+  if (!ctx || !ctx.cwd) return false;
+  try {
+    const { loadConfig } = require("../config");
+    return loadConfig(ctx.cwd).prompts.inline_framework !== false;
+  } catch {
+    return false;
+  }
+}
+
+// Phase 37.2: read a framework-owned file's content for inlining, applying
+// the same codeRoot/stateRoot direction as resolveFrameworkPath (framework
+// content always lives under stateRoot). Returns null — never throws — when
+// the file is absent, so a project mid-init or a stale role name degrades to
+// a visible placeholder in the rendered prompt rather than crashing the
+// dispatch.
+function readFrameworkFileContent(relPath, ctx) {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const resolved = resolveFrameworkPath(relPath, ctx);
+  const abs = path.isAbsolute(resolved) ? resolved : path.join((ctx && ctx.cwd) || process.cwd(), resolved);
+  try {
+    return fs.readFileSync(abs, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 // Layer 1 renderer (phase 32.1): the framework preamble/rules section —
 // byte-identical across every dispatch in a run regardless of stage or
 // role, so it forms the cacheable prefix providers/CLIs can reuse. Call
 // this first, before anything stage- or role-specific.
-function renderFrameworkPreamble(lines, descriptor) {
+//
+// Phase 37.2: with prompts.inline_framework (default true), the framework
+// files' content is inlined here instead of just named — the whole point is
+// that "every dispatch, every role" byte-identical block now carries the ~22
+// KB the model used to re-read itself via 4+ tool-call round-trips, in a
+// position a provider's prefix cache can reuse. The old path list survives
+// as a short note either way, so a human reading a transcript can still find
+// the source files.
+function renderFrameworkPreamble(lines, descriptor, ctx) {
   const { framework } = splitReadFirst(descriptor.readFirst);
   if (framework.length === 0) return;
-  lines.push("## Framework (read first — every stage, every role)");
-  for (const f of framework) lines.push(`- ${f}`);
+  if (!shouldInlineFramework(ctx)) {
+    lines.push("## Framework (read first — every stage, every role)");
+    for (const f of framework) lines.push(`- ${f}`);
+    lines.push("");
+    return;
+  }
+  lines.push("## Framework (inlined below — every stage, every role)");
+  lines.push(`Source files, for reference in a transcript: ${framework.join(", ")}`);
+  lines.push("");
+  for (const f of framework) {
+    lines.push(`### ${f}`);
+    const content = readFrameworkFileContent(f, ctx);
+    lines.push(content !== null ? content.trimEnd() : `(missing: ${f})`);
+    lines.push("");
+  }
+}
+
+// Phase 37.2: shared layer-2 (role brief) renderer. `pointerLine` is the
+// host-specific sentence that names the role brief's path — kept unchanged
+// either way, both because it is the "short note" the plan item asks for and
+// because claude-code's phrasing of it also carries the Task-tool
+// subagent-invocation instruction, which inlining must not remove. With
+// prompts.inline_framework, the brief's content is appended verbatim right
+// after it, making the whole layer byte-identical across dispatches of the
+// same role and — same reasoning as renderFrameworkPreamble above — cacheable.
+function renderRoleBriefBlock(lines, pointerLine, roleBriefRelPath, ctx) {
+  lines.push(pointerLine);
+  if (shouldInlineFramework(ctx)) {
+    lines.push("");
+    const content = readFrameworkFileContent(roleBriefRelPath, ctx);
+    lines.push(content !== null ? content.trimEnd() : `(missing: ${roleBriefRelPath})`);
+  }
   lines.push("");
 }
 
@@ -290,4 +365,4 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, splitReadFirst, toolBudgetSection };

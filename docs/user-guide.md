@@ -938,13 +938,30 @@ hosts:
       default: accounts/fireworks/models/qwen3-coder-480b-a35b-instruct
 ```
 
-#### Prompt caching (phase 32.1)
+#### Prompt caching (phase 32.1) and inlined framework content (phase 37.2)
 
 Every stage prompt is assembled in a stable four-layer order — framework
 preamble/rules, role brief, learned context, then the volatile per-dispatch
 tail — so the first three layers are byte-identical across every dispatch in
 a run that shares the same role. OpenAI-style endpoints get automatic prefix
 caching from that ordering alone, no config needed.
+
+By default (`prompts.inline_framework: true`), layers 1-2 carry the actual
+content of `AGENTS.md`, `.devteam/rules/*.md`, and the role brief — not just
+their paths — so the ~22 KB the model used to re-read itself via tool calls
+every dispatch sits in that byte-identical, cacheable position instead. A
+short "Source files" note keeps the paths visible in a transcript. Set it to
+`false` to revert to the pre-37.2 behaviour (the model reads the files
+itself):
+
+```yaml
+prompts:
+  inline_framework: false  # default: true
+```
+
+Turn it off for a host with no prefix caching and a small context window,
+where re-reading a handful of small files each dispatch is cheaper than
+carrying ~22 KB of framework text on every request.
 
 For Anthropic-compatible endpoints reached through this adapter (a proxy
 that accepts `cache_control` on message content blocks), opt in explicitly:
