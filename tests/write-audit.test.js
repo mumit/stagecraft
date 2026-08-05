@@ -21,6 +21,7 @@ const os = require("node:os");
 const { execFileSync } = require("node:child_process");
 
 const { isAllowed, auditWrites, snapshotWritables, isIgnoredRuntimeArtifact } = require("../core/guards/write-audit");
+const { writeMutationScript } = require("./_helpers");
 
 // ─── 1. isAllowed ─────────────────────────────────────────────────────────────
 
@@ -520,4 +521,149 @@ describe("runHeadless — writeViolations field in result", { concurrency: false
       }
     }
   );
+});
+
+// ─── 7. Integration: subject-write detection in review mode (phase-36) ───────
+//
+// Prior to this fix, runHeadless's post-hoc audit snapshotted ctx.cwd (the
+// review workspace) both before and after dispatch — never ctx.processCwd
+// (the subject under review) — so it structurally could not see a write into
+// the subject at all. These tests exercise the second, independent
+// snapshot/audit pass added against ctx.processCwd when ctx.externalReviewMode
+// is true. Unconditionally overrides DEVTEAM_HEADLESS_COMMAND itself (rather
+// than gating on an ambient "cat" value), so it runs the same way under
+// `npm test` and `CI=true DEVTEAM_HEADLESS_COMMAND=cat npm test`.
+
+describe("runHeadless — subject-write detection in review mode", { concurrency: false }, () => {
+  test("a write into the subject is flagged, even though the workspace isn't a git repo", async () => {
+    const { runHeadless } = require("../core/adapters/headless");
+    const { loadAdapter } = require("../core/router");
+
+    // Workspace: plain tempdir, deliberately NOT a git repo — matches
+    // core/review-workspace.js#createReviewWorkspace, which never git-inits
+    // the workspace it creates.
+    const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-review-ws-"));
+    // Subject: a real git repo, one clean commit — matches the common case
+    // of "the repo being reviewed".
+    const subjectDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-review-subject-"));
+    const originalCmd = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      fs.mkdirSync(path.join(workspaceDir, "pipeline", "gates"), { recursive: true });
+      execFileSync("git", ["init"], { cwd: subjectDir });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: subjectDir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: subjectDir });
+      fs.writeFileSync(path.join(subjectDir, "README.md"), "hi");
+      execFileSync("git", ["add", "README.md"], { cwd: subjectDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: subjectDir });
+
+      // The spawned child's cwd is ctx.processCwd (subjectDir) — see
+      // core/adapters/headless.js's spawn() call — so this script's relative
+      // write lands in the subject, exactly as a reviewing agent's would.
+      const scriptPath = writeMutationScript(workspaceDir);
+      process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${scriptPath}`;
+
+      const adapter = loadAdapter("codex");
+      const descriptor = {
+        stage: "stage-01", role: "pm", rolesInStage: ["pm"], workstreamId: "stage-01",
+        objective: "test", readFirst: [], allowedWrites: ["pipeline/brief.md"],
+        artifact: "pipeline/brief.md", template: null, goalCondition: null, expectedGate: {}, changeId: null,
+      };
+      const ctx = {
+        cwd: workspaceDir, processCwd: subjectDir, externalReviewMode: true,
+        track: "review-only", orchestrator: "test", changeId: null, log: false,
+      };
+      const r = await runHeadless(adapter, descriptor, ctx);
+      assert.deepEqual(r.writeViolations, ["subject:mutated.txt"],
+        "expected exactly one subject-prefixed violation for the subject write");
+    } finally {
+      if (originalCmd !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = originalCmd;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+      fs.rmSync(subjectDir, { recursive: true, force: true });
+    }
+  });
+
+  test("a subject write is NOT flagged when externalReviewMode is unset (prototype-mode parity)", async () => {
+    const { runHeadless } = require("../core/adapters/headless");
+    const { loadAdapter } = require("../core/router");
+
+    // Prototype mode (core/cli/commands/prototype.js) sets ctx.processCwd to
+    // a workspace WITHOUT ever setting ctx.externalReviewMode — the subject
+    // audit above must not fire for that shape, or every prototype build
+    // would get spuriously flagged.
+    const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-proto-ws-"));
+    const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-proto-target-"));
+    const originalCmd = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      fs.mkdirSync(path.join(workspaceDir, "pipeline", "gates"), { recursive: true });
+      execFileSync("git", ["init"], { cwd: targetDir });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: targetDir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: targetDir });
+      fs.writeFileSync(path.join(targetDir, "README.md"), "hi");
+      execFileSync("git", ["add", "README.md"], { cwd: targetDir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: targetDir });
+
+      const scriptPath = writeMutationScript(workspaceDir);
+      process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${scriptPath}`;
+
+      const adapter = loadAdapter("codex");
+      const descriptor = {
+        stage: "stage-01", role: "pm", rolesInStage: ["pm"], workstreamId: "stage-01",
+        objective: "test", readFirst: [], allowedWrites: ["pipeline/brief.md"],
+        artifact: "pipeline/brief.md", template: null, goalCondition: null, expectedGate: {}, changeId: null,
+      };
+      const ctx = {
+        cwd: workspaceDir, processCwd: targetDir, // externalReviewMode deliberately absent
+        track: "full", orchestrator: "test", changeId: null, log: false,
+      };
+      const r = await runHeadless(adapter, descriptor, ctx);
+      assert.deepEqual(r.writeViolations, [], "no subject audit should run without externalReviewMode");
+    } finally {
+      if (originalCmd !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = originalCmd;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  test("processCwd equal to cwd does not double-audit an allowed write", async () => {
+    const { runHeadless } = require("../core/adapters/headless");
+    const { loadAdapter } = require("../core/router");
+
+    // Guards the `subjectRoot !== path.resolve(ctx.cwd)` check: without it,
+    // an allowed write would still get flagged by the subject pass (which
+    // uses an empty allowedWrites on purpose) whenever codeRoot and stateRoot
+    // happen to be the same directory.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-samedir-"));
+    const originalCmd = process.env.DEVTEAM_HEADLESS_COMMAND;
+    try {
+      execFileSync("git", ["init"], { cwd: dir });
+      execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: dir });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+      fs.writeFileSync(path.join(dir, "README.md"), "hi");
+      execFileSync("git", ["add", "README.md"], { cwd: dir });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: dir });
+      fs.mkdirSync(path.join(dir, "pipeline", "gates"), { recursive: true });
+
+      const scriptPath = writeMutationScript(dir, "pipeline/brief.md");
+      process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${scriptPath}`;
+
+      const adapter = loadAdapter("codex");
+      const descriptor = {
+        stage: "stage-01", role: "pm", rolesInStage: ["pm"], workstreamId: "stage-01",
+        objective: "test", readFirst: [], allowedWrites: ["pipeline/brief.md"],
+        artifact: "pipeline/brief.md", template: null, goalCondition: null, expectedGate: {}, changeId: null,
+      };
+      const ctx = {
+        cwd: dir, processCwd: dir, externalReviewMode: true,
+        track: "review-only", orchestrator: "test", changeId: null, log: false,
+      };
+      const r = await runHeadless(adapter, descriptor, ctx);
+      assert.deepEqual(r.writeViolations, [], "an allowed write must not be flagged twice when codeRoot === stateRoot");
+    } finally {
+      if (originalCmd !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = originalCmd;
+      else delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
