@@ -12,7 +12,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §36
 | 36.2 framework-path resolution when roots differ | ✅ complete — `core/adapters/render-helpers.js#resolveFrameworkPath` |
 | 36.3 review workspace + orchestrator plumbing | ✅ complete — `core/review-workspace.js`; `ctx.processCwd`/`ctx.externalReviewMode` threaded through `core/orchestrator.js#runStage`/`core/driver.js#run` |
 | 36.4 `devteam review <path>` | ✅ complete — `core/cli/commands/review.js`; host honesty gated by `--allow-unenforced-writes` |
-| 36.5 `devteam review-pr` without an initialised project | proposed |
+| 36.5 `devteam review-pr` without an initialised project | ✅ complete — `core/review-workspace.js`'s `subjectPath: null`/`slugForIdentity` extension; `ctx.noCodeRoot` (`core/orchestrator.js#runStage`, `hosts/acp/adapter.js`) |
 | 36.6 docs: external review guide | proposed |
 
 ## Why
@@ -244,6 +244,19 @@ partial review.
 - Acceptance: `devteam review-pr <url>` succeeds from a directory that is not a Stagecraft
   project and not the repo, with a scripted `gh` stub; state lands in the workspace;
   publishing safety tests still pass.
+
+**Done — see `changelog.d/review-pr-standalone.md`.** The `[verify-first]` claim above did
+not hold as literally stated: line 227 only ever printed a stderr warning and then
+dispatched into `--cwd` regardless — no downstream guard refused anything (confirmed by
+reading `core/config.js#loadConfig`'s silent-defaults fallback and
+`core/orchestrator.js#runStageHeadless`). The old warn-then-proceed-into-cwd behavior is
+left byte-identical for an initialised project; an uninitialised `--cwd` now routes into a
+36.3 workspace instead of that warning. Along the way, found and fixed a real gap in
+`hosts/acp/adapter.js`: `codeRoot: processCwd` (`processCwd = ctx.processCwd || ctx.cwd`)
+never actually let `codeRoot` be falsy, so `hosts/acp/permissions.js`'s already-existing
+"codeRoot absent" branch was unreachable — fixed with an explicit `ctx.noCodeRoot` opt-in
+that doesn't touch the pre-existing fail-closed behavior when `processCwd` is merely
+omitted.
 
 ### 36.6 Docs: external review guide
 

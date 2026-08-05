@@ -176,8 +176,16 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
   } catch {
     reviewExecAllowlist = [];
   }
+  // 36.5: ctx.noCodeRoot is the explicit opt-in for "this review genuinely
+  // has no subject on disk" (a PR diff, not a checkout) — codeRoot must be a
+  // real `null` here, not `processCwd`'s own `ctx.processCwd || ctx.cwd`
+  // fallback, or permissions.js's `findWriteViolation` would see codeRoot ===
+  // stateRoot and deny every write as "inside the subject". When
+  // ctx.processCwd is merely omitted (ctx.noCodeRoot unset), codeRoot stays
+  // processCwd (== ctx.cwd) — the existing fail-closed-by-default behavior
+  // for a review-mode dispatch that forgot to set up a real code/state split.
   const permissionRoots = {
-    codeRoot: processCwd,
+    codeRoot: ctx.noCodeRoot === true ? null : processCwd,
     stateRoot: ctx.cwd,
     mode: ctx.externalReviewMode === true ? "review" : "normal",
     execAllowlist: reviewExecAllowlist,

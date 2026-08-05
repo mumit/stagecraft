@@ -16,12 +16,17 @@
 //      nothing — the gh stub never sees a "pr review" call.
 //   5. missing `gh` on PATH gives an actionable error.
 //   6. a partial/incomplete review never posts, even with --yes.
+//   7. phase-36 item 36.5: the same command from a directory that is
+//      neither an initialised Stagecraft project nor the repo — state lands
+//      in a 36.3 review workspace instead of cwd, and every 35.2
+//      publishing-safety behavior above still holds in that mode.
 
 "use strict";
 
 const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const { makeTargetProject, cleanup, runCLI } = require("./_helpers");
@@ -125,6 +130,27 @@ function setup({ config = CONFIG_PANEL } = {}) {
     DEVTEAM_NO_LOG: "1",
   };
   return { cwd, logPath, env };
+}
+
+// Phase-36 item 36.5 — the same fixtures as setup() above, but `cwd` is a
+// plain directory (no .devteam/, not a git checkout): neither a Stagecraft
+// project nor "the repo". STAGECRAFT_REVIEWS_DIR is pinned to a fresh
+// tmpdir so the review workspace lands somewhere this test controls and
+// cleans up, never under the real ~/.stagecraft/reviews/.
+function setupNoProject() {
+  const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-noproject-")));
+  const reviewsDir = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-reviews-")));
+  const stubDir = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-ghstub-")));
+  const logPath = path.join(cwd, "gh-calls.log");
+  writeGhStub(stubDir, { logPath });
+  const writerPath = writeHostWriter(cwd);
+  const env = {
+    PATH: `${stubDir}${path.delimiter}${process.env.PATH}`,
+    DEVTEAM_HEADLESS_COMMAND: `node ${writerPath}`,
+    DEVTEAM_NO_LOG: "1",
+    STAGECRAFT_REVIEWS_DIR: reviewsDir,
+  };
+  return { cwd, reviewsDir, logPath, env };
 }
 
 function readCalls(logPath) {
@@ -247,6 +273,95 @@ describe("review-pr: partial review never posts", () => {
     // simulates a dispatch that never completed (no pipeline/gates/stage-05.json).
     const partialEnv = { ...env, DEVTEAM_HEADLESS_COMMAND: "true" };
     const r = runCLI(["review-pr", "42", "--post", "--yes"], { cwd, env: partialEnv });
+    assert.notEqual(r.status, 0, "expected a non-zero exit on a partial review");
+    assert.match(r.stderr, /did not complete/);
+
+    const calls = readCalls(logPath);
+    const reviewCalls = calls.filter((c) => c.startsWith('["pr","review"'));
+    assert.equal(reviewCalls.length, 0, "gh stub should never have received a `pr review` call on a partial review");
+  });
+});
+
+// ─── 7. Phase-36 item 36.5: workspace mode (no initialised project) ────────
+
+describe("review-pr: workspace mode — succeeds from a directory that is neither a Stagecraft project nor the repo", () => {
+  it("materializes into the workspace (not cwd), dispatches, and produces a valid stage-05 gate", () => {
+    const { cwd, reviewsDir, env } = setupNoProject();
+    const r = runCLI(["review-pr", "https://github.com/acme/widgets/pull/42", "--json"], { cwd, env });
+    assert.equal(r.status, 0, `review-pr failed: ${r.stderr}\n---\n${r.stdout}`);
+
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.pr.number, 42);
+    assert.equal(out.partial, false);
+    assert.equal(out.gate.status, "PASS");
+    assert.ok(out.workspace, "a workspace path must be reported in workspace mode");
+    assert.ok(
+      path.resolve(out.workspace).startsWith(path.resolve(reviewsDir)),
+      `workspace ${out.workspace} must land under STAGECRAFT_REVIEWS_DIR ${reviewsDir}`,
+    );
+
+    // Nothing written into the invoking cwd — no .devteam/, no pipeline/.
+    assert.ok(!fs.existsSync(path.join(cwd, "pipeline")), "no pipeline/ must be created in the invoking cwd");
+    assert.ok(!fs.existsSync(path.join(cwd, ".devteam")), "no .devteam/ must be created in the invoking cwd");
+
+    // State actually lands under the workspace.
+    const inputDir = path.join(out.workspace, "pipeline", "review-input");
+    assert.ok(fs.existsSync(path.join(inputDir, "pr.md")), "pr.md not materialized into the workspace");
+    assert.ok(fs.existsSync(path.join(inputDir, "diff.patch")), "diff.patch not materialized into the workspace");
+    assert.ok(fs.existsSync(path.join(inputDir, "changed-files.md")), "changed-files.md not materialized into the workspace");
+    assert.ok(fs.existsSync(path.join(out.workspace, "pipeline", "gates", "stage-05.json")), "gate not written into the workspace");
+
+    // subject.json records the PR's identity, not a filesystem path — there
+    // is no checkout, so codeRoot is genuinely absent (36.1's
+    // findWriteViolation already special-cases a falsy codeRoot).
+    const subject = JSON.parse(fs.readFileSync(path.join(out.workspace, "subject.json"), "utf8"));
+    assert.equal(subject.subject_path, null);
+    assert.equal(subject.remote, "https://github.com/acme/widgets.git");
+    assert.equal(subject.commit_sha, "abc123def");
+    assert.deepEqual(subject.pr, { number: 42, url: "https://github.com/acme/widgets/pull/42", title: "Fix the widget crash" });
+  });
+
+  it("re-running the same PR reuses the same workspace (stable slug across invocations)", () => {
+    const { cwd, env } = setupNoProject();
+    const r1 = runCLI(["review-pr", "https://github.com/acme/widgets/pull/42", "--json"], { cwd, env });
+    assert.equal(r1.status, 0, `first review-pr failed: ${r1.stderr}`);
+    const r2 = runCLI(["review-pr", "https://github.com/acme/widgets/pull/42", "--json"], { cwd, env });
+    assert.equal(r2.status, 0, `second review-pr failed: ${r2.stderr}`);
+    assert.equal(JSON.parse(r1.stdout).workspace, JSON.parse(r2.stdout).workspace);
+  });
+});
+
+// The exact 35.2 publishing-safety behaviors from sections 4 and 6 above,
+// re-verified with no initialised project in play — 36.5 must not relax any
+// of it while moving the state root into the workspace.
+
+describe("review-pr: workspace mode — 35.2 publishing safety re-verified with no initialised project", () => {
+  it("refuses --post in a non-interactive context without --yes, and posts nothing", () => {
+    const { cwd, env, logPath } = setupNoProject();
+    const r = runCLI(["review-pr", "https://github.com/acme/widgets/pull/42", "--post"], { cwd, env });
+    assert.notEqual(r.status, 0, "expected a non-zero exit when --post is refused");
+    assert.match(r.stderr, /non-interactive/);
+
+    const calls = readCalls(logPath);
+    const reviewCalls = calls.filter((c) => c.startsWith('["pr","review"'));
+    assert.equal(reviewCalls.length, 0, "gh stub should never have received a `pr review` call");
+  });
+
+  it("--post --yes posts the review as a PR comment", () => {
+    const { cwd, env, logPath } = setupNoProject();
+    const r = runCLI(["review-pr", "https://github.com/acme/widgets/pull/42", "--post", "--yes"], { cwd, env });
+    assert.equal(r.status, 0, `review-pr --post --yes failed: ${r.stderr}\n---\n${r.stdout}`);
+
+    const calls = readCalls(logPath);
+    const reviewCalls = calls.filter((c) => c.startsWith('["pr","review"'));
+    assert.equal(reviewCalls.length, 1, "expected exactly one `gh pr review` call");
+    assert.match(r.stdout, /Posted to PR/);
+  });
+
+  it("refuses --post when the dispatch never wrote a gate, even with --yes (partial review)", () => {
+    const { cwd, env, logPath } = setupNoProject();
+    const partialEnv = { ...env, DEVTEAM_HEADLESS_COMMAND: "true" };
+    const r = runCLI(["review-pr", "https://github.com/acme/widgets/pull/42", "--post", "--yes"], { cwd, env: partialEnv });
     assert.notEqual(r.status, 0, "expected a non-zero exit on a partial review");
     assert.match(r.stderr, /did not complete/);
 
