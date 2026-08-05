@@ -1,7 +1,8 @@
-# Stagecraft Execution Prompts — Phases 28–36 (2026-H2 Roadmap)
+# Stagecraft Execution Prompts — Phases 28–37 (2026-H2 Roadmap)
 
-Companion to [landscape-review-2026-07.md](../landscape-review-2026-07.md) and the
-phase plans `plans/phase-28-*` … `plans/phase-36-*`. Same execution model as
+Companion to [landscape-review-2026-07.md](../landscape-review-2026-07.md),
+[experience-review-2026-08.md](../experience-review-2026-08.md), and the
+phase plans `plans/phase-28-*` … `plans/phase-37-*`. Same execution model as
 [ALL-PROMPTS.md](ALL-PROMPTS.md): paste the **PREAMBLE** (§0) plus one item prompt into a
 fresh Claude (Sonnet) session at the repo root. One item = one session = one branch = one PR.
 
@@ -17,7 +18,8 @@ Status legend: ✅ executed and merged · 🔲 ready to run · ⏸ blocked (see 
 | 33 | Eval flywheel & prompt optimization | 33.1–33.4 | ✅ complete |
 | 34 | Interop & auditable SDLC | 34.1–34.4 | ✅ complete |
 | 35 | Existing-codebase mode | 35.1–35.5 | ✅ complete |
-| 36 | External review mode (ACP-first) | 36.0–36.6 | 🔲 ready — **start with the 36.0 spike** |
+| 36 | External review mode (ACP-first) | 36.0–36.6 | ✅ complete |
+| 37 | Interface & token efficiency | 37.1–37.6 | 🔲 ready — **adds no capability by design** |
 
 Only two items from phases 28–35 remain open: **32.2** (needs ADR-017 accepted first —
 it is written but still Proposed) and **32.4** (deferred; no host adapter exposes
@@ -1334,6 +1336,200 @@ Update the README host table to note acp as the recommended host for reviewing c
 not own. Add the new doc to docs/README.md's index.
 
 No code. `npm run consistency` green is the acceptance gate.
+```
+
+---
+
+## Phase 37 — Interface & Token Efficiency 🔲
+
+Measured findings behind these items are in
+[../experience-review-2026-08.md](../experience-review-2026-08.md). **This phase adds no new
+capability** — every item removes surface, generates something from data that already exists,
+or moves bytes to a cheaper place. If an item tempts you toward a new feature, that is a
+signal you have left its scope.
+
+### 37.1 Generated per-command help 🔲
+
+```
+TASK: Implement plans/phase-37-interface-and-token-efficiency.md item 37.1 — real
+per-command help, generated from the flag specs that already exist.
+Branch: feat/per-command-help
+
+[verify-first] Confirm both claims before writing code:
+(a) `devteam help <cmd>` ignores its argument — run `node bin/devteam help run > /tmp/a`
+    and `node bin/devteam help review > /tmp/b` and diff them; they are currently identical
+    (343 lines each).
+(b) Flag specs are structured with type + description — see the "budget-usd" entry in
+    core/cli/commands/run.js. Report how the specs are declared and how uniform they are
+    across all 44 command modules.
+
+Implement `devteam help <command>` and `devteam <command> --help` to print ONLY that
+command's help, GENERATED from the flag specs: synopsis line, usage, then each flag with
+type and description. Do NOT hand-write per-command prose — if a description is missing or
+poor, fix the spec, so there stays exactly one source of truth. `devteam help` with no
+argument keeps its current behaviour.
+
+Unknown command: print the command list plus a did-you-mean suggestion using nearest match
+by edit distance (small helper, no new dependency).
+
+Tests: `help run` and `run --help` produce identical command-scoped output under 60 lines
+containing all 21 of run's flags with types; output for two different commands differs
+(the regression this item exists to fix); unknown command suggests a near match; and a test
+that every flag in every command module has a non-empty description — expect that test to
+fail first and fix the specs it flags, listing them in your report.
+```
+
+### 37.2 Inline framework + role brief into the cacheable prefix 🔲
+
+```
+TASK: Implement plans/phase-37-interface-and-token-efficiency.md item 37.2 — make the
+per-dispatch framework bytes cacheable instead of re-read at full price every dispatch.
+Branch: feat/inline-framework-prefix
+
+Read the plan item in full first, and §3 of plans/experience-review-2026-08.md for the
+measurements. In short: the prompt names framework files as paths, the model reads ~22 KB
+itself via tool calls in a fresh session per dispatch, and the measured shared prefix across
+two dispatches of the same role is only 268 bytes (15% of the prompt). So nothing meaningful
+is cacheable and the 22 KB is paid every time.
+
+[verify-first] Reproduce the 268-byte measurement before changing anything: render two
+dispatches of the SAME role (pm at stage-01 and stage-03) with `devteam stage`, extract each
+workstream prompt block, and compute the shared prefix length. Report the number you get. If
+it differs materially from 268, stop and report rather than proceeding on a stale premise.
+
+Implement: include the content of the framework set (AGENTS.md, .devteam/rules/pipeline.md,
+.devteam/rules/gates-core.md) and the role brief INLINE, in the stable order 32.1
+established, ahead of everything stage-specific — so the whole block is byte-identical across
+every dispatch of the same role in a run. Put openai-compat's cache_control breakpoint
+immediately after the inlined block (32.1 already has the mechanism). Keep a short list of
+the source paths as a note so a human reading a transcript can still locate them.
+
+Config `prompts.inline_framework`, default true, with the old path-pointer behaviour behind
+false — a host without prefix caching may prefer it, and phase 36's external-review
+absolute-path mechanism (plans/acp-read-scope.md) must keep working in both settings.
+
+MEASURE, DO NOT ASSUME. Report before/after: prompt size, shared-prefix length between two
+same-role dispatches, and the number of file-read round-trips per dispatch. The
+prompt-budget consistency check fails on >10% growth — re-baseline it deliberately in this
+commit and say so in the report. Do NOT suppress or weaken the check.
+
+Tests: shared-prefix length between two same-role dispatches covers the full inlined block
+(assert on length, not a substring); a stubbed cache-aware endpoint reports cached_tokens > 0
+on the second dispatch; with inline_framework:false rendering is byte-identical to today;
+external-review mode resolves framework content in both settings;
+docs/reference/prompt-budget.md regenerated.
+```
+
+### 37.3 Project-context guard 🔲
+
+```
+TASK: Implement plans/phase-37-interface-and-token-efficiency.md item 37.3 — stop read-only
+commands from inventing a pipeline in directories that are not Stagecraft projects.
+Branch: fix/project-context-guard
+
+[verify-first] Confirm the bug: `cd /tmp && node <repo>/bin/devteam next` prints
+"▶️ run-stage — requirements (stage-01)" as though a pipeline were waiting there, because
+core/cli/commands/next.js has no initialisation check. Contrast
+core/cli/commands/review-pr.js, which checks for .devteam/config.yml and refuses with an
+explanation — reuse that refusal shape and wording style rather than inventing a new one.
+
+Implement ONE shared guard (single helper, not copied per command) used by the read-only
+reporting commands: at minimum next, summary, status, log, validate. It detects "not a
+Stagecraft project", exits non-zero, and says what is missing plus the fix
+(`devteam init --host <name>`). `--json` callers get a structured error, never a silent
+zero-state.
+
+Do NOT guard commands that legitimately run outside a project: init, review, review-pr with
+a workspace, hosts, stages, help, doctor. Enumerate the guarded/unguarded split in a
+why-comment explaining the principle, and add a test asserting both lists so the split
+cannot drift silently as commands are added.
+
+Tests: next/summary/status in a non-project temp dir exit non-zero with an actionable
+message; `devteam review <path>` and `devteam init` from a non-project dir still work;
+--json returns a structured error; the guarded/unguarded list test.
+```
+
+### 37.4 Task-grouped top-level help 🔲
+
+```
+TASK: Implement plans/phase-37-interface-and-token-efficiency.md item 37.4 — collapse
+`devteam --help` from 343 lines to one screen, grouped by what the user is trying to do.
+Branch: feat/grouped-help
+PRECONDITION CHECK: 37.1 merged (per-command help exists), because this item moves the
+detailed flag reference out of the default view and users need somewhere to go.
+
+Default `devteam --help` becomes ≤ 45 lines: task groups with one line per command. Suggested
+grouping (yours to refine): Start here (init, doctor, assess) · Daily (run, stage, next,
+commit) · Review (review, review-pr, report --findings) · Verify (verify, verify-chain,
+validate, consistency) · Learn (patterns, memory, evals, corpus) · Audit (evidence, report,
+log, summary, performance).
+
+The full current output moves behind `devteam --help --all` — same content, nothing lost —
+and remains in generated docs/reference/cli.md.
+
+NO command renames and NO removals. This is presentation only; existing scripts and muscle
+memory must keep working. If you find yourself wanting to rename something for tidiness,
+record it under out-of-scope findings instead.
+
+Tests: default help ≤ 45 lines; a test that enumerates core/cli/commands/*.js and asserts
+every command appears exactly once across the groups (so a future command cannot be added
+without being grouped — this is the check that keeps the screen honest); `--help --all`
+prints the full reference; generated CLI reference byte-unchanged.
+```
+
+### 37.5 Documentation front door and archive 🔲
+
+```
+TASK: Implement plans/phase-37-interface-and-token-efficiency.md item 37.5 — give 103 doc
+files and 1.4 MB one obvious entry point, and make sprawl mechanically visible.
+Branch: docs/front-door
+
+DELETE NOTHING. Moves and indexes only; this project's docs carry deliberate caveats and
+history that must survive.
+
+Three parts: (1) one front door — a docs/START-HERE.md, or a tightened README section —
+naming the FIVE documents a new user actually needs, no more; (2) move superseded and
+historical material under docs/historical/ (already exists) with an index, leaving a pointer
+where anything externally linked used to live; (3) add a consistency check that every
+docs/**.md is reachable from at least one index, so the sprawl cannot silently regrow.
+
+Expect the new check to fail on existing unreferenced files. List every file it flags in your
+report and index them rather than deleting — if something genuinely looks obsolete, say so
+and leave it in place for a human to decide.
+
+Acceptance: front door names ≤ 5 entry docs; new consistency check passes with every doc
+reachable; no deletions; `npm run consistency` green.
+```
+
+### 37.6 Decide ADR-017 (stage waves) 🔲 [decision, not implementation]
+
+```
+TASK: Implement plans/phase-37-interface-and-token-efficiency.md item 37.6 — resolve
+ADR-017's status. This is a DECISION item: do not implement wave execution in this session.
+Branch: docs/adr-017-decision
+
+docs/adr/017-dag-wave-execution.md has been Status: Proposed since 2026-08-02, so phase 32
+item 32.2 was never built and `full` still pays 18 sequential stage slots against an
+analysis (plans/pipeline-speed-opportunities.md) saying ~13 is reachable.
+
+Read ADR-017 in full, plus ADR-015 (workstream scheduling, whose deferral created this), plus
+plans/phase-32-performance-parallelism.md §32.2. Then resolve it one way and make every
+document agree:
+
+- ACCEPTING: set the status and date, record the decision and any scope reduction (for
+  example waving only the two already-known-independent groups rather than a general DAG),
+  and add a follow-up work item with concrete scope to plans/phase-32-*.md. Implementation is
+  a separate session.
+- REJECTING: set Status: Rejected with a dated rationale, and update
+  plans/phase-32-performance-parallelism.md plus the "What is not delivered yet" table in
+  plans/README.md so 32.2 stops appearing as pending work.
+
+Either outcome is a success for this item. What is not acceptable is leaving it Proposed. If
+the honest answer is "cannot decide without data", say which data, and record that as the
+decision with the measurement that would settle it.
+
+Acceptance: ADR-017 has a terminal status with a dated rationale; phase-32 and plans/README
+agree with it; if accepted, a scoped follow-up item exists. No wave-execution code.
 ```
 
 ---
