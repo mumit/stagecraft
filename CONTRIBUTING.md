@@ -254,7 +254,7 @@ When you change code, update the docs that own the affected facts. A restatement
 
 ## Archive policy
 
-Anything superseded moves to `docs/historical/` rather than being half-updated in place. The consistency checker excludes `docs/historical/` from its prose-vs-code checks, so archived docs do not generate false drift alerts. Name archived files with a datestamp prefix (`YYYY-MM-DD-original-name.md`) so the archive is self-documenting. The [`docs/historical/`](docs/historical/) directory already uses this convention for the self-audit archive.
+Anything superseded moves to `docs/historical/` rather than being half-updated in place. The consistency checker excludes `docs/historical/` from its prose-vs-code checks, so archived docs do not generate false drift alerts. Name archived files with a datestamp prefix (`YYYY-MM-DD-original-name.md`) so the archive is self-documenting — the one file there today (`GAP-ANALYSIS.md`) predates this policy and doesn't yet follow it; new archivals should. The self-audit archive at [`docs/audit-archive/`](docs/audit-archive/) uses an analogous dated convention already — one directory per audit run, named `YYYY-MM-DD-version-context/` (see [`docs/audit-archive/HISTORY.md`](docs/audit-archive/HISTORY.md)) — but that's a separate mechanism from `docs/historical/`, not an example of it.
 
 ## Where to ask
 
