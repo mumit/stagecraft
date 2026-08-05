@@ -5,7 +5,9 @@ const COMMAND_MODULES = require(path.join(__dirname, "..", "command-list"));
 const { nearestMatch } = require(path.join(__dirname, "..", "nearest-match"));
 
 const name = "help";
-const flags = {};
+const flags = {
+  all: { type: "boolean", description: "Show the full command reference (every command, every flag)" },
+};
 
 // Resolves a command module the same way bin/devteam does, from the shared
 // command-list.js map — so `devteam help <command>` and `devteam <command>
@@ -16,6 +18,55 @@ function loadCommand(commandName) {
   return require(path.join(__dirname, moduleName));
 }
 
+// 37.4: default `devteam --help` collapses to one screen, grouped by what the
+// user is trying to do. Full detail (as in the old 343-line listing) moves to
+// `devteam --help --all` and stays in generated docs/reference/cli.md — this
+// is presentation only, so every command in COMMAND_MODULES must appear here
+// exactly once (tests/help-cmd.test.js enforces coverage so a new command
+// can't be added without being grouped).
+const GROUPS = [
+  { label: "Start here", commands: ["init", "doctor", "assess", "standards"] },
+  { label: "Daily", commands: ["run", "stage", "next", "commit", "compact", "advise", "preflight"] },
+  { label: "Review", commands: ["review", "review-pr", "report"] },
+  { label: "Verify", commands: ["verify", "verify-chain", "validate", "consistency", "spec", "replay", "reproduce"] },
+  { label: "Fix & retry", commands: ["restart", "ruling", "fix-escalation", "derive-approvals", "merge", "stamp-chain"] },
+  { label: "Learn", commands: ["patterns", "memory", "evals", "corpus", "architecture"] },
+  { label: "Audit", commands: ["evidence", "log", "summary", "performance", "status"] },
+  { label: "Setup & tools", commands: ["hosts", "stages", "ui", "ci", "hook", "prototype", "help"] },
+];
+
+const GROUP_LABEL_WIDTH = Math.max(...GROUPS.map((g) => g.label.length)) + 2;
+
+function printGroupedHelp() {
+  const groupLines = GROUPS.map(
+    (g) => `${g.label.padEnd(GROUP_LABEL_WIDTH)}${g.commands.join(" · ")}`,
+  ).join("\n");
+
+  console.log(`devteam — model-agnostic AI dev team orchestrator
+
+Usage: devteam <command> [args]
+
+  devteam <command> --help   Flags and details for one command
+  devteam --help --all       Full reference (every command, every flag)
+
+${groupLines}
+
+Quickstart:
+  1. cd into your target project (NOT the Stagecraft repo).
+  2. devteam init --host claude-code   # lays down rules, roles, hooks
+  3. devteam doctor                    # verify install
+  4. devteam run --feature "..."       # or: devteam stage requirements --feature "..."
+  5. devteam next                      # what to do next: advance, fix, merge, escalate, or done
+
+devteam never calls a model itself — it renders prompts and validates the
+gate JSON that comes back. See "devteam --help --all" or docs/reference/cli.md
+for every command and flag.
+`);
+}
+
+// 37.4: the pre-existing full listing, now reached via `devteam --help --all`
+// or `devteam help --all` instead of being the default. Content unchanged —
+// nothing lost, just no longer the first thing a new user sees.
 function printFullHelp() {
   console.log(`devteam — model-agnostic AI dev team orchestrator
 
@@ -381,13 +432,20 @@ validates the gate JSON that comes back.
 // the target command's own `--help` handling so `devteam help <command>` and
 // `devteam <command> --help` are the exact same code path (byte-identical
 // output), rather than re-deriving a usage string here.
-function run(positional) {
+//
+// 37.4: with no target command, default to the grouped one-screen view;
+// --all (or a target of "--all" via bin/devteam's bare-flag path) prints the
+// full reference that used to be the only option.
+function run(positional, flags = {}) {
   const target = positional[0];
-  if (!target) { printFullHelp(); return; }
+  if (!target) {
+    if (flags.all) { printFullHelp(); } else { printGroupedHelp(); }
+    return;
+  }
 
   const cmd = loadCommand(target);
   if (!cmd) {
-    printFullHelp();
+    printGroupedHelp();
     const suggestion = nearestMatch(target, Object.keys(COMMAND_MODULES));
     console.log(
       suggestion
@@ -401,4 +459,4 @@ function run(positional) {
   cmd.run([], { help: true });
 }
 
-module.exports = { name, flags, run };
+module.exports = { name, flags, run, GROUPS, printGroupedHelp, printFullHelp };

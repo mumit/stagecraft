@@ -364,8 +364,13 @@ describe("devteam evidence status", () => {
   });
 
   it("lists the command in global help and rejects unknown subcommands", () => {
+    // 37.4: default `devteam help` is now the grouped one-screen view (just
+    // the command name, no subcommands); the "evidence status" subcommand
+    // detail moved to `devteam help --all`.
     const help = runCLI(["help"]);
-    assert.match(help.stdout, /evidence status/);
+    assert.match(help.stdout, /evidence/);
+    const fullHelp = runCLI(["help", "--all"]);
+    assert.match(fullHelp.stdout, /evidence status/);
     const bad = runCLI(["evidence", "unknown"]);
     assert.equal(bad.status, 2);
     assert.match(bad.stderr, /Usage: devteam evidence/);

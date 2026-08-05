@@ -495,4 +495,8 @@ List installed host adapters.
 
 Show command list and quickstart.
 
+| Flag  | Type | Description                                                 |
+| ----- | ---- | ----------------------------------------------------------- |
+| --all | bool | Show the full command reference (every command, every flag) |
+
 <!-- /generated -->
