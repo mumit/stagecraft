@@ -1232,6 +1232,33 @@ async function runStageHeadless(stageName, opts = {}) {
     let results = [];
     for (const wave of waves) {
       const waveResults = await mapByHostConcurrency(wave, dispatchOptions, dispatchWorker);
+      // Matrix-shaped peer-review gates (approvals derived from sibling
+      // workstreams' by-*.md review files — see headless.js's "Derive
+      // peer-review gates" rescan) can materialize on disk *after* the
+      // workstream they belong to has already exited. That rescan runs
+      // per-workstream at that workstream's own close, scoped to whatever
+      // review files exist at that instant; a role that finishes first sees
+      // none of its later-finishing peers' review files yet and closes with
+      // gatePath: null — even though a peer's own rescan minutes later
+      // derives and writes that exact gate as a side effect. By the time
+      // the whole wave has settled (every sibling dispatchWorker call above
+      // has returned), any gate that was ever going to appear from files
+      // already on disk has had its chance to. Re-check once more here,
+      // before these results reach normalizeDispatchResults()'s wroteGate
+      // check in core/driver-dispatch.js — without this, a stage that fully
+      // passed halts anyway with "produced no gate" (a costly, blocking
+      // false positive). Scoped tightly to dispatches that actually exited
+      // cleanly, so a genuine no-gate failure still halts as before.
+      for (const result of waveResults) {
+        if (result.gatePath || result.stubGate || result.skipped) continue;
+        if (result.exitCode !== 0 || result.timedOut) continue;
+        const lateGatePath = path.join(gatesDir, `${result.descriptor.workstreamId}.json`);
+        let lateGate = null;
+        try { lateGate = JSON.parse(fs.readFileSync(lateGatePath, "utf8")); } catch { /* not written (yet), or unreadable */ }
+        if (lateGate && lateGate._stub !== true) {
+          result.gatePath = lateGatePath;
+        }
+      }
       results = results.concat(waveResults);
     }
 

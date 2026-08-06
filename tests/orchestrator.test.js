@@ -437,6 +437,128 @@ describe("orchestrator: runStageHeadless --skip-completed", () => {
   });
 });
 
+// ─── Late-derived matrix gate recovery ──────────────────────────────────
+// Regression for: a review_shape "matrix" peer-review gate is derived from
+// sibling workstreams' by-*.md review files (headless.js's "Derive
+// peer-review gates" rescan), which can land on disk *after* the workstream
+// it belongs to has already exited — the earliest-finishing role sees none
+// of its later-finishing peers' review files yet, and closes with
+// gatePath: null even though a peer's own rescan minutes later derives that
+// exact gate as a side effect. Without the post-wave recheck in
+// runStageHeadless, that null is permanent and normalizeDispatchResults()'s
+// wroteGate flips false — halting a stage that, on disk, fully passed.
+describe("orchestrator: runStageHeadless recovers a matrix-derived gate that lands after its own workstream exits", () => {
+  // `frontend` exits immediately without writing its own gate (simulating
+  // "my required peer reviews aren't written yet"). `platform` is the
+  // slowest to finish and, just before exiting, writes frontend's gate as
+  // well as its own — simulating headless.js's idempotent by-*.md rescan
+  // finally deriving frontend's gate as a side effect of platform's own
+  // close. backend/qa write their own gate immediately, same as any normal
+  // dispatch. Every process reads the piped prompt from stdin to find its
+  // own role (`Workstream: stage-05.<role>`) — one shared
+  // DEVTEAM_HEADLESS_COMMAND drives all four concurrent dispatches.
+  function makeMatrixReviewStub(cwd) {
+    const script = path.join(cwd, "matrix-review-stub.js");
+    fs.writeFileSync(script, `
+const fs = require("node:fs");
+const path = require("node:path");
+let input = "";
+process.stdin.on("data", (c) => { input += c; });
+process.stdin.on("end", () => {
+  const m = input.match(/role: (\\w+)/);
+  const role = m ? m[1] : "unknown";
+  const gatesDir = path.join(process.cwd(), "pipeline", "gates");
+  fs.mkdirSync(gatesDir, { recursive: true });
+  function writeGate(r) {
+    fs.writeFileSync(path.join(gatesDir, \`stage-05.\${r}.json\`), JSON.stringify({
+      stage: "stage-05", workstream: r, host: "claude-code", status: "PASS",
+      track: "full", blockers: [], warnings: [], orchestrator: "devteam@test",
+      timestamp: new Date().toISOString(), review_shape: "matrix",
+      required_approvals: 2, approvals: ["dev-a", "dev-b"],
+      changes_requested: [], escalated_to_principal: false,
+    }, null, 2) + "\\n");
+  }
+  if (role === "frontend") {
+    process.exit(0);
+  } else if (role === "platform") {
+    setTimeout(() => { writeGate("frontend"); writeGate("platform"); process.exit(0); }, 300);
+  } else {
+    writeGate(role);
+    process.exit(0);
+  }
+});
+`, "utf8");
+    return script;
+  }
+
+  it("patches the recovered gate path onto the result instead of leaving it null", async () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
+    const script = makeMatrixReviewStub(cwd);
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script}`;
+    try {
+      const result = await runStageHeadless("peer-review", { cwd });
+      assert.equal(result.results.length, 4);
+
+      const frontendResult = result.results.find((r) => r.role === "frontend");
+      assert.equal(frontendResult.exitCode, 0);
+      assert.ok(frontendResult.gatePath, "frontend's late-derived gate should be recovered once the wave settles");
+      assert.ok(fs.existsSync(frontendResult.gatePath));
+
+      const { normalizeDispatchResults } = require(path.join(REPO_ROOT, "core", "driver-dispatch"));
+      const dispatch = normalizeDispatchResults(result);
+      assert.equal(dispatch.wroteGate, true, "wroteGate must be true once the late-derived gate is recovered — this is what prevents the false structural-input halt");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("leaves gatePath null when the workstream exits clean but truly never gets a gate", async () => {
+    // Same stub, but strip platform's rescue write — nothing ever creates
+    // frontend's gate, so this must still surface as a real no-gate result
+    // (and a genuine structural-input halt), not be papered over.
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
+    const script = path.join(cwd, "matrix-review-stub-no-rescue.js");
+    fs.writeFileSync(script, `
+const fs = require("node:fs");
+const path = require("node:path");
+let input = "";
+process.stdin.on("data", (c) => { input += c; });
+process.stdin.on("end", () => {
+  const m = input.match(/role: (\\w+)/);
+  const role = m ? m[1] : "unknown";
+  if (role === "frontend") { process.exit(0); return; }
+  const gatesDir = path.join(process.cwd(), "pipeline", "gates");
+  fs.mkdirSync(gatesDir, { recursive: true });
+  fs.writeFileSync(path.join(gatesDir, \`stage-05.\${role}.json\`), JSON.stringify({
+    stage: "stage-05", workstream: role, host: "claude-code", status: "PASS",
+    track: "full", blockers: [], warnings: [], orchestrator: "devteam@test",
+    timestamp: new Date().toISOString(), review_shape: "matrix",
+    required_approvals: 2, approvals: ["dev-a", "dev-b"],
+    changes_requested: [], escalated_to_principal: false,
+  }, null, 2) + "\\n");
+  process.exit(0);
+});
+`, "utf8");
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script}`;
+    try {
+      const result = await runStageHeadless("peer-review", { cwd });
+      const frontendResult = result.results.find((r) => r.role === "frontend");
+      assert.equal(frontendResult.exitCode, 0);
+      assert.equal(frontendResult.gatePath, null, "no rescue write ever happened — must stay a genuine no-gate result");
+
+      const { normalizeDispatchResults } = require(path.join(REPO_ROOT, "core", "driver-dispatch"));
+      const dispatch = normalizeDispatchResults(result);
+      assert.equal(dispatch.wroteGate, false);
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+});
+
 // ─── 31.1: per-role orchestrator stamping wired into the real headless dispatch ──
 // Mirrors the stub pattern in tests/patterns.test.js (makeHeadlessStub): filter to a
 // single --workstream so a single global DEVTEAM_HEADLESS_COMMAND stub unambiguously
