@@ -47,6 +47,7 @@ const flags = {
   host:      { type: "string",  description: "Dispatch host (default: acp — the only host that mechanically prevents writes to the subject)" },
   workspace: { type: "string",  description: "Override the derived ~/.stagecraft/reviews/<slug> workspace path" },
   "allow-unenforced-writes": { type: "boolean", description: "Required with --host anything other than acp: acknowledges that writes to the subject are not mechanically prevented" },
+  "timeout-ms": { type: "number", description: "Per-dispatch timeout (ms) — default 10 minutes (core/adapters/headless.js's DEFAULT_TIMEOUT_MS); 0 disables it. A thorough adversarial/security-review stage over a large diff can legitimately run past the default." },
   json:      { type: "boolean", description: "JSON output" },
   open:      { type: "boolean", description: "Open the findings report in a browser when the run finishes" },
   list:      { type: "boolean", description: "List existing review workspaces instead of running a review" },
@@ -217,6 +218,7 @@ function run(positional, _flags) {
     externalReviewMode: true,
     track,
     scope: _flags.scope || [],
+    timeoutMs: Number.isFinite(_flags.timeoutMs) ? _flags.timeoutMs : undefined,
     config,
     onEvent,
   }))

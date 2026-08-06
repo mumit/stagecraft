@@ -26,9 +26,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { spawnSync } = require("node:child_process");
+const { spawnSync, spawn } = require("node:child_process");
 
-const { REPO_ROOT, cleanup, runCLI } = require("./_helpers");
+const { REPO_ROOT, BIN, cleanup, runCLI } = require("./_helpers");
 
 const STUB_PATH = path.join(REPO_ROOT, "tests", "fixtures", "acp-stub-review-agent.js");
 
@@ -160,6 +160,95 @@ describe("36.4: host honesty — only --host acp mechanically prevents subject w
       env: baseEnv(reviewsDir, { DEVTEAM_HEADLESS_COMMAND: "cat" }),
     });
     assert.ok(!/cannot mechanically prevent writes/.test(r.stderr));
+  });
+});
+
+// ─── --timeout-ms ───────────────────────────────────────────────────────────
+// Regression for: `devteam review` had no way to raise (or disable) headless.js's
+// hardcoded 10-minute DEFAULT_TIMEOUT_MS per dispatch — unlike `devteam run`,
+// which has always had --timeout-ms. A thorough adversarial/security-review
+// stage over a large diff can legitimately run past 10 minutes and gets
+// killed mid-write with no way to ask for more time short of editing
+// core/adapters/headless.js. --host codex (not acp) here only because it's a
+// direct runHeadless() caller DEVTEAM_HEADLESS_COMMAND can stub cheaply — the
+// flag threads through core/driver.js identically regardless of host.
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+// review-only's single "security" stage classifies a timeout as transient
+// and retries after core/driver.js's default 30s retryDelayMs (review.js
+// exposes no override for that, same as it exposed none for timeoutMs before
+// this fix) — waiting out that whole cycle would make this test take 30s+
+// for no reason. Instead, spawn async and poll the transcript directly:
+// as soon as the *first* attempt's "TIMED OUT" trailer appears (which
+// --timeout-ms controls), the flag has proven it reached the dispatch, and
+// the child is killed rather than left to run the retry to completion.
+function findWorkspaceLogFile(reviewsDir) {
+  if (!fs.existsSync(reviewsDir)) return null;
+  const entries = fs.readdirSync(reviewsDir).filter((f) => f !== "sleep-stub.js");
+  for (const entry of entries) {
+    const logsDir = path.join(reviewsDir, entry, "pipeline", "logs");
+    if (!fs.existsSync(logsDir)) continue;
+    const logFile = fs.readdirSync(logsDir).find((f) => f.startsWith("stage-") && f.endsWith(".log"));
+    if (logFile) return path.join(logsDir, logFile);
+  }
+  return null;
+}
+
+async function waitForLogMatch(reviewsDir, pattern, deadlineMs) {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const logPath = findWorkspaceLogFile(reviewsDir);
+    if (logPath) {
+      const content = fs.readFileSync(logPath, "utf8");
+      if (pattern.test(content)) return content;
+    }
+    await sleep(50);
+  }
+  return null;
+}
+
+describe("36.4 follow-up: devteam review --timeout-ms", () => {
+  it("is honored — a dispatch that outlives the timeout is killed well before the stub's own (much longer) sleep completes", async () => {
+    const reviewsDir = tmpdir("devteam-test-reviews-");
+    const subject = makeFixtureSubjectRepo();
+    const sleepScript = path.join(reviewsDir, "sleep-stub.js");
+    fs.mkdirSync(reviewsDir, { recursive: true });
+    // Sleeps far longer than --timeout-ms below and writes nothing — if the
+    // timeout isn't honored, no "TIMED OUT" trailer ever appears within the
+    // poll window and this test times out instead of passing.
+    fs.writeFileSync(sleepScript, `setTimeout(() => process.exit(0), 3000);\n`, "utf8");
+
+    const child = spawn("node", [
+      BIN, "review", subject, "--host", "codex", "--allow-unenforced-writes", "--timeout-ms", "300", "--json",
+    ], {
+      env: { ...process.env, ...baseEnv(reviewsDir, { DEVTEAM_HEADLESS_COMMAND: `"${process.execPath}" "${sleepScript}"`, DEVTEAM_NO_LOG: "0" }) },
+    });
+    try {
+      const content = await waitForLogMatch(reviewsDir, /# Exit: TIMED OUT/, 2500);
+      assert.ok(content, "expected a \"TIMED OUT\" transcript trailer within 2.5s of a 300ms --timeout-ms");
+    } finally {
+      child.kill();
+    }
+  });
+
+  it("--timeout-ms 0 disables the timeout entirely (mirrors devteam run's own contract)", () => {
+    const reviewsDir = tmpdir("devteam-test-reviews-");
+    const subject = makeFixtureSubjectRepo();
+    const sleepScript = path.join(reviewsDir, "sleep-stub.js");
+    fs.mkdirSync(reviewsDir, { recursive: true });
+    // Short sleep (not the 10-minute default) so the test itself stays fast
+    // — the point is only that 0 doesn't get treated as "already elapsed".
+    fs.writeFileSync(sleepScript, `setTimeout(() => process.exit(0), 500);\n`, "utf8");
+
+    runCLI(
+      ["review", subject, "--host", "codex", "--allow-unenforced-writes", "--timeout-ms", "0", "--json"],
+      { env: baseEnv(reviewsDir, { DEVTEAM_HEADLESS_COMMAND: `"${process.execPath}" "${sleepScript}"`, DEVTEAM_NO_LOG: "0" }) },
+    );
+    const logPath = findWorkspaceLogFile(reviewsDir);
+    assert.ok(logPath, "expected a transcript log to have been written");
+    const transcript = fs.readFileSync(logPath, "utf8");
+    assert.doesNotMatch(transcript, /TIMED OUT/);
+    assert.match(transcript, /# Exit: 0/);
   });
 });
 
