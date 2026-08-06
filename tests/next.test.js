@@ -654,6 +654,100 @@ describe("next: convergence ceiling (H1 + 4.2 progress-based)", () => {
   });
 });
 
+// review-only and review-pr have no build stage — retrying peer-review can
+// never change the (unchanged, un-owned) code under review, so a FAIL there
+// is terminal, not something to retry or escalate. Every other track keeps
+// the normal fix-and-retry/resolve-escalation behavior (asserted below via
+// "full") since they have a build stage peer-review's feedback can act on.
+describe("next: peer-review FAIL in a track with no build stage is terminal, not escalated", () => {
+  it("review-only: stage-05 FAIL → pipeline-complete, not resolve-escalation", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" }); // security-review
+    seedGate(cwd, "stage-04c", { status: "PASS" }); // red-team
+    seedGate(cwd, "stage-05", { status: "FAIL", blockers: ["backend not approved"] });
+    const r = next({ cwd, track: "review-only" });
+    assert.equal(r.action, "pipeline-complete");
+    assert.match(r.reason, /no stage requires further action/);
+  });
+
+  it("review-only: stage-05 status ESCALATE (a reviewer wrote it directly, propagated by mergeWorkstreamGates) → also pipeline-complete", () => {
+    // The real-world case: an individual reviewer that recognizes
+    // non-convergence writes ESCALATE into its own workstream gate rather
+    // than a plain FAIL — mergeWorkstreamGates propagates that to the merged
+    // gate's status (any ESCALATE among the workstreams wins). Same
+    // situation as a plain FAIL here, same terminal treatment.
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" });
+    seedGate(cwd, "stage-04c", { status: "PASS" });
+    seedGate(cwd, "stage-05", {
+      status: "ESCALATE",
+      blockers: ["backend not approved"],
+      escalation_reason: "driver retry budget exhausted for \"peer-review\" (2/2); escalating",
+    });
+    const r = next({ cwd, track: "review-only" });
+    assert.equal(r.action, "pipeline-complete");
+  });
+
+  it("review-only: still terminal even past the retry-budget archive count — never reaches resolve-escalation either way", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" });
+    seedGate(cwd, "stage-04c", { status: "PASS" });
+    seedNextArchive(cwd, "stage-05", 1, { blockers: ["backend not approved"] });
+    seedNextArchive(cwd, "stage-05", 2, { blockers: ["backend not approved"] });
+    seedGate(cwd, "stage-05", { status: "FAIL", blockers: ["backend not approved"] });
+    const r = next({ cwd, track: "review-only" });
+    assert.equal(r.action, "pipeline-complete");
+  });
+
+  it("review-pr: single-stage track, stage-05 FAIL → pipeline-complete", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-05", { status: "FAIL", blockers: ["reviewer disagreement"] });
+    const r = next({ cwd, track: "review-pr" });
+    assert.equal(r.action, "pipeline-complete");
+  });
+
+  it("the gate file itself is untouched — still genuinely FAIL for a direct reader like devteam validate", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" });
+    seedGate(cwd, "stage-04c", { status: "PASS" });
+    const gatePath = seedGate(cwd, "stage-05", { status: "FAIL", blockers: ["backend not approved"] });
+    next({ cwd, track: "review-only" });
+    const onDisk = JSON.parse(fs.readFileSync(gatePath, "utf8"));
+    assert.equal(onDisk.status, "FAIL");
+    assert.deepEqual(onDisk.blockers, ["backend not approved"]);
+  });
+
+  it("full track (has a build stage): the same stage-05 FAIL still fix-and-retries / escalates as before — this fix does not change normal build-workflow tracks", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a", "stage-04b", "stage-04c", "stage-04d"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-05", { status: "FAIL", blockers: ["x"] });
+    const r = next({ cwd, track: "full" });
+    assert.equal(r.action, "fix-and-retry");
+
+    const cwd2 = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a", "stage-04b", "stage-04c", "stage-04d"]) {
+      seedGate(cwd2, s, { status: "PASS" });
+    }
+    seedNextArchive(cwd2, "stage-05", 1, { blockers: ["x"] });
+    seedNextArchive(cwd2, "stage-05", 2, { blockers: ["x"] });
+    seedGate(cwd2, "stage-05", { status: "FAIL", blockers: ["x"] });
+    const r2 = next({ cwd: cwd2, track: "full" });
+    assert.equal(r2.action, "resolve-escalation");
+    assert.equal(r2.failure_class, "convergence-exhausted");
+
+    const cwd3 = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a", "stage-04b", "stage-04c", "stage-04d"]) {
+      seedGate(cwd3, s, { status: "PASS" });
+    }
+    seedGate(cwd3, "stage-05", { status: "ESCALATE", blockers: ["x"], escalation_reason: "judgment call" });
+    const r3 = next({ cwd: cwd3, track: "full" });
+    assert.equal(r3.action, "resolve-escalation");
+    assert.equal(r3.failure_class, "judgment-gate");
+  });
+});
+
 describe("next --json (H1)", () => {
   it("emits schema_version and carries failure_class through to JSON", () => {
     const cwd = track(makeTargetProject());
