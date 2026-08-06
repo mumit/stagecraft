@@ -561,16 +561,23 @@ process.stdin.on("end", () => {
 
 // ─── C2: the composed /goal-prefixed invocation prompt respects promptCharLimit ──
 // Regression for: core/adapters/headless.js's C2 guard (drop patchItems, then
-// dropped inlined framework content, over a host's capabilities.promptCharLimit)
-// only ever fires when headless.js itself renders the prompt — but
-// orchestrator.js *always* pre-composes and hands runHeadless a
-// preRenderedPrompt (the `/goal "<goalCondition>"\n\n` prefix for goalLoop
-// hosts has to be added somewhere, and headless.js has no notion of
-// goalCondition), so that guard was structurally dead code on every real
-// dispatch. A large patchItems block (the auto-fix mechanism's normal way of
-// carrying blocker content into a retry) is a realistic, common way for the
-// *composed* prompt to cross claude-code's 4000-char ceiling even when the
-// base role prompt alone would not.
+// inlined framework content, over a host's capabilities.promptCharLimit) only
+// ever fires when headless.js itself renders the prompt — but orchestrator.js
+// *always* pre-composes and hands runHeadless a preRenderedPrompt (the
+// `/goal "<goalCondition>"\n\n` prefix for goalLoop hosts has to be added
+// somewhere, and headless.js has no notion of goalCondition), so that guard
+// was structurally dead code on every real dispatch. A large patchItems block
+// (the auto-fix mechanism's normal way of carrying blocker content into a
+// retry) is a realistic, common way for the *composed* prompt to cross
+// claude-code's 4000-char ceiling even when the base role prompt alone would
+// not.
+//
+// The check itself lives only inside claude-code's `/goal` command handler —
+// confirmed against the real CLI binary — so it applies only to whatever
+// text follows "/goal " in a `--print` message, never to an ordinary prompt.
+// Once the `/goal` prefix is dropped there is nothing left to enforce; the
+// dispatch proceeds (losing goal-loop convergence for that one attempt)
+// rather than being rejected.
 describe("orchestrator: composed /goal-prefixed invocation prompt respects capabilities.promptCharLimit (C2)", () => {
   it("drops patchItems from the composed prompt when they alone push the /goal-prefixed total over the limit", async () => {
     const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
@@ -595,21 +602,26 @@ describe("orchestrator: composed /goal-prefixed invocation prompt respects capab
     }
   });
 
-  it("rejects with a clear error instead of dispatching when still over budget after dropping patchItems and framework content", async () => {
+  it("drops the /goal directive itself as a last resort and still dispatches, when the base prompt alone is already over the limit", async () => {
     const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
     // The `Feature: ...` line comes straight from --feature and isn't
     // touched by either fallback (it's neither patchItems nor inlined
-    // framework content) — an irreducibly large one keeps the composed
-    // prompt over the limit no matter what gets dropped, so the dispatch
-    // must fail loudly instead of silently.
+    // framework content) — an irreducibly large one keeps the /goal-prefixed
+    // composed prompt over the limit no matter what gets dropped first. A
+    // goal-free prompt of any size dispatches fine (verified against the
+    // real claude-code binary), so this must still succeed, just without
+    // the /goal directive — not be rejected.
     const hugeFeature = "X".repeat(6000);
     const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
     process.env.DEVTEAM_HEADLESS_COMMAND = "cat";
     try {
-      await assert.rejects(
-        () => runStageHeadless("build", { cwd, workstream: ["frontend"], feature: hugeFeature }),
-        /over claude-code's 4000-char limit/,
-      );
+      const result = await runStageHeadless("build", { cwd, workstream: ["frontend"], feature: hugeFeature });
+      assert.equal(result.results.length, 1);
+      assert.equal(result.results[0].exitCode, 0);
+
+      const sent = fs.readFileSync(path.join(cwd, "pipeline", "logs", "stage-04.frontend.log"), "utf8");
+      assert.doesNotMatch(sent, /\/goal "/, "the /goal directive must have been dropped");
+      assert.match(sent, /XXXX/, "the huge Feature line (which no fallback touches) still reaches the child");
     } finally {
       if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
       else process.env.DEVTEAM_HEADLESS_COMMAND = previous;

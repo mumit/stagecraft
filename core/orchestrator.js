@@ -1031,18 +1031,24 @@ async function runStageHeadless(stageName, opts = {}) {
           ? `/goal "${ws.descriptor.goalCondition}"\n\n${promptText}`
           : promptText;
       let invocationPrompt = composeInvocationPrompt(ws.prompt);
-      // C2 (core/adapters/headless.js): claude-code/codex/antigravity reject
-      // a prompt over capabilities.promptCharLimit chars ("Goal condition is
-      // limited to N characters") and exit 0 with no gate written. headless.js
-      // carries the identical guard, but it only ever fires when *it* renders
-      // the prompt — this dispatch path always hands runHeadless an already-
-      // composed preRenderedPrompt (the /goal prefix above has to be added
-      // somewhere, and headless.js has no notion of goalCondition), so
-      // headless.js's guard is structurally dead code for every real
-      // dispatch. Apply the same fallback chain here instead, where the /goal
-      // composition and ws.adapter are both in scope.
+      // C2 (core/adapters/headless.js): claude-code's own `/goal` slash
+      // command rejects anything over capabilities.promptCharLimit chars
+      // with "Goal condition is limited to N characters" and exits 0 — no
+      // gate written, no error surfaced. The check lives *only* inside that
+      // one command's handler, keyed off however much text follows "/goal ".
+      // In `--print` mode the whole piped stdin is one message with no way
+      // to separate "the goal" from "the rest of the prompt" the way an
+      // interactive session's per-keystroke dispatch would — confirmed
+      // empirically: piping `/goal "x"` followed by a filler blob reports
+      // the *combined* length, not the short condition's own; the identical
+      // filler with no `/goal` prefix dispatches fine at any size. So this
+      // is purely a consequence of the prefix above, never of prompt size on
+      // its own — skip entirely when there's no goalCondition to prefix, and
+      // once the prefix is dropped as a last resort there is nothing left to
+      // check (a goal-free prompt has no such ceiling, so this always
+      // resolves it — no further fallback or rejection needed).
       const promptCharLimit = ws.adapter.capabilities && ws.adapter.capabilities.promptCharLimit;
-      if (promptCharLimit && invocationPrompt.length > promptCharLimit) {
+      if (promptCharLimit && ws.descriptor.goalCondition && invocationPrompt.length > promptCharLimit) {
         const { shrinkComposedPrompt } = require("./adapters/render-helpers");
         const shrunk = shrinkComposedPrompt({
           adapter: ws.adapter, descriptor: ws.descriptor, ctx: plan.ctx,
@@ -1050,21 +1056,15 @@ async function runStageHeadless(stageName, opts = {}) {
           onWarn: (msg) => process.stderr.write(`[devteam] warn: ${ws.descriptor.workstreamId} ${msg}\n`),
         });
         invocationPrompt = shrunk.composed;
-        if (invocationPrompt.length > promptCharLimit && ws.descriptor.goalCondition) {
+        if (invocationPrompt.length > promptCharLimit) {
           // Last resort: drop the /goal directive itself for this one
-          // dispatch — losing goal-loop convergence beats silently
-          // dispatching a prompt the host will reject outright.
+          // dispatch — losing goal-loop convergence beats a rejected (pre-
+          // fix, silently stalled) dispatch. Always resolves it.
           const before = invocationPrompt.length;
           invocationPrompt = shrunk.base;
           process.stderr.write(
             `[devteam] warn: ${ws.descriptor.workstreamId} prompt ${before} chars still exceeds ${promptCharLimit}-char limit; ` +
             `dropped the /goal directive for this dispatch (no goal-loop convergence this attempt)\n`,
-          );
-        }
-        if (invocationPrompt.length > promptCharLimit) {
-          throw new Error(
-            `stage prompt for "${ws.descriptor.workstreamId}" is ${invocationPrompt.length} chars, over ${ws.host}'s ` +
-            `${promptCharLimit}-char limit even after dropping patchItems, inlined framework content, and the /goal directive`,
           );
         }
       }
