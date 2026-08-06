@@ -559,6 +559,64 @@ process.stdin.on("end", () => {
   });
 });
 
+// ─── C2: the composed /goal-prefixed invocation prompt respects promptCharLimit ──
+// Regression for: core/adapters/headless.js's C2 guard (drop patchItems, then
+// dropped inlined framework content, over a host's capabilities.promptCharLimit)
+// only ever fires when headless.js itself renders the prompt — but
+// orchestrator.js *always* pre-composes and hands runHeadless a
+// preRenderedPrompt (the `/goal "<goalCondition>"\n\n` prefix for goalLoop
+// hosts has to be added somewhere, and headless.js has no notion of
+// goalCondition), so that guard was structurally dead code on every real
+// dispatch. A large patchItems block (the auto-fix mechanism's normal way of
+// carrying blocker content into a retry) is a realistic, common way for the
+// *composed* prompt to cross claude-code's 4000-char ceiling even when the
+// base role prompt alone would not.
+describe("orchestrator: composed /goal-prefixed invocation prompt respects capabilities.promptCharLimit (C2)", () => {
+  it("drops patchItems from the composed prompt when they alone push the /goal-prefixed total over the limit", async () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
+    // build's goalCondition guarantees the /goal prefix is present — this
+    // patchItems payload alone is well over capabilities.promptCharLimit.
+    const bigPatchItems = [{ file: "src/frontend/big.js", note: "X".repeat(4500) }];
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    // `cat` echoes whatever's piped to stdin — the transcript log then holds
+    // the exact bytes the (real) claude-code CLI would have received.
+    process.env.DEVTEAM_HEADLESS_COMMAND = "cat";
+    try {
+      const result = await runStageHeadless("build", { cwd, workstream: ["frontend"], patchItems: bigPatchItems });
+      assert.equal(result.results.length, 1);
+      assert.equal(result.results[0].exitCode, 0);
+
+      const sent = fs.readFileSync(path.join(cwd, "pipeline", "logs", "stage-04.frontend.log"), "utf8");
+      assert.match(sent, /\/goal "/, "goal directive must still reach the child");
+      assert.doesNotMatch(sent, /XXXX/, "the oversized patchItems block must not reach the child");
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+
+  it("rejects with a clear error instead of dispatching when still over budget after dropping patchItems and framework content", async () => {
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
+    // The `Feature: ...` line comes straight from --feature and isn't
+    // touched by either fallback (it's neither patchItems nor inlined
+    // framework content) — an irreducibly large one keeps the composed
+    // prompt over the limit no matter what gets dropped, so the dispatch
+    // must fail loudly instead of silently.
+    const hugeFeature = "X".repeat(6000);
+    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
+    process.env.DEVTEAM_HEADLESS_COMMAND = "cat";
+    try {
+      await assert.rejects(
+        () => runStageHeadless("build", { cwd, workstream: ["frontend"], feature: hugeFeature }),
+        /over claude-code's 4000-char limit/,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
+      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
+    }
+  });
+});
+
 // ─── 31.1: per-role orchestrator stamping wired into the real headless dispatch ──
 // Mirrors the stub pattern in tests/patterns.test.js (makeHeadlessStub): filter to a
 // single --workstream so a single global DEVTEAM_HEADLESS_COMMAND stub unambiguously

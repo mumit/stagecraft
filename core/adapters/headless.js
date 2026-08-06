@@ -118,44 +118,29 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
 
   const prompt = preRenderedPrompt || adapter.renderStagePrompt(descriptor, ctx);
 
-  // C2: Claude Code's headless mode rejects prompts longer than 4000 chars with
-  // "Goal condition is limited to 4000 characters" and exits 0 — no gate written,
-  // structural-input halt. Two independent things can push a prompt over that
-  // limit, so back each off in turn and re-render, cheapest/most-targeted
-  // first:
-  //   1. patchItems — the auto-fix mechanism already wrote blockers to
-  //      context.md before dispatch, so the agent still has full guidance
-  //      without strict patch-only mode.
-  //   2. phase-37.2's inlined framework/role-brief content (prompts.
-  //      inline_framework, default true) — ~18-22 KB on its own per
-  //      render-helpers.js's renderFrameworkPreamble, comfortably over this
-  //      limit alone. Dropping it reverts to the pre-37.2 path-pointer
-  //      behaviour for this one dispatch; the agent reads the files itself.
-  // If it's still over budget after both, dispatch would silently no-op
-  // (exit 0, no gate, no error) — the exact failure mode this whole guard
-  // exists to avoid — so fail loudly instead of spawning it.
-  const HEADLESS_PROMPT_LIMIT = 4000;
+  // C2: claude-code's headless mode rejects prompts longer than
+  // capabilities.promptCharLimit (4000 for claude-code/codex/antigravity —
+  // see hosts/*/capabilities.json) with "Goal condition is limited to N
+  // characters" and exits 0 — no gate written, structural-input halt.
+  //
+  // core/orchestrator.js *always* passes preRenderedPrompt on the real
+  // dispatch path (it's what composes the `/goal "<goalCondition>"` prefix
+  // for goalLoop hosts — see its own dispatchWorker), so this guard only
+  // ever fires for a direct runHeadless() call with no preRenderedPrompt
+  // (tests, `devteam replay`, and similar). Orchestrator.js applies the
+  // identical fallback chain itself, via render-helpers.js#shrinkComposedPrompt,
+  // at the point it composes the invocation prompt — see its own comment.
+  const HEADLESS_PROMPT_LIMIT = (adapter.capabilities && adapter.capabilities.promptCharLimit) || 4000;
   let finalPrompt = prompt;
   if (!preRenderedPrompt && finalPrompt.length > HEADLESS_PROMPT_LIMIT) {
-    if (ctx.patchItems && ctx.patchItems.length > 0) {
-      const before = finalPrompt.length;
-      finalPrompt = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null });
-      process.stderr.write(
-        `[devteam] warn: prompt ${before} chars exceeds ${HEADLESS_PROMPT_LIMIT}-char headless limit; ` +
-        `patchItems dropped — agent will read context.md for blocker guidance\n`,
-      );
-    }
-    if (finalPrompt.length > HEADLESS_PROMPT_LIMIT) {
-      const before = finalPrompt.length;
-      finalPrompt = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null, inlineFrameworkOverride: false });
-      process.stderr.write(
-        `[devteam] warn: prompt ${before} chars still exceeds ${HEADLESS_PROMPT_LIMIT}-char headless limit; ` +
-        `inlined framework/role-brief content dropped for this dispatch — agent will read those files itself\n`,
-      );
-    }
+    const { shrinkComposedPrompt } = require("./render-helpers");
+    finalPrompt = shrinkComposedPrompt({
+      adapter, descriptor, ctx, basePrompt: prompt, compose: (p) => p, limit: HEADLESS_PROMPT_LIMIT,
+      onWarn: (msg) => process.stderr.write(`[devteam] warn: ${msg}\n`),
+    }).composed;
     if (finalPrompt.length > HEADLESS_PROMPT_LIMIT) {
       return Promise.reject(new Error(
-        `stage prompt is ${finalPrompt.length} chars, over claude-code headless mode's ${HEADLESS_PROMPT_LIMIT}-char ` +
+        `stage prompt is ${finalPrompt.length} chars, over this host's ${HEADLESS_PROMPT_LIMIT}-char ` +
         `limit even after dropping patchItems and inlined framework content — the CLI would silently exit 0 with no gate written`,
       ));
     }

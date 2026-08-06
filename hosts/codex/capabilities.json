@@ -8,6 +8,7 @@
   "worktrees": true,
   "headless": true,
   "headlessCommand": "codex exec --sandbox workspace-write --json",
+  "promptCharLimit": 4000,
   "usageFormat": "codex-exec-json",
   "telemetry": "native",
   "goalLoop": true,

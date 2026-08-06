@@ -843,7 +843,7 @@ test("C2 fallback: rejects with a clear error instead of silently dispatching wh
     const adapter = makeOverBudgetAdapter({ baseLen: 5000, frameworkLen: 1000, patchLen: 1000 });
     await assert.rejects(
       () => runHeadless(adapter, makeDescriptor("stage-01"), ctx),
-      /over claude-code headless mode's 4000-char limit/,
+      /over this host's 4000-char limit/,
     );
   } finally {
     fs.rmSync(ctx.cwd, { recursive: true, force: true });

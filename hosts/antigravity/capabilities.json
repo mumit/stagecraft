@@ -8,6 +8,7 @@
   "worktrees": true,
   "headless": true,
   "headlessCommand": "agy --print --dangerously-skip-permissions",
+  "promptCharLimit": 4000,
   "telemetry": "estimated",
   "goalLoop": false,
   "skillFormat": "markdown",

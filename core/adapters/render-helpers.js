@@ -371,4 +371,46 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   lines.push(`Optional reproducibility (C4): include \`model_version\`, \`temperature\`, \`seed\`, \`max_tokens\`, \`tools_hash\` in the gate when known. Also stamp \`"system_prompt_hash": "${systemPromptHash}"\` verbatim — that's the hash of this prompt. \`devteam reproduce <stage>\` uses these for audit.`);
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, splitReadFirst, toolBudgetSection };
+// Shared drop-patchItems / drop-inline-framework fallback for a prompt that
+// exceeds a host's declared capabilities.promptCharLimit (claude-code/codex/
+// antigravity today — see hosts/*/capabilities.json and core/adapters/
+// headless.js's "C2" comment for why this limit exists: claude-code's
+// `--print` mode rejects an over-limit prompt with "Goal condition is
+// limited to N characters" and exits 0 with no gate written).
+//
+// `basePrompt` is the adapter's own renderStagePrompt() output; `compose(base)`
+// wraps it into whatever the caller actually measures/sends — identity for
+// core/adapters/headless.js's own direct callers, core/orchestrator.js's
+// `/goal "<goalCondition>"\n\n` prefix for the real dispatch path (goalLoop
+// hosts prepend that there, never inside renderStagePrompt itself, so this
+// helper has to re-run `compose` after each re-render rather than just
+// re-measuring `descriptor`/`ctx`). Returns both the final composed string
+// and the final base (pre-compose) string — a caller that also wants to drop
+// its own composition step as a last resort (orchestrator.js's /goal
+// directive) needs `base` for that; a caller with no composition step of its
+// own just uses `composed`.
+function shrinkComposedPrompt({ adapter, descriptor, ctx, basePrompt, compose, limit, onWarn }) {
+  let base = basePrompt;
+  let composed = compose(base);
+  if (composed.length <= limit) return { base, composed };
+
+  if (ctx.patchItems && ctx.patchItems.length > 0) {
+    const before = composed.length;
+    base = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null });
+    composed = compose(base);
+    if (onWarn) {
+      onWarn(`prompt ${before} chars exceeds ${limit}-char limit; patchItems dropped — agent will read context.md for blocker guidance`);
+    }
+  }
+  if (composed.length > limit) {
+    const before = composed.length;
+    base = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null, inlineFrameworkOverride: false });
+    composed = compose(base);
+    if (onWarn) {
+      onWarn(`prompt ${before} chars still exceeds ${limit}-char limit; inlined framework/role-brief content dropped for this dispatch — agent will read those files itself`);
+    }
+  }
+  return { base, composed };
+}
+
+module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, shrinkComposedPrompt, splitReadFirst, toolBudgetSection };

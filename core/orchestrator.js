@@ -1026,9 +1026,48 @@ async function runStageHeadless(stageName, opts = {}) {
         workstreamId: ws.descriptor.workstreamId,
         patterns: ws.descriptor.knownPatterns,
       });
-      const invocationPrompt = ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
-        ? `/goal "${ws.descriptor.goalCondition}"\n\n${ws.prompt}`
-        : ws.prompt;
+      const composeInvocationPrompt = (promptText) =>
+        ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
+          ? `/goal "${ws.descriptor.goalCondition}"\n\n${promptText}`
+          : promptText;
+      let invocationPrompt = composeInvocationPrompt(ws.prompt);
+      // C2 (core/adapters/headless.js): claude-code/codex/antigravity reject
+      // a prompt over capabilities.promptCharLimit chars ("Goal condition is
+      // limited to N characters") and exit 0 with no gate written. headless.js
+      // carries the identical guard, but it only ever fires when *it* renders
+      // the prompt — this dispatch path always hands runHeadless an already-
+      // composed preRenderedPrompt (the /goal prefix above has to be added
+      // somewhere, and headless.js has no notion of goalCondition), so
+      // headless.js's guard is structurally dead code for every real
+      // dispatch. Apply the same fallback chain here instead, where the /goal
+      // composition and ws.adapter are both in scope.
+      const promptCharLimit = ws.adapter.capabilities && ws.adapter.capabilities.promptCharLimit;
+      if (promptCharLimit && invocationPrompt.length > promptCharLimit) {
+        const { shrinkComposedPrompt } = require("./adapters/render-helpers");
+        const shrunk = shrinkComposedPrompt({
+          adapter: ws.adapter, descriptor: ws.descriptor, ctx: plan.ctx,
+          basePrompt: ws.prompt, compose: composeInvocationPrompt, limit: promptCharLimit,
+          onWarn: (msg) => process.stderr.write(`[devteam] warn: ${ws.descriptor.workstreamId} ${msg}\n`),
+        });
+        invocationPrompt = shrunk.composed;
+        if (invocationPrompt.length > promptCharLimit && ws.descriptor.goalCondition) {
+          // Last resort: drop the /goal directive itself for this one
+          // dispatch — losing goal-loop convergence beats silently
+          // dispatching a prompt the host will reject outright.
+          const before = invocationPrompt.length;
+          invocationPrompt = shrunk.base;
+          process.stderr.write(
+            `[devteam] warn: ${ws.descriptor.workstreamId} prompt ${before} chars still exceeds ${promptCharLimit}-char limit; ` +
+            `dropped the /goal directive for this dispatch (no goal-loop convergence this attempt)\n`,
+          );
+        }
+        if (invocationPrompt.length > promptCharLimit) {
+          throw new Error(
+            `stage prompt for "${ws.descriptor.workstreamId}" is ${invocationPrompt.length} chars, over ${ws.host}'s ` +
+            `${promptCharLimit}-char limit even after dropping patchItems, inlined framework content, and the /goal directive`,
+          );
+        }
+      }
       const telemetry = promptTelemetry(invocationPrompt, ws.descriptor);
       // 28.5: hashed (never raw) so the corpus record identifies repeated
       // prompts without persisting prompt content.
