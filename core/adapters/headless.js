@@ -186,6 +186,31 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
   const start = Date.now();
   const timeoutMs = typeof ctx.timeoutMs === "number" ? ctx.timeoutMs : DEFAULT_TIMEOUT_MS;
 
+  // C3: claude-code's own subagent dispatch (every role prompt says "Use the
+  // X subagent for this workstream" — capabilities.subagents: true) has an
+  // INTERNAL background-task ceiling, completely independent of this
+  // function's own timeoutMs/DEFAULT_TIMEOUT_MS above. When a subagent's
+  // turn runs long — hits a retry, a connection error, a slow tool call —
+  // claude's own `--print` orchestration silently terminates the wait after
+  // that ceiling (default 600000ms) and the top-level turn ends anyway,
+  // reporting exit 0 with no gate: the exact "clean exit, no output" failure
+  // structural-halt exists to catch, except here there IS a real cause,
+  // just one this process never gets to see (claude prints it to its own
+  // transcript: `Background tasks still running after 600s; terminating.
+  // Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.`).
+  // Left unset, this ceiling can fire well before this function's own
+  // timeoutMs would — a dispatch given 10, 20, or unlimited minutes at the
+  // devteam level still silently self-truncates at claude's 10-minute
+  // default. Align the two: propagate timeoutMs into whatever env var the
+  // adapter declares for this (claude-code only — the one host that
+  // declares capabilities.subagents: true), "0" meaning "wait indefinitely"
+  // on both sides consistently. Never overrides an operator's own explicit
+  // value already in the environment.
+  const bgCeilingEnvVar = adapter.capabilities && adapter.capabilities.printBackgroundCeilingEnv;
+  const extraEnv = (bgCeilingEnvVar && process.env[bgCeilingEnvVar] === undefined)
+    ? { [bgCeilingEnvVar]: String(timeoutMs) }
+    : null;
+
   // Logging: write stdout/stderr to pipeline/logs/<workstreamId>.log.
   // Disabled in tests + by env opt-out. When disabled we keep the
   // historical "inherit" stdio so terminal colors / TTY detection
@@ -258,6 +283,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
       // them into the transcript; when off, inherit gets us the historical
       // terminal-color behavior for free.
       stdio: logWriter !== null ? ["pipe", "pipe", "pipe"] : ["pipe", "inherit", "inherit"],
+      ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
     });
 
     // Transcript paths: always write chunks to the log. Live terminal

@@ -849,3 +849,101 @@ test("C2 fallback: rejects with a clear error instead of silently dispatching wh
     fs.rmSync(ctx.cwd, { recursive: true, force: true });
   }
 });
+
+// C3: claude-code's own subagent dispatch has an internal background-task
+// ceiling (CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS, default 600000ms per the
+// CLI's own "Background tasks still running after 600s; terminating" —
+// completely independent of this function's own ctx.timeoutMs/
+// DEFAULT_TIMEOUT_MS. A long-running subagent turn can silently self-
+// truncate at that ceiling well before devteam's own timeout would ever
+// fire, reporting exit 0 with no gate: a real cause the "structural-input"
+// halt (dispatch of X produced no gate) then misreports as "clean exit, no
+// output" with no way to tell it apart from a genuinely empty dispatch.
+test("C3: sets the adapter-declared env var to ctx.timeoutMs when the operator hasn't already set it", async () => {
+  const ctx = makeCtx({ timeoutMs: 42000 });
+  const scriptPath = writeFixtureScript(ctx.cwd, "env-echo.js", [
+    'process.stdout.write("CEILING=" + process.env.MY_CEILING_MS + "\\n");',
+  ].join("\n"));
+  try {
+    const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
+    adapter.capabilities.printBackgroundCeilingEnv = "MY_CEILING_MS";
+    const previous = process.env.MY_CEILING_MS;
+    delete process.env.MY_CEILING_MS;
+    try {
+      const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+      assert.equal(r.exitCode, 0);
+      const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
+      assert.match(content, /CEILING=42000/);
+    } finally {
+      if (previous === undefined) delete process.env.MY_CEILING_MS;
+      else process.env.MY_CEILING_MS = previous;
+    }
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("C3: propagates 0 (ctx.timeoutMs disabled) as \"0\" — claude's own convention for 'wait indefinitely', matching devteam's", async () => {
+  const ctx = makeCtx({ timeoutMs: 0 });
+  const scriptPath = writeFixtureScript(ctx.cwd, "env-echo.js", [
+    'process.stdout.write("CEILING=" + process.env.MY_CEILING_MS + "\\n");',
+  ].join("\n"));
+  try {
+    const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
+    adapter.capabilities.printBackgroundCeilingEnv = "MY_CEILING_MS";
+    const previous = process.env.MY_CEILING_MS;
+    delete process.env.MY_CEILING_MS;
+    try {
+      const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+      assert.equal(r.exitCode, 0);
+      const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
+      assert.match(content, /CEILING=0/);
+    } finally {
+      if (previous === undefined) delete process.env.MY_CEILING_MS;
+      else process.env.MY_CEILING_MS = previous;
+    }
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("C3: never overrides a value the operator already set in the environment", async () => {
+  const ctx = makeCtx({ timeoutMs: 42000 });
+  const scriptPath = writeFixtureScript(ctx.cwd, "env-echo.js", [
+    'process.stdout.write("CEILING=" + process.env.MY_CEILING_MS + "\\n");',
+  ].join("\n"));
+  try {
+    const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
+    adapter.capabilities.printBackgroundCeilingEnv = "MY_CEILING_MS";
+    const previous = process.env.MY_CEILING_MS;
+    process.env.MY_CEILING_MS = "999";
+    try {
+      const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+      assert.equal(r.exitCode, 0);
+      const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
+      assert.match(content, /CEILING=999/, "the operator's own value must survive untouched");
+    } finally {
+      if (previous === undefined) delete process.env.MY_CEILING_MS;
+      else process.env.MY_CEILING_MS = previous;
+    }
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("C3: adds no env override at all for a host that doesn't declare printBackgroundCeilingEnv (codex, antigravity, etc.)", async () => {
+  const ctx = makeCtx({ timeoutMs: 42000 });
+  const scriptPath = writeFixtureScript(ctx.cwd, "env-echo.js", [
+    'process.stdout.write("CEILING=" + JSON.stringify(process.env.MY_CEILING_MS) + "\\n");',
+  ].join("\n"));
+  try {
+    // makeAdapter's default capabilities has no printBackgroundCeilingEnv field.
+    const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
+    const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+    assert.equal(r.exitCode, 0);
+    const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
+    assert.match(content, /CEILING=undefined/);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});

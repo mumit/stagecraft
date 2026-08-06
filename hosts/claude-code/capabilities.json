@@ -9,6 +9,7 @@
   "headless": true,
   "headlessCommand": "claude --dangerously-skip-permissions --print --output-format stream-json --verbose",
   "promptCharLimit": 4000,
+  "printBackgroundCeilingEnv": "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS",
   "usageFormat": "claude-stream-json",
   "telemetry": "native",
   "goalLoop": true,
