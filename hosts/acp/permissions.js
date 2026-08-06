@@ -44,16 +44,87 @@ const WRITE_KINDS = new Set(["edit", "delete", "move"]);
 // other binary here takes no argument-shape restriction. hosts.acp.review.
 // exec_allowlist (config._raw.hosts.acp.review.exec_allowlist) extends the
 // plain-binary set without code changes.
-const REVIEW_EXEC_ALLOWLIST = new Set(["rg", "grep", "ls", "cat", "find", "wc"]);
+//
+// 36.1's original scope note flagged this: "if [denying every chained/piped
+// command outright] turns out to make real reviews impractical, the fix is
+// the exec_allowlist extension point or a narrower parse, not silently
+// loosening the default." It did — a real reviewing agent's normal
+// exploration style is `cd <dir> && find . | head -50 && echo "---" && cat
+// file 2>/dev/null`, and every one of those pieces got refused outright,
+// so the agent gave up instead of ever writing its review. cd/echo/sort/
+// head/tail cost nothing security-wise (no filesystem write, no code
+// execution) and complete that natural set.
+const REVIEW_EXEC_ALLOWLIST = new Set(["rg", "grep", "ls", "cat", "find", "wc", "cd", "echo", "sort", "head", "tail"]);
 const REVIEW_EXEC_GIT_SUBCOMMANDS = new Set(["log", "diff", "show", "status"]);
 
-// Deny any of these unquoted-or-not — conservative on purpose. This module
-// only ever decides whether to grant *permission* for a shell call; the real
-// shell that runs it is the reviewing agent's own, so a quote-aware parse
-// that let `rg "a>b"` through would also have to be right about every shell's
-// quoting rules to stay safe. A false-positive here just makes a review
-// command get denied and retried differently; a false-negative leaks a write.
-const SHELL_METACHAR_RE = /[><|;&`]|\$\(/;
+// A redirect that never touches the filesystem: discarding a stream
+// (`2>/dev/null`, `>/dev/null`) or duplicating one file descriptor onto
+// another (`2>&1`, `1>&2`). Matched as a single whitespace-delimited token
+// — exactly how parseCommandLine tokenizes it once splitOnChainOperators
+// below has already cut it free of any trailing operator — and skipped
+// rather than treated as the file-redirect risk `>`/`>>` on their own
+// represent.
+const SAFE_FD_REDIRECT_RE = /^[012]?>>?(&[012]|\/dev\/null)$/;
+
+// Command substitution — `` `...` `` or `$(...)` — nests another shell
+// invocation inside a token. Deliberately not parsed recursively (the same
+// reasoning as the header comment below on quote-aware parsing risk): denied
+// outright, wherever in the raw command string it appears, before any
+// tokenizing happens.
+const COMMAND_SUBSTITUTION_RE = /`|\$\(/;
+
+// Quote-aware split on the chain operators that sequence one already-
+// validated command into the next (&&, ||, ;) or pipe one command's stdout
+// into the next's stdin (|). None of these write anywhere *on their own*;
+// composing read-only operations (sequence or pipe) yields another
+// read-only operation, so splitting on them and validating every resulting
+// segment against the same allowlist is exactly as safe as validating one
+// command.
+//
+// This can't just look for &&/||/;/| as their own whitespace-delimited
+// token via parseCommandLine — real commands routinely glue an operator
+// directly onto a preceding quoted argument or redirect with no space
+// (`echo "foo"; next`, `cat x 2>/dev/null; next`), and parseCommandLine only
+// ends a token on whitespace, not on a closing quote. So this scans the raw
+// string itself, character by character, respecting quotes, and only splits
+// outside them.
+function splitOnChainOperators(command) {
+  const segments = [];
+  let current = "";
+  let quote = null;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    if (ch === ";") {
+      segments.push(current);
+      current = "";
+      continue;
+    }
+    if ((ch === "&" && command[i + 1] === "&") || (ch === "|" && command[i + 1] === "|")) {
+      segments.push(current);
+      current = "";
+      i++; // consume the second character of && / ||
+      continue;
+    }
+    if (ch === "|") {
+      segments.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  segments.push(current);
+  return segments;
+}
 
 function commandText(toolCall) {
   const parts = [];
@@ -134,10 +205,18 @@ function findWriteViolation(toolCall, descriptor, rootsOrCwd) {
   return null;
 }
 
-// Review mode's deny-by-default execute gate. Parses to argv (never
-// substring-matches the raw command string) and denies any redirection or
-// shell metacharacter outright before even looking at the binary name.
-// Returns a reason string, or null to allow.
+// Review mode's deny-by-default execute gate. Splits the raw command
+// (quote-aware — see splitOnChainOperators) into segments on &&/||/;/|,
+// then parses each segment to tokens (never substring-matches the raw
+// string for the allowlist decision itself — command substitution is the
+// one exception, checked directly against the whole raw string below, since
+// it can't safely be parsed recursively) and validates each segment's
+// leading binary against the allowlist independently — a chain or pipe of
+// read-only commands is itself read-only, by construction. A real file
+// redirect (`>`, `>>`, `<`) or backgrounding (`&`) still denies the whole
+// command outright; only the filesystem-inert fd redirects in
+// SAFE_FD_REDIRECT_RE are recognized and skipped. Returns a reason string,
+// or null to allow.
 function findReviewExecViolation(toolCall, execAllowlist) {
   const command = toolCall.rawInput && typeof toolCall.rawInput.command === "string"
     ? toolCall.rawInput.command
@@ -145,30 +224,50 @@ function findReviewExecViolation(toolCall, execAllowlist) {
   if (!command || !command.trim()) {
     return "review-mode: execute call has no inspectable command — denied by default";
   }
-  if (SHELL_METACHAR_RE.test(command)) {
-    return `review-mode: execute denied — redirection/shell metacharacter in command ${JSON.stringify(command)}`;
+  if (COMMAND_SUBSTITUTION_RE.test(command)) {
+    return `review-mode: execute denied — command substitution in command ${JSON.stringify(command)}`;
   }
-  let argv;
-  try {
-    argv = parseCommandLine(command);
-  } catch {
-    return `review-mode: execute denied — unparseable command ${JSON.stringify(command)}`;
-  }
-  if (argv.length === 0) {
-    return "review-mode: execute call has no inspectable command — denied by default";
-  }
-  const bin = path.basename(argv[0]);
-  if (bin === "git") {
-    if (!REVIEW_EXEC_GIT_SUBCOMMANDS.has(argv[1])) {
-      return `review-mode: execute denied — "git ${argv[1] || ""}" is not a read-only allowlisted subcommand: ${JSON.stringify(command)}`;
-    }
-    return null;
-  }
+
   const allowlist = execAllowlist.length
     ? new Set([...REVIEW_EXEC_ALLOWLIST, ...execAllowlist])
     : REVIEW_EXEC_ALLOWLIST;
-  if (!allowlist.has(bin)) {
-    return `review-mode: execute denied — "${bin}" is not on the read-only allowlist: ${JSON.stringify(command)}`;
+  const segments = splitOnChainOperators(command);
+  for (const segment of segments) {
+    let tokens;
+    try {
+      tokens = parseCommandLine(segment);
+    } catch {
+      return `review-mode: execute denied — unparseable command ${JSON.stringify(command)}`;
+    }
+    if (tokens.length === 0) {
+      return `review-mode: execute denied — empty sub-command in ${JSON.stringify(command)}`;
+    }
+
+    const args = [];
+    for (const token of tokens) {
+      if (SAFE_FD_REDIRECT_RE.test(token)) continue; // discard/dup a stream — no filesystem write
+      if (token === "&" || token.includes(">") || token.includes("<")) {
+        // A real file redirect or a lone background `&` — the risk this
+        // whole gate exists to close. Deny the entire command, not just
+        // this piece.
+        return `review-mode: execute denied — redirection/backgrounding in command ${JSON.stringify(command)}`;
+      }
+      args.push(token);
+    }
+    if (args.length === 0) {
+      return `review-mode: execute denied — empty sub-command in ${JSON.stringify(command)}`;
+    }
+
+    const bin = path.basename(args[0]);
+    if (bin === "git") {
+      if (!REVIEW_EXEC_GIT_SUBCOMMANDS.has(args[1])) {
+        return `review-mode: execute denied — "git ${args[1] || ""}" is not a read-only allowlisted subcommand: ${JSON.stringify(command)}`;
+      }
+      continue;
+    }
+    if (!allowlist.has(bin)) {
+      return `review-mode: execute denied — "${bin}" is not on the read-only allowlist: ${JSON.stringify(command)}`;
+    }
   }
   return null;
 }

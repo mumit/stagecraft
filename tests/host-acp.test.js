@@ -316,7 +316,11 @@ describe("hosts/acp/permissions: two-root review mode (36.1)", () => {
     assert.match(reason, /redirection|metacharacter/);
   });
 
-  it("denies pipes, backgrounding, command substitution, and semicolons even when the leading binary is allowlisted", () => {
+  it("still denies pipes/chains/semicolons that contain a non-allowlisted or dangerous command, or command substitution", () => {
+    // Pre-narrowed-parse, ANY of &&/|/;/backtick/$( denied the whole command
+    // outright, regardless of what else was in it. Post-narrowing, a chain
+    // is only as safe as its least-safe piece — every one of these still
+    // has a piece that isn't (tee, rm, git checkout, or substitution itself).
     const descriptor = makeDescriptor();
     for (const command of [
       "rg foo | tee out.txt",
@@ -324,10 +328,47 @@ describe("hosts/acp/permissions: two-root review mode (36.1)", () => {
       "ls && git checkout .",
       "echo $(rm -rf /)",
       "echo `rm -rf /`",
+      "cd /tmp && rm -rf *",
+      "rg foo; sed -i s/a/b/ file.js",
     ]) {
       const { deny } = evaluateToolCall({ kind: "execute", rawInput: { command } }, descriptor, roots("review"));
       assert.equal(deny, true, `expected deny for: ${command}`);
     }
+  });
+
+  it("allows a chain/pipe of read-only allowlisted commands (36.1's honest scope note's anticipated 'narrower parse')", () => {
+    // A real reviewing agent's normal exploration style — confirmed against
+    // the exact commands a real ACP review dispatch produced and had denied
+    // outright before this fix (verified to fail without it).
+    const descriptor = makeDescriptor();
+    for (const command of [
+      'cd /repo/state && find . -maxdepth 3 -type d | head -50 && echo "---FILES---" && ls pipeline/ 2>/dev/null',
+      'cd /repo/state && cat AGENTS.md 2>/dev/null; echo "---"; ls pipeline/pr-*.md 2>/dev/null',
+      "cd /repo/state && find . -maxdepth 3 -type d | grep -v '.git/' | sort",
+      'ls -la /repo/state 2>&1; echo "---"; ls -la /repo 2>&1',
+    ]) {
+      const { deny, reason } = evaluateToolCall({ kind: "execute", rawInput: { command } }, descriptor, roots("review"));
+      assert.equal(deny, false, `expected allow for: ${command} (${reason})`);
+    }
+  });
+
+  it("splits on a chain operator glued directly onto a preceding quoted arg or fd redirect with no space (parseCommandLine only breaks tokens on whitespace, not on a closing quote)", () => {
+    const descriptor = makeDescriptor();
+    // No space before the `;` in either case — parseCommandLine alone would
+    // tokenize these as `"---";` / `"2>/dev/null;"`, one glued token neither
+    // the operator-split nor the safe-fd-redirect check would recognize.
+    const gluedQuote = { kind: "execute", rawInput: { command: 'echo "---";echo "next"' } };
+    const gluedRedirect = { kind: "execute", rawInput: { command: "cat x 2>/dev/null;cat y" } };
+    assert.equal(evaluateToolCall(gluedQuote, descriptor, roots("review")).deny, false);
+    assert.equal(evaluateToolCall(gluedRedirect, descriptor, roots("review")).deny, false);
+  });
+
+  it("a lone `&` (backgrounding) still denies even though `&&` is allowed between two allowlisted commands", () => {
+    const descriptor = makeDescriptor();
+    const backgrounded = { kind: "execute", rawInput: { command: "find . &" } };
+    const { deny, reason } = evaluateToolCall(backgrounded, descriptor, roots("review"));
+    assert.equal(deny, true);
+    assert.match(reason, /backgrounding|redirection/);
   });
 
   it("git is restricted to read-only subcommands in review mode: log/diff/show/status allowed, checkout denied", () => {
