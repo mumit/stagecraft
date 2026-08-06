@@ -777,3 +777,75 @@ test("32.3: runHeadless omits --model entirely when descriptor.model is absent (
     fs.rmSync(ctx.cwd, { recursive: true, force: true });
   }
 });
+
+// C2 fallback chain: a prompt over claude-code headless mode's 4000-char
+// "Goal condition" limit is re-rendered with patchItems dropped, then with
+// inlined framework/role-brief content dropped too (phase-37.2's
+// prompts.inline_framework), and rejected outright only if it's still over
+// budget after both — see headless.js's runHeadless C2 comment. This fake
+// adapter's renderStagePrompt grows/shrinks based on the same ctx flags the
+// real markdown-host/claude-code adapters react to (ctx.patchItems,
+// ctx.inlineFrameworkOverride), so the fallback logic under test never
+// touches a real host CLI.
+function makeOverBudgetAdapter({ baseLen = 50, frameworkLen = 0, patchLen = 0 } = {}) {
+  return {
+    capabilities: { name: "test-host", headlessCommand: "cat" },
+    renderStagePrompt: (descriptor, ctx) => {
+      let s = "B".repeat(baseLen);
+      if (frameworkLen > 0 && !(ctx && ctx.inlineFrameworkOverride === false)) {
+        s += "\n" + "F".repeat(frameworkLen);
+      }
+      if (patchLen > 0 && ctx && ctx.patchItems && ctx.patchItems.length > 0) {
+        s += "\n" + "P".repeat(patchLen);
+      }
+      return s + "\n";
+    },
+  };
+}
+
+test("C2 fallback: drops patchItems when they alone push the prompt over the 4000-char headless limit", async () => {
+  const ctx = makeCtx({ patchItems: [{ file: "a.js" }] });
+  try {
+    const adapter = makeOverBudgetAdapter({ baseLen: 50, frameworkLen: 0, patchLen: 4500 });
+    // Don't intercept stdout/stderr here (see captureStdoutStderr above) — this
+    // test runs alongside sibling tests that also exercise runHeadless, and two
+    // concurrent global process.stdout/stderr.write monkeypatches race for
+    // whichever restores last, so cross-checking the [devteam] warn text isn't
+    // reliable. `cat` echoing the final prompt into the transcript log is
+    // enough to prove which block got dropped.
+    const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+    assert.equal(r.exitCode, 0);
+    const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
+    assert.doesNotMatch(content, /PPPP/, "patch block was not sent to the child");
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("C2 fallback: drops inlined framework content when there's no patchItems to drop first", async () => {
+  const ctx = makeCtx(); // no patchItems at all
+  try {
+    const adapter = makeOverBudgetAdapter({ baseLen: 50, frameworkLen: 4500, patchLen: 0 });
+    const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+    assert.equal(r.exitCode, 0);
+    const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
+    assert.doesNotMatch(content, /FFFF/, "inlined framework block was not sent to the child");
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("C2 fallback: rejects with a clear error instead of silently dispatching when still over budget after both drops", async () => {
+  const ctx = makeCtx({ patchItems: [{ file: "a.js" }] });
+  try {
+    // baseLen alone (5000) is already over the limit — no combination of
+    // dropping patchItems/framework content can bring this under budget.
+    const adapter = makeOverBudgetAdapter({ baseLen: 5000, frameworkLen: 1000, patchLen: 1000 });
+    await assert.rejects(
+      () => runHeadless(adapter, makeDescriptor("stage-01"), ctx),
+      /over claude-code headless mode's 4000-char limit/,
+    );
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});

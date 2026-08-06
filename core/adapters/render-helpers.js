@@ -164,7 +164,13 @@ function splitReadFirst(readFirst) {
 // at all — there is no root to read files from — so it falls back to the
 // pointer behaviour, which is also what makes tests/prompt-layout.test.js's
 // ctx-less unit tests of this module keep their pre-37.2 assertions valid.
+// core/adapters/headless.js's over-budget fallback needs to re-render a
+// prompt with inlining forced off regardless of what .devteam/config.yml
+// says — a per-call escape hatch, not a config change — so an explicit
+// ctx.inlineFrameworkOverride === false short-circuits before the config
+// lookup. Absent (the normal case), behaviour is unchanged.
 function shouldInlineFramework(ctx) {
+  if (ctx && ctx.inlineFrameworkOverride === false) return false;
   if (!ctx || !ctx.cwd) return false;
   try {
     const { loadConfig } = require("../config");

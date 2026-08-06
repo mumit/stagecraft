@@ -120,22 +120,45 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
 
   // C2: Claude Code's headless mode rejects prompts longer than 4000 chars with
   // "Goal condition is limited to 4000 characters" and exits 0 — no gate written,
-  // structural-input halt. When patchItems are the culprit, fall back to a prompt
-  // without them. The auto-fix mechanism already wrote blockers to context.md
-  // before dispatch, so the agent still has full guidance; it just won't be in
-  // strict patch-only mode.
+  // structural-input halt. Two independent things can push a prompt over that
+  // limit, so back each off in turn and re-render, cheapest/most-targeted
+  // first:
+  //   1. patchItems — the auto-fix mechanism already wrote blockers to
+  //      context.md before dispatch, so the agent still has full guidance
+  //      without strict patch-only mode.
+  //   2. phase-37.2's inlined framework/role-brief content (prompts.
+  //      inline_framework, default true) — ~18-22 KB on its own per
+  //      render-helpers.js's renderFrameworkPreamble, comfortably over this
+  //      limit alone. Dropping it reverts to the pre-37.2 path-pointer
+  //      behaviour for this one dispatch; the agent reads the files itself.
+  // If it's still over budget after both, dispatch would silently no-op
+  // (exit 0, no gate, no error) — the exact failure mode this whole guard
+  // exists to avoid — so fail loudly instead of spawning it.
   const HEADLESS_PROMPT_LIMIT = 4000;
   let finalPrompt = prompt;
-  if (
-    !preRenderedPrompt &&
-    prompt.length > HEADLESS_PROMPT_LIMIT &&
-    ctx.patchItems && ctx.patchItems.length > 0
-  ) {
-    finalPrompt = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null });
-    process.stderr.write(
-      `[devteam] warn: prompt ${prompt.length} chars exceeds ${HEADLESS_PROMPT_LIMIT}-char headless limit; ` +
-      `patchItems dropped — agent will read context.md for blocker guidance\n`,
-    );
+  if (!preRenderedPrompt && finalPrompt.length > HEADLESS_PROMPT_LIMIT) {
+    if (ctx.patchItems && ctx.patchItems.length > 0) {
+      const before = finalPrompt.length;
+      finalPrompt = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null });
+      process.stderr.write(
+        `[devteam] warn: prompt ${before} chars exceeds ${HEADLESS_PROMPT_LIMIT}-char headless limit; ` +
+        `patchItems dropped — agent will read context.md for blocker guidance\n`,
+      );
+    }
+    if (finalPrompt.length > HEADLESS_PROMPT_LIMIT) {
+      const before = finalPrompt.length;
+      finalPrompt = adapter.renderStagePrompt(descriptor, { ...ctx, patchItems: null, inlineFrameworkOverride: false });
+      process.stderr.write(
+        `[devteam] warn: prompt ${before} chars still exceeds ${HEADLESS_PROMPT_LIMIT}-char headless limit; ` +
+        `inlined framework/role-brief content dropped for this dispatch — agent will read those files itself\n`,
+      );
+    }
+    if (finalPrompt.length > HEADLESS_PROMPT_LIMIT) {
+      return Promise.reject(new Error(
+        `stage prompt is ${finalPrompt.length} chars, over claude-code headless mode's ${HEADLESS_PROMPT_LIMIT}-char ` +
+        `limit even after dropping patchItems and inlined framework content — the CLI would silently exit 0 with no gate written`,
+      ));
+    }
   }
 
   const gatePath = path.join(gatesDir(ctx.cwd, ctx.changeId), `${descriptor.workstreamId}.json`);
