@@ -176,6 +176,171 @@ describe("collectFindings: three-source fixture", () => {
   });
 });
 
+// Regression: a real `devteam review` run against an external repo (pegasus)
+// produced a findings report with "[object Object]" literally rendered for
+// every peer-review finding and "(no summary provided)" for every red-team
+// finding, plus zero security-review findings despite four fully-populated
+// ones sitting in the gate — all four traced to schema-field-name drift
+// between what core/gates/schemas/*.schema.json documents and what real
+// review dispatches actually write. Fixed via describeItem()/
+// fileLineFromItem() tolerating the observed variants instead of assuming
+// one exact field name; this locks each case in with the pegasus gate's
+// actual shape, not a synthetic one.
+describe("collectFindings: real-world field-name drift (pegasus regression)", () => {
+  it("peer-review: object-shaped blockers (adversarial-mode reviewer objections) render their own id/severity/file/scenario, not [object Object]", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-05", {
+      stage: "stage-05",
+      blockers: [
+        {
+          id: "RT-01",
+          area: "backend",
+          severity: "high",
+          file: "usecases/slack_bots/main.py:429-521",
+          scenario: "Unauthenticated /query route reachable via edge-door bypass.",
+          workstream: "frontend",
+        },
+        // A traditional plain-string blocker (panel-mode's stamping hook)
+        // must keep working unchanged alongside the object form above.
+        "peer-review approval mismatch: workstream \"qa\" claims APPROVED but by-frontend.md shows CHANGES_REQUESTED",
+      ],
+    });
+
+    const data = collectFindings(cwd, {});
+    const byId = Object.fromEntries(data.findings.map((f) => [f.id, f]));
+
+    const objBlocker = byId["RT-01"];
+    assert.ok(objBlocker, "object-shaped blocker should use its own id, not a synthesized PR-N");
+    assert.doesNotMatch(objBlocker.summary, /\[object Object\]/);
+    assert.match(objBlocker.summary, /Unauthenticated \/query route/);
+    assert.equal(objBlocker.severity, "high");
+    assert.equal(objBlocker.file, "usecases/slack_bots/main.py");
+    assert.equal(objBlocker.line, 429);
+    assert.equal(objBlocker.source, "peer-review");
+
+    const stringBlocker = byId["PR-2"];
+    assert.ok(stringBlocker, "a plain-string blocker must still get a synthesized PR-N id");
+    assert.match(stringBlocker.summary, /approval mismatch/);
+  });
+
+  it("red-team: must_address_before_peer_review using .scenario instead of the schema's documented .summary is still rendered, not \"(no summary provided)\"", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04c", {
+      stage: "stage-04c",
+      surfaces_walked: ["auth_edges"],
+      findings_count: 1,
+      severity_breakdown: { critical: 0, high: 1, medium: 0, low: 0 },
+      must_address_before_peer_review: [
+        {
+          id: "RT-01",
+          severity: "high",
+          file: "usecases/slack_bots/main.py:429-521",
+          scenario: "Unauthenticated /query route reachable via edge-door bypass; unbounded query length.",
+        },
+      ],
+      noted_for_followup: [],
+    });
+
+    const data = collectFindings(cwd, {});
+    const found = data.findings.find((f) => f.id === "RT-01");
+    assert.ok(found);
+    assert.doesNotMatch(found.summary, /no summary provided/);
+    assert.match(found.summary, /edge-door bypass/);
+    assert.equal(found.file, "usecases/slack_bots/main.py");
+    assert.equal(found.line, 429);
+  });
+
+  it("red-team: noted_for_followup using .text (and its own .effort field) instead of .summary is still rendered", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04c", {
+      stage: "stage-04c",
+      surfaces_walked: ["auth_edges"],
+      findings_count: 1,
+      severity_breakdown: { critical: 0, high: 0, medium: 1, low: 0 },
+      must_address_before_peer_review: [],
+      noted_for_followup: [
+        {
+          id: "RT-03",
+          text: "pegasus-armour has no total diffContent size cap.",
+          track_for: "ticket",
+          severity: "medium",
+          assigned_to: "unknown",
+          file: "pegasus-armour/index.js:492-637",
+          effort: "S",
+        },
+      ],
+    });
+
+    const data = collectFindings(cwd, {});
+    const found = data.findings.find((f) => f.id === "RT-03");
+    assert.ok(found);
+    assert.doesNotMatch(found.summary, /no summary provided/);
+    assert.match(found.summary, /diffContent size cap/);
+    assert.equal(found.file, "pegasus-armour/index.js");
+    assert.equal(found.line, 492);
+    assert.equal(found.effort, "S");
+    assert.equal(found.source, "red-team (noted for follow-up)");
+  });
+
+  it("security-review: a PASSing gate's noted_for_followup findings are surfaced, not silently dropped", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", {
+      stage: "stage-04b",
+      security_approved: true,
+      veto: false,
+      triggering_conditions: ["review-only track: full-repo sweep"],
+      noted_for_followup: [
+        {
+          id: "SEC-01",
+          text: "Harden pegasus-armour's PR-diff-to-LLM prompt against injected instructions.",
+          track_for: "ticket",
+          severity: "low",
+          assigned_to: "platform",
+          file: "pegasus-armour/index.js:633",
+        },
+      ],
+    });
+    // No BLOCKER: lines at all — a clean pass with only informational notes.
+    writeArtifact(cwd, "security-review.md", [
+      "# Review by security",
+      "",
+      "## Findings",
+      "",
+      "SEC-01 — informational, bounded.",
+      "",
+      "## Verdict",
+      "",
+      "REVIEW: APPROVED",
+      "",
+    ].join("\n"));
+
+    const data = collectFindings(cwd, {});
+    const found = data.findings.find((f) => f.id === "SEC-01");
+    assert.ok(found, "a PASSing security-review gate's noted_for_followup must still surface");
+    assert.match(found.summary, /Harden pegasus-armour/);
+    assert.equal(found.file, "pegasus-armour/index.js");
+    assert.equal(found.line, 633);
+    assert.equal(found.severity, "low");
+    assert.equal(found.source, "security-review (noted for follow-up)");
+  });
+
+  it("mkFinding's own defense-in-depth: a doubly-nested non-string value (describeItem's own return value being an object) still degrades to the placeholder, never [object Object]", () => {
+    // mkFinding isn't exported (deliberately internal) — exercise it through
+    // a real collector input where describeItem(entry) itself resolves to
+    // an object one level down (a malformed .scenario that's an object, not
+    // text) — the exact shape mkFinding's own asText() guard exists for.
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-05", {
+      stage: "stage-05",
+      blockers: [{ id: "X-1", severity: "high", scenario: { nested: "not a string at all" } }],
+    });
+    const data = collectFindings(cwd, {});
+    const found = data.findings.find((f) => f.id === "X-1");
+    assert.ok(found);
+    assert.doesNotMatch(String(found.summary), /\[object Object\]/);
+  });
+});
+
 describe("collectFindings: empty case", () => {
   it("returns zero findings and an honest sourcesScanned when nothing is present", () => {
     const cwd = track(makeTargetProject());

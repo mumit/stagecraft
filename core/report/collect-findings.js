@@ -54,15 +54,58 @@ function extractFileLine(text) {
   return { file: m[1], line: Number(m[2]) };
 }
 
+// Every stage's schema (stage-04c.schema.json, stage-06d.schema.json, etc.)
+// documents a `summary` field for a finding-item's one-line description —
+// but real gate output drifts from that in practice: pegasus's red-team gate
+// used `.scenario` for must_address_before_peer_review and `.text` for
+// noted_for_followup, and its security-review gate's own noted_for_followup
+// (a convention that isn't in stage-04b's schema at all, modeled on
+// red-team's) also used `.text`. `collectMutationFindings` below already
+// tried `.text || .summary` defensively — this generalizes that instinct
+// into one place instead of leaving every other collector to assume the
+// schema's documented name is what actually shows up. A plain string finding
+// (peer-review's traditional blockers[] shape) passes through unchanged.
+function describeItem(item) {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object") return null;
+  return item.summary || item.scenario || item.text || item.description || item.claim || null;
+}
+
+// Same drift problem for locating a finding: an item may carry its own
+// `.file` field (sometimes as a bare path, sometimes "path:NN" or
+// "path:NN-MM" — extractFileLine already tolerates the range form) in
+// addition to, or instead of, a file:line reference embedded in its
+// description text. Try the structured field first; fall back to parsing
+// the description only when the item has nothing more direct.
+function fileLineFromItem(item, descriptionText) {
+  if (item && typeof item === "object" && typeof item.file === "string" && item.file) {
+    const fl = extractFileLine(item.file);
+    if (fl.file) return fl;
+    // A bare path with no line number (e.g. "a.py,b.py" — two files, no
+    // single line to point to) — honest to report as file-less rather than
+    // fall through to whatever the description text happens to contain.
+    if (!FILE_LINE_RE.test(item.file)) return { file: item.file, line: null };
+  }
+  return extractFileLine(descriptionText);
+}
+
 function mkFinding({ id, severity, file, line, summary, mitigation, effort, provenance, source, sourceFile }) {
+  // Every collector below is expected to pass a plain string (or null) for
+  // summary/mitigation/effort — describeItem() exists precisely so callers
+  // don't have to hand this a raw gate-JSON object. This is the last line of
+  // defense against a collector regression doing so anyway: render-findings-
+  // html.js interpolates these fields directly, so a stray object here would
+  // otherwise show up in the report as the literal text "[object Object]"
+  // (the exact bug this whole module was rewritten to stop reproducing).
+  const asText = (v) => (v == null ? null : (typeof v === "string" ? v : describeItem(v)));
   return {
     id: id != null ? String(id) : null,
     severity: normalizeSeverity(severity),
     file: file || null,
     line: line != null ? line : null,
-    summary: summary || "(no summary provided)",
-    mitigation: mitigation || null,
-    effort: effort || null,
+    summary: asText(summary) || "(no summary provided)",
+    mitigation: asText(mitigation),
+    effort: asText(effort),
     provenance,
     source,
     sourceFile,
@@ -94,14 +137,16 @@ function collectRedTeamFindings(pipelineDir) {
 
   const findings = [];
   for (const item of (gate.must_address_before_peer_review || [])) {
-    const fl = extractFileLine(item.summary);
+    const description = describeItem(item);
+    const fl = fileLineFromItem(item, description);
     const isMechanical = item.source === "mechanical";
     let finding = mkFinding({
       id: item.id,
       severity: item.severity,
       file: fl.file,
       line: fl.line,
-      summary: item.summary,
+      summary: description,
+      effort: item.effort || null,
       provenance: isMechanical ? PROVENANCE.OBSERVED : PROVENANCE.ASSERTED,
       source: isMechanical ? "red-team (mechanical floor)" : "red-team",
       sourceFile: gatePath,
@@ -110,13 +155,15 @@ function collectRedTeamFindings(pipelineDir) {
     findings.push(finding);
   }
   for (const item of (gate.noted_for_followup || [])) {
-    const fl = extractFileLine(item.summary);
+    const description = describeItem(item);
+    const fl = fileLineFromItem(item, description);
     const finding = enrichFromReport(mkFinding({
       id: item.id,
       severity: item.severity,
       file: fl.file,
       line: fl.line,
-      summary: item.summary,
+      summary: description,
+      effort: item.effort || null,
       provenance: PROVENANCE.ASSERTED,
       source: "red-team (noted for follow-up)",
       sourceFile: gatePath,
@@ -127,12 +174,19 @@ function collectRedTeamFindings(pipelineDir) {
 }
 
 // --- stage-04b: security-review --------------------------------------------
-// The gate itself carries no per-finding array (security_approved / veto /
-// triggering_conditions only — see core/gates/schemas/stage-04b.schema.json).
-// pipeline/security-review.md follows templates/review-template.md's plain
-// REVIEW:/BLOCKER: grammar (no severity/file structure of its own), so a
-// BLOCKER line becomes one finding, severity escalated to "critical" when
-// the gate vetoed the pipeline.
+// The base gate schema (core/gates/schemas/stage-04b.schema.json) carries no
+// per-finding array of its own (security_approved / veto / triggering_
+// conditions only), so a BLOCKER: line in pipeline/security-review.md
+// (templates/review-template.md's plain REVIEW:/BLOCKER: grammar) becomes
+// one finding, severity escalated to "critical" when the gate vetoed the
+// pipeline. In practice, though, a security review that PASSES (no veto,
+// no BLOCKER: lines) can still carry real informational/hardening findings
+// it chose not to block on — modeled after red-team's noted_for_followup
+// convention even though stage-04b's schema never formally adopted it. A
+// real gate observed with 4 populated items there and zero of the plain
+// per-line BLOCKER: findings this function used to be the only source of —
+// read both, rather than silently dropping whichever one the gate happens
+// to be carrying findings in.
 
 function collectSecurityReviewFindings(pipelineDir) {
   const gatePath = path.join(pipelineDir, "gates", "stage-04b.json");
@@ -143,25 +197,22 @@ function collectSecurityReviewFindings(pipelineDir) {
   const blockerLines = [...reviewText.matchAll(/^BLOCKER:\s*(.+)$/gm)].map((m) => m[1].trim());
   const severity = gate.veto === true ? "critical" : "high";
 
-  if (blockerLines.length === 0) {
-    if (gate.veto === true) {
-      return [mkFinding({
-        id: "SEC-VETO",
-        severity: "critical",
-        file: null,
-        line: null,
-        summary: "security review vetoed the pipeline (pipeline/security-review.md has no parseable BLOCKER: line)",
-        provenance: PROVENANCE.ASSERTED,
-        source: "security-review",
-        sourceFile: gatePath,
-      })];
-    }
-    return [];
+  const findings = [];
+  if (blockerLines.length === 0 && gate.veto === true) {
+    findings.push(mkFinding({
+      id: "SEC-VETO",
+      severity: "critical",
+      file: null,
+      line: null,
+      summary: "security review vetoed the pipeline (pipeline/security-review.md has no parseable BLOCKER: line)",
+      provenance: PROVENANCE.ASSERTED,
+      source: "security-review",
+      sourceFile: gatePath,
+    }));
   }
-
-  return blockerLines.map((text, idx) => {
+  blockerLines.forEach((text, idx) => {
     const fl = extractFileLine(text);
-    return mkFinding({
+    findings.push(mkFinding({
       id: `SEC-${idx + 1}`,
       severity,
       file: fl.file,
@@ -170,8 +221,24 @@ function collectSecurityReviewFindings(pipelineDir) {
       provenance: PROVENANCE.ASSERTED,
       source: "security-review",
       sourceFile: path.join(pipelineDir, "security-review.md"),
-    });
+    }));
   });
+  for (const item of (gate.noted_for_followup || [])) {
+    const description = describeItem(item);
+    const fl = fileLineFromItem(item, description);
+    findings.push(mkFinding({
+      id: item.id,
+      severity: item.severity,
+      file: fl.file,
+      line: fl.line,
+      summary: description,
+      effort: item.effort || null,
+      provenance: PROVENANCE.ASSERTED,
+      source: "security-review (noted for follow-up)",
+      sourceFile: gatePath,
+    }));
+  }
+  return findings;
 }
 
 // --- stage-05 / stage-05.critic: peer-review + critic ----------------------
@@ -196,16 +263,27 @@ function collectPeerReviewFindings(pipelineDir) {
     const mismatchWorkstreams = new Set(
       stampedFields.filter((f) => f.field === "approval_state").map((f) => f.workstream),
     );
-    (gate.blockers || []).forEach((text, idx) => {
-      const m = /^peer-review approval mismatch: workstream "([^"]+)"/.exec(text);
+    // gate.blockers is documented as a bare array with no item schema
+    // (core/gates/schemas/gate.schema.json) — panel-mode's stamping hook
+    // writes plain strings ("peer-review approval mismatch: ..."), but a
+    // real adversarial-mode peer-review gate observed here writes structured
+    // objects instead ({ id, area, severity, file, scenario, workstream }),
+    // one per reviewer objection. Handle both: the mismatch-regex check
+    // below only ever matches the hook's own plain-string wording, so it's
+    // run against the extracted description either way, never the raw
+    // (possibly-object) entry.
+    (gate.blockers || []).forEach((entry, idx) => {
+      const description = describeItem(entry);
+      const m = /^peer-review approval mismatch: workstream "([^"]+)"/.exec(description || "");
       const isObserved = Boolean(m && mismatchWorkstreams.has(m[1]));
-      const fl = extractFileLine(text);
+      const isObject = entry && typeof entry === "object";
+      const fl = fileLineFromItem(entry, description);
       findings.push(mkFinding({
-        id: `PR-${idx + 1}`,
-        severity: "high",
+        id: isObject && entry.id ? entry.id : `PR-${idx + 1}`,
+        severity: (isObject && entry.severity) || "high",
         file: fl.file,
         line: fl.line,
-        summary: text,
+        summary: description,
         provenance: isObserved ? PROVENANCE.OBSERVED : PROVENANCE.ASSERTED,
         source: "peer-review",
         sourceFile: gatePath,
@@ -265,7 +343,7 @@ function collectMutationFindings(pipelineDir) {
       severity: item.severity,
       file: null,
       line: null,
-      summary: item.text || item.summary,
+      summary: describeItem(item),
       provenance: PROVENANCE.OBSERVED,
       source: "mutation",
       sourceFile: gatePath,
@@ -301,7 +379,10 @@ function collectVerificationBeyondTestsFindings(pipelineDir) {
     (arr || []).forEach((item, idx) => {
       const method = item.method || "unknown";
       const isObserved = confirmedMethods.has(method);
-      const summary = item.summary + (item.counterexample ? ` — counterexample: ${item.counterexample}` : "");
+      const description = describeItem(item);
+      const summary = description
+        ? description + (item.counterexample ? ` — counterexample: ${item.counterexample}` : "")
+        : null;
       findings.push(mkFinding({
         id: `VBT-${method}-${idx + 1}`,
         severity: item.severity || defaultSeverity,
