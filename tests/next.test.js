@@ -654,11 +654,12 @@ describe("next: convergence ceiling (H1 + 4.2 progress-based)", () => {
   });
 });
 
-// review-only and review-pr have no build stage — retrying peer-review can
-// never change the (unchanged, un-owned) code under review, so a FAIL there
-// is terminal, not something to retry or escalate. Every other track keeps
-// the normal fix-and-retry/resolve-escalation behavior (asserted below via
-// "full") since they have a build stage peer-review's feedback can act on.
+// review-only and review-pr have no build stage — retrying *any* of their
+// stages can never change the (unchanged, un-owned) code under review, so a
+// FAIL is terminal for every stage in these tracks, not just peer-review.
+// Every other track keeps the normal fix-and-retry/resolve-escalation
+// behavior (asserted below via "full") since they have a build stage each
+// stage's feedback can act on.
 describe("next: peer-review FAIL in a track with no build stage is terminal, not escalated", () => {
   it("review-only: stage-05 FAIL → pipeline-complete, not resolve-escalation", () => {
     const cwd = track(makeTargetProject());
@@ -745,6 +746,63 @@ describe("next: peer-review FAIL in a track with no build stage is terminal, not
     const r3 = next({ cwd: cwd3, track: "full" });
     assert.equal(r3.action, "resolve-escalation");
     assert.equal(r3.failure_class, "judgment-gate");
+  });
+
+  // Regression: a real `devteam review` run against an external repo hit
+  // this exact wall on red-team (stage-04c), not peer-review — the earlier
+  // version of this fix checked `stageDef.stage === "stage-05"` specifically
+  // and missed every other stage in review-only/review-pr. Same reasoning,
+  // same fix, generalized to `!stageList.includes("build")` regardless of
+  // which stage hit it.
+  it("review-only: stage-04c (red-team) FAIL is terminal too — advances to the next stage instead of resolve-escalation", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" }); // security-review
+    seedGate(cwd, "stage-04c", { status: "FAIL", blockers: ["RT-01", "RT-02"] }); // red-team
+    const r = next({ cwd, track: "review-only" });
+    // Not resolve-escalation, and not pipeline-complete either — peer-review
+    // (the next stage in the list) hasn't run yet, so next() correctly
+    // advances to it rather than declaring the whole pipeline done.
+    assert.equal(r.action, "run-stage");
+    assert.equal(r.name, "peer-review");
+  });
+
+  it("review-only: stage-04c (red-team) ESCALATE — matches the real-world halt message verbatim, same terminal treatment", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" });
+    seedGate(cwd, "stage-04c", {
+      status: "ESCALATE",
+      blockers: ["RT-01", "RT-02"],
+      escalation_reason: "Same must-fix findings (RT-01, RT-02) failed identically on retry 2 against unchanged source (HEAD still c4ea51e7, git status clean) with no build stage on the review-only track able to apply a fix between dispatches.",
+    });
+    const r = next({ cwd, track: "review-only" });
+    assert.notEqual(r.action, "resolve-escalation");
+  });
+
+  it("review-only: stage-04b (security-review) FAIL is also terminal", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "FAIL", blockers: ["SEC-01"] });
+    const r = next({ cwd, track: "review-only" });
+    assert.notEqual(r.action, "resolve-escalation");
+  });
+
+  it("review-only: red-team terminal + peer-review PASS → pipeline-complete overall", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04b", { status: "PASS" });
+    seedGate(cwd, "stage-04c", { status: "FAIL", blockers: ["RT-01", "RT-02"] });
+    seedGate(cwd, "stage-05", { status: "PASS" });
+    const r = next({ cwd, track: "review-only" });
+    assert.equal(r.action, "pipeline-complete");
+  });
+
+  it("full track: red-team FAIL still fix-and-retries as before — the generalization does not change normal build-workflow tracks", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04a"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04b", { status: "PASS" });
+    seedGate(cwd, "stage-04c", { status: "FAIL", blockers: ["RT-01"] });
+    const r = next({ cwd, track: "full" });
+    assert.equal(r.action, "fix-and-retry");
   });
 });
 

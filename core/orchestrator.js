@@ -2216,31 +2216,30 @@ function evaluateStageInPipeline(stageName, ctx) {
       command: `cat ${stageGatePath}  # then repair or rewrite`,
     };
   }
-  // Peer-review's fix-and-retry/resolve-escalation machinery below (both the
-  // FAIL branch's retry ceiling and the ESCALATE branch just below it)
-  // assumes a build stage sits between attempts — the same reviewers see
-  // *different* code next time because something acted on their blockers.
-  // review-only and review-pr have no build stage at all (they exist to
-  // review code the pipeline never touches — `devteam review`/`devteam
-  // review-pr`), so re-dispatching the same reviewers against the same,
-  // unchanged code always reproduces the same disagreement: retrying only
-  // delays the outcome by a full retryDelayMs per attempt, and escalating
-  // asks a human to rule on someone else's code the review was never going
-  // to change anyway. An individual reviewer that recognizes non-convergence
-  // may write ESCALATE directly into its own workstream gate (rather than a
-  // plain FAIL), which mergeWorkstreamGates then propagates to the merged
-  // gate's status — same underlying situation, so it gets the same
-  // treatment here. The disagreement itself *is* the review's output —
-  // core/report/collect-findings.js already reads it straight from the
-  // merged gate's blockers and the by-*.md CHANGES_REQUESTED content,
-  // independent of what next() recommends here — so in a track with no
-  // build stage for peer-review to depend on, FAIL/ESCALATE is terminal:
-  // stop advising further action on it, exactly like PASS/WARN. The gate
-  // file itself is untouched — still genuinely FAIL/ESCALATE for anything
-  // that reads it directly (`devteam validate`, etc.) — only the
-  // orchestration decision changes.
-  if (stageDef.stage === "stage-05" && !stageList.includes("build")
-      && (gate.status === "FAIL" || gate.status === "ESCALATE")) {
+  // The fix-and-retry/resolve-escalation machinery below (both the FAIL
+  // branch's retry ceiling and the ESCALATE branch just below it) assumes a
+  // build stage sits between attempts — the same agent sees *different*
+  // code next time because something acted on its blockers. review-only and
+  // review-pr have no build stage at all, for *any* of their stages (they
+  // exist to review code the pipeline never touches — `devteam review`/
+  // `devteam review-pr`) — not just peer-review; security-review and
+  // red-team hit the identical wall, re-dispatching the same agent against
+  // the same, unchanged code and reproducing the same must-fix findings.
+  // Retrying only delays the outcome by a full retryDelayMs per attempt, and
+  // escalating asks a human to rule on someone else's code the review was
+  // never going to change anyway. A stage that recognizes non-convergence
+  // may write ESCALATE directly (rather than a plain FAIL) — same
+  // underlying situation, so it gets the same treatment here. The finding
+  // itself *is* the review's output — core/report/collect-findings.js
+  // already reads it straight from the gate's blockers/must_address_*
+  // fields and any by-*.md CHANGES_REQUESTED content, independent of what
+  // next() recommends here — so in a track with no build stage for this
+  // stage to depend on, FAIL/ESCALATE is terminal for every stage in it:
+  // stop advising further action, exactly like PASS/WARN. The gate file
+  // itself is untouched — still genuinely FAIL/ESCALATE for anything that
+  // reads it directly (`devteam validate`, etc.) — only the orchestration
+  // decision changes.
+  if (!stageList.includes("build") && (gate.status === "FAIL" || gate.status === "ESCALATE")) {
     return null;
   }
   if (gate.status === "ESCALATE") {
