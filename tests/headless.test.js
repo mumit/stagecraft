@@ -870,7 +870,14 @@ test("C3: sets the adapter-declared env var to ctx.timeoutMs when the operator h
     const previous = process.env.MY_CEILING_MS;
     delete process.env.MY_CEILING_MS;
     try {
-      const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+      // CI sets DEVTEAM_HEADLESS_COMMAND=cat globally for the whole test
+      // suite (so a test that forgets to stub it never shells out for
+      // real) — that override wins over the adapter's own declared
+      // headlessCommand, so it has to be cleared for this script to
+      // actually run instead of `cat` silently taking its place.
+      const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", undefined, () =>
+        runHeadless(adapter, makeDescriptor("stage-01"), ctx),
+      );
       assert.equal(r.exitCode, 0);
       const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
       assert.match(content, /CEILING=42000/);
@@ -894,7 +901,9 @@ test("C3: propagates 0 (ctx.timeoutMs disabled) as \"0\" — claude's own conven
     const previous = process.env.MY_CEILING_MS;
     delete process.env.MY_CEILING_MS;
     try {
-      const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+      const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", undefined, () =>
+        runHeadless(adapter, makeDescriptor("stage-01"), ctx),
+      );
       assert.equal(r.exitCode, 0);
       const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
       assert.match(content, /CEILING=0/);
@@ -918,7 +927,9 @@ test("C3: never overrides a value the operator already set in the environment", 
     const previous = process.env.MY_CEILING_MS;
     process.env.MY_CEILING_MS = "999";
     try {
-      const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+      const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", undefined, () =>
+        runHeadless(adapter, makeDescriptor("stage-01"), ctx),
+      );
       assert.equal(r.exitCode, 0);
       const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
       assert.match(content, /CEILING=999/, "the operator's own value must survive untouched");
@@ -939,7 +950,9 @@ test("C3: adds no env override at all for a host that doesn't declare printBackg
   try {
     // makeAdapter's default capabilities has no printBackgroundCeilingEnv field.
     const adapter = makeAdapter({ headlessCommand: `"${process.execPath}" "${scriptPath}"` });
-    const r = await runHeadless(adapter, makeDescriptor("stage-01"), ctx);
+    const r = await withEnv("DEVTEAM_HEADLESS_COMMAND", undefined, () =>
+      runHeadless(adapter, makeDescriptor("stage-01"), ctx),
+    );
     assert.equal(r.exitCode, 0);
     const content = fs.readFileSync(path.join(ctx.cwd, "pipeline", "logs", "stage-01.log"), "utf8");
     assert.match(content, /CEILING=undefined/);
