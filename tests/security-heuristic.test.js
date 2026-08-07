@@ -4,12 +4,25 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { REPO_ROOT } = require("./_helpers");
-const { needsSecurityReview, analyze, contentFindings } =
+const { needsSecurityReview, analyze, contentFindings, PATH_PATTERNS } =
   require(path.join(REPO_ROOT, "core", "guards", "security-heuristic"));
 
+// mkdtempSync's random 6-char suffix occasionally spells "pii" or "auth" by
+// pure chance (measured ~1 in 7,400) — PATH_PATTERNS then matches that
+// against the *absolute* tmpdir path every "safe path" test below passes to
+// needsSecurityReview/analyze (real files are required so content-scanning
+// reads real content — a plain relative string would resolve against this
+// repo's own CWD files instead, e.g. its own real README.md). A genuine,
+// reproduced CI flake, not Node-version-specific despite only ever having
+// been seen on one job. Retry generation on the (extremely rare) collision
+// rather than changing what gets passed to the function under test.
 let _dirs = [];
 function tmpdir() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-sec-heur-"));
+  let d = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-sec-heur-"));
+  while (PATH_PATTERNS.some((p) => p.test(d))) {
+    fs.rmSync(d, { recursive: true, force: true });
+    d = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-sec-heur-"));
+  }
   _dirs.push(d);
   return d;
 }
