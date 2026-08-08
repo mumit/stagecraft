@@ -232,6 +232,18 @@ describe("isIgnoredRuntimeArtifact", () => {
     assert.ok(!isIgnoredRuntimeArtifact("src/backend/cache/result.pyc"));
     assert.ok(!isIgnoredRuntimeArtifact("pipeline/code-review/by-qa.md"));
   });
+
+  // Regression: a real build flagged platform's gate FAIL over
+  // "[write-audit] unauthorized write: pipeline/verification-receipts/<hash>.json"
+  // — a file platform never touched. It's written by the orchestrator's own
+  // post-dispatch stamping step (core/verify/runner.js#writeReceipt), never
+  // by the dispatched agent, and the directory is shared across every
+  // workstream's own stamp step rather than scoped per-role, so a
+  // concurrently- or previously-stamped sibling workstream's receipt can
+  // show up in a different workstream's own before/after diff.
+  test("matches pipeline/verification-receipts/ (orchestrator's own stamping bookkeeping, not an agent write)", () => {
+    assert.ok(isIgnoredRuntimeArtifact("pipeline/verification-receipts/a8ed22fa9860e76c1be2deefaef2a53c0cda213dd9495b46807209663df516f6.json"));
+  });
 });
 
 // ─── 3. snapshotWritables — real git temp repo ────────────────────────────────

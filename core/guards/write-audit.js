@@ -139,6 +139,16 @@ function isIgnoredRuntimeArtifact(filePath) {
   if (/(^|\/)\.pytest_cache\//.test(normalized)) return true;
   if (/(^|\/)\.mypy_cache\//.test(normalized)) return true;
   if (/(^|\/)\.ruff_cache\//.test(normalized)) return true;
+  // pipeline/verification-receipts/ is written by the orchestrator's own
+  // post-dispatch stamping step (core/verify/runner.js#writeReceipt), never
+  // by the dispatched agent — it's stagecraft's internal bookkeeping, not an
+  // authored project change, and the directory is shared across every
+  // workstream's own stamp step, not scoped per-role. A real build correctly
+  // flagged a receipt file another (concurrently or previously stamped)
+  // workstream had just written as an "unauthorized write" for platform,
+  // flipping an otherwise-passing gate to FAIL over a file platform never
+  // touched and was never meant to be constrained by its own allowedWrites.
+  if (/(^|\/)pipeline\/verification-receipts\//.test(normalized)) return true;
   return false;
 }
 
