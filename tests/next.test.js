@@ -248,6 +248,55 @@ describe("next: walks through full track", () => {
     assert.match(r.stdout, /devteam fix-escalation --headless/);
   });
 
+  // Regression: a real hello-world-codex-loop run escalated on pre-review
+  // over a genuine Starlette CVE, but `devteam next` reported an unrelated,
+  // stale "build" ruling as "current" — 1 current ruling(s), 1 total — so
+  // `devteam fix-escalation` kept applying instructions about a completely
+  // different (already-resolved) problem and never touched the real
+  // blocker. Root cause: driver.js injects an identical boilerplate
+  // decision_needed template ("Add fix instructions to pipeline/context.md
+  // above devteam markers, then: devteam restart <stage> && devteam run")
+  // on every convergence-exhausted escalation, and rules/escalation.md's
+  // own documented `--topic` auto-derivation echoes that exact boilerplate
+  // into the ruling's own topic text — so two convergence-exhausted
+  // escalations for entirely different stages/topics always token-overlap
+  // on pure instructional filler ("instructions", "above", "markers",
+  // "then", "restart", "devteam") and get treated as matching regardless
+  // of substance.
+  it("CLI does not treat a stale convergence-exhausted ruling (for a different stage) as current, even though both share the driver's boilerplate decision_needed template", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "context.md"), [
+      "# Pipeline Context",
+      "",
+      "## Principal Rulings",
+      "",
+      "PRINCIPAL-RULING: driver retry budget exhausted for \"build\" (2/2); escalating — "
+      + "Add fix instructions to pipeline/context.md above devteam markers, then: devteam restart build && devteam run "
+      + "→ Refresh stale build gates; downgrade host limitations [class: stale-concurrent-gate]",
+      "",
+    ].join("\n"));
+    seedGate(cwd, "stage-04a", {
+      workstream: "platform",
+      status: "ESCALATE",
+      escalation_reason: "driver retry budget exhausted for \"pre-review\" (2/2); escalating",
+      decision_needed: "Add fix instructions to pipeline/context.md above devteam markers, then: devteam restart pre-review && devteam run",
+      blockers: [
+        "The pinned FastAPI 0.116.1 graph resolves to Starlette 0.47.3, which pip-audit reports as vulnerable; "
+        + "PYSEC-2026-1942 / CVE-2025-62727 is High (CVSS 7.5), affects the application's FileResponse route, and "
+        + "is fixed in Starlette 0.49.1. Upgrade to a mutually compatible pinned dependency set and rerun Stage 4a.",
+      ],
+    });
+
+    const r = runCLI(["next", "--skip-advise"], { cwd });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Existing Principal ruling\(s\) found \(1\), but none appears to match this pre-review escalation/);
+    assert.doesNotMatch(r.stdout, /Principal ruling is written/);
+  });
+
   it("all stages PASS → pipeline-complete", () => {
     const cwd = track(makeTargetProject());
     // Seed a PASS gate for every stage in the full track so the test

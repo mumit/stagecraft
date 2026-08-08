@@ -33,6 +33,19 @@ const WEAK_ESCALATION_TOKENS = new Set([
   "attempt", "attempts", "blocker", "blockers", "budget", "convergence",
   "driver", "escalate", "escalated", "escalating", "exhausted", "retry",
   "ruling", "rulings",
+  // core/driver.js injects an identical decision_needed boilerplate template
+  // on every convergence-exhausted escalation ("Add fix instructions to
+  // pipeline/context.md above devteam markers, then: devteam restart
+  // <stage> && devteam run"), and rules/escalation.md's own documented
+  // `--topic` auto-derivation echoes that same boilerplate into the
+  // ruling's topic text — so two convergence-exhausted escalations for
+  // completely different stages/topics always token-overlap on this pure
+  // instructional filler and get treated as matching regardless of
+  // substance. A real hello-world-codex-loop run hit exactly this: a stale
+  // "build"-stage ruling about refreshing gates got applied to a
+  // completely unrelated pre-review escalation over a real Starlette CVE,
+  // and fix-escalation kept "fixing" the wrong thing.
+  "instructions", "above", "devteam", "markers", "then", "restart",
 ]);
 
 function meaningfulTokens(values) {
