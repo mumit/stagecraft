@@ -1,0 +1,5 @@
+### Fixed
+
+- **`README.md` was never writable by any role in the entire pipeline, and no Python project manifest file (`pyproject.toml`, `requirements.txt`, etc.) was writable either.** A real Python/FastAPI build's `design-spec.md` explicitly assigned `pyproject.toml` and `README.md` to `platform` (its acceptance criteria required both), but `build`'s `allowedWrites`/`roleWrites` only ever anticipated a JS/Node project shape — `package.json`, `tsconfig.json`, ESLint configs, `Dockerfile`. `platform` correctly refused to write outside its own authorized boundary rather than sneak around it, and QA could never pass acceptance criteria that depended on files nothing was ever allowed to create.
+
+  `README.md`, `pyproject.toml`, `requirements.txt`, `requirements-dev.txt`, `setup.py`, `setup.cfg`, `Pipfile`, and `Pipfile.lock` now sit alongside the existing JS/Node project files in `build`'s stage-level `allowedWrites` and in `backend`'s and `platform`'s `roleWrites` — the same two roles that already carry `package.json`/`Dockerfile`/etc. 2 new contract tests (confirmed to fail without the fix).

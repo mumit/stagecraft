@@ -356,3 +356,30 @@ describe("contract: gates split — gates-core.md and per-stage gate sections", 
     assert.match(content, /PRINCIPAL-RULING/);
   });
 });
+
+// Regression: a real Python/FastAPI build's design-spec.md assigned
+// pyproject.toml and README.md to platform (AC-1/AC-6 required them), but
+// build's allowedWrites/roleWrites only ever anticipated a JS/Node project
+// shape (package.json, tsconfig, eslint configs) — README.md wasn't writable
+// by ANY role in the entire pipeline, and no Python manifest file was either.
+// platform correctly refused to write outside its own boundary rather than
+// sneak around it, and QA could never pass ACs that depended on files
+// nothing was ever allowed to create.
+describe("contract: build allowedWrites covers non-JS project manifests", () => {
+  const build = STAGES.build;
+  const PROJECT_MANIFEST_FILES = ["README.md", "pyproject.toml", "requirements.txt", "requirements-dev.txt", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock"];
+
+  it("stage-level allowedWrites includes README.md and the Python manifest files", () => {
+    for (const f of PROJECT_MANIFEST_FILES) {
+      assert.ok(build.allowedWrites.includes(f), `build.allowedWrites missing "${f}"`);
+    }
+  });
+
+  it("backend and platform roleWrites include README.md and the Python manifest files (mirroring their existing package.json coverage)", () => {
+    for (const role of ["backend", "platform"]) {
+      for (const f of PROJECT_MANIFEST_FILES) {
+        assert.ok(build.roleWrites[role].includes(f), `build.roleWrites.${role} missing "${f}"`);
+      }
+    }
+  });
+});

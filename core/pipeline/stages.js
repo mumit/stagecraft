@@ -218,11 +218,22 @@ const STAGES = {
     // audit; claude-code's own hooks are broader than this list and never
     // actually blocked the write, which is why this only surfaced on codex)
     // correctly refuses to follow that mandate, then refuses to build at all.
-    allowedWrites: ["src/backend/", "src/frontend/", "src/infra/", "src/tests/", "pipeline/pr-*.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.*.json", "pipeline/gates/stage-04.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
+    //
+    // README.md and the Python manifest files (pyproject.toml, requirements*.txt,
+    // setup.py/cfg, Pipfile*) sit alongside the existing Node/JS project files
+    // (package.json, tsconfig, eslint configs) for the same reason those are
+    // there — every existing entry here assumed a JS/Node project shape with
+    // zero accommodation for Python (or README.md for ANY language). A real
+    // Python/FastAPI build's design-spec.md assigned pyproject.toml and
+    // README.md to platform (AC-1/AC-6 required them), but platform had no
+    // authorized path to write either — it correctly refused rather than
+    // sneak around its own write boundary, and QA could never pass ACs that
+    // depended on files nothing was ever allowed to create.
+    allowedWrites: ["src/backend/", "src/frontend/", "src/infra/", "src/tests/", "pipeline/pr-*.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.*.json", "pipeline/gates/stage-04.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json", "README.md", "pyproject.toml", "requirements.txt", "requirements-dev.txt", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock"],
     roleWrites: {
-      backend:  ["src/backend/", "src/tests/", "pipeline/pr-backend.md",  "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.backend.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
+      backend:  ["src/backend/", "src/tests/", "pipeline/pr-backend.md",  "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.backend.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json", "README.md", "pyproject.toml", "requirements.txt", "requirements-dev.txt", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock"],
       frontend: ["src/frontend/",               "pipeline/pr-frontend.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.frontend.json"],
-      platform: ["src/infra/",                  "pipeline/pr-platform.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.platform.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
+      platform: ["src/infra/",                  "pipeline/pr-platform.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.platform.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json", "README.md", "pyproject.toml", "requirements.txt", "requirements-dev.txt", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock"],
       qa:       ["src/tests/",                  "pipeline/pr-qa.md",      "pipeline/context.md",     "pipeline/gates/stage-04.qa.json"],
     },
     artifact: "pipeline/build-plan.md",
