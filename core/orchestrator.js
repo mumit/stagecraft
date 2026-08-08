@@ -2147,15 +2147,20 @@ function evaluateStageInPipeline(stageName, ctx) {
 
   if (!fs.existsSync(stageGatePath)) {
     if (stageDef.roles.length > 1) {
-      // 31.3: stage-05's actual dispatched roles vary with review.mode
-      // (adversarial dispatches ["reviewer","critic"], not the static
-      // 4-area stageDef.roles) — without this, the completed/remaining
-      // check below looks for stage-05.backend.json/etc that adversarial
-      // mode never writes, and the stage can never be recognized as done.
-      // Every other stage keeps using stageDef.roles unchanged.
-      const baseRoles = stageDef.stage === "stage-05"
-        ? rolesForStage(stageDef, track, opts.config)
-        : stageDef.roles;
+      // 31.3: a multi-role stage's actual dispatched roles can vary by track
+      // or config — stage-05's review.mode (adversarial dispatches
+      // ["reviewer","critic"], not the static 4-area stageDef.roles) and,
+      // identically, stage-04 (build) on the loop track (a single
+      // config-overridable workstream, not the four-role matrix). This was
+      // scoped to `stageDef.stage === "stage-05"` only — a real loop-track
+      // devteam run hit the stage-04 case: `next()` reported "1/4
+      // workstreams complete... remaining: frontend, platform, qa" for a
+      // build stage that only ever dispatches backend on this track, so
+      // `remaining` could never empty out and the run stalled forever.
+      // rolesForStage() falls back to stageDef.roles for every stage/track
+      // it doesn't special-case, so calling it unconditionally is a strict
+      // superset — behavior for every other stage is unchanged.
+      const baseRoles = rolesForStage(stageDef, track, opts.config);
       // Apply active_roles filter: only expect gates for roles that were
       // actually dispatched. Without this, a suppressed role (e.g. frontend
       // when active_roles=[backend,platform,qa]) keeps `remaining` non-empty
@@ -2469,13 +2474,17 @@ function summary(opts = {}) {
 
     // No stage gate. Multi-role: check per-workstream gates.
     if (stageDef.roles.length > 1) {
+      // rolesForStage(): see the why-comment in _nextImpl's identical
+      // completed/remaining computation above — same bug, same fix, this
+      // time in the status-summary path rather than the driving decision.
+      const baseRoles = rolesForStage(stageDef, track, config);
       // Apply active_roles filter so suppressed workstreams don't show as pending.
-      let effectiveRoles = stageDef.roles;
+      let effectiveRoles = baseRoles;
       const s1Path = path.join(gatesDir, "stage-01.json");
       if (fs.existsSync(s1Path)) {
         const s1Data = readJSONSafe(s1Path);
         if (s1Data) {
-          const filtered = inferActiveRoles(s1Data, stageDef.roles);
+          const filtered = inferActiveRoles(s1Data, baseRoles);
           if (filtered) effectiveRoles = filtered;
         }
       }

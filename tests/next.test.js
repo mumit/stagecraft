@@ -57,6 +57,25 @@ describe("next: walks through full track", () => {
     assert.equal(r.name, "build");
   });
 
+  // Regression: a real `devteam run --track loop` on codex reported
+  // "1/4 workstreams complete... remaining: frontend, platform, qa" for a
+  // build stage that only ever dispatches a single workstream (backend) on
+  // the loop track — remaining could never empty out, so the run stalled
+  // forever. The completed/remaining computation used stageDef.roles (the
+  // static 4-role matrix) instead of rolesForStage() (which correctly
+  // narrows to ["backend"] on loop), a fix already applied for stage-05 but
+  // not generalized to stage-04.
+  it("loop track: build (stage-04) with only backend's gate present is 'merge', not 'continue-stage' waiting on frontend/platform/qa", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: loop\n",
+    }));
+    seedGate(cwd, "stage-01", { status: "PASS", track: "loop" });
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "codex", track: "loop", status: "PASS" });
+    const r = next({ cwd });
+    assert.equal(r.action, "merge");
+    assert.equal(r.name, "build");
+  });
+
   it("FAIL gate → fix-and-retry with blockers", () => {
     const cwd = track(makeTargetProject());
     seedGate(cwd, "stage-01", { status: "FAIL", blockers: ["bad criterion"] });
