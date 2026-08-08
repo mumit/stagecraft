@@ -38,14 +38,14 @@ How each host enforces the framework's core rules:
 
 Command the orchestrator spawns in `--headless` mode:
 
-| Host          | headlessCommand                                                                     |
-| ------------- | ----------------------------------------------------------------------------------- |
-| acp           | npx -y @agentclientprotocol/claude-agent-acp                                        |
-| antigravity   | agy --print --dangerously-skip-permissions                                          |
-| claude-code   | claude --dangerously-skip-permissions --print --output-format stream-json --verbose |
-| codex         | codex exec --sandbox workspace-write --json                                         |
-| omnigent      | omnigent run .omnigent/stagecraft/agent --no-session                                |
-| openai-compat | —                                                                                   |
+| Host          | headlessCommand                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| acp           | npx -y @agentclientprotocol/claude-agent-acp                                               |
+| antigravity   | agy --print --dangerously-skip-permissions                                                 |
+| claude-code   | claude --dangerously-skip-permissions --print --output-format stream-json --verbose        |
+| codex         | codex exec --sandbox workspace-write -c sandbox_workspace_write.network_access=true --json |
+| omnigent      | omnigent run .omnigent/stagecraft/agent --no-session                                       |
+| openai-compat | —                                                                                          |
 
 ### Enforcement level glossary
 

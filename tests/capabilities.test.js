@@ -57,6 +57,24 @@ describe("capabilities.json — adapter declarations", () => {
     const caps = require(path.join(REPO_ROOT, "hosts", "codex", "capabilities.json"));
     assert.match(caps.headlessCommand, /--sandbox workspace-write\b/);
   });
+
+  // Regression: a real pre-review dispatch escalated after 2 retries —
+  // "Python dependency vulnerability review is incomplete because pip-audit
+  // cannot resolve pypi.org on this host." codex's `workspace-write` sandbox
+  // blocks network access by default (confirmed directly from the codex
+  // binary's own embedded guidance: "In workspace-write, network access
+  // still depends on your Codex configuration (for example
+  // [sandbox_workspace_write] network_access = true)"), even though
+  // capabilities.json already (and, until this fix, incorrectly) declared
+  // `enforces.network: true` for codex. Without it, every codex-routed
+  // project's dependency-vulnerability scan (pre-review/security-review)
+  // and any other network-dependent build step is unconditionally broken —
+  // confirmed empirically: curl to pypi.org failed to resolve without the
+  // flag and succeeded (HTTP 200) with it, same sandbox mode otherwise.
+  it("codex headless command enables network access within the workspace-write sandbox", () => {
+    const caps = require(path.join(REPO_ROOT, "hosts", "codex", "capabilities.json"));
+    assert.match(caps.headlessCommand, /-c\s+sandbox_workspace_write\.network_access=true\b/);
+  });
 });
 
 // ---------------------------------------------------------------------------
