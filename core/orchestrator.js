@@ -1412,6 +1412,39 @@ function mergeWorkstreamGates(stageName, opts = {}) {
   const gatesDir = opts.gatesDir || getGatesDir(opts.cwd || process.cwd(), opts.changeId || null);
   const plan = computeDispatchPlan(stageDef, config, track, { gatesDir });
   if (plan.length <= 1) {
+    // workstreamId() collapses to the bare `<stage>.json` path whenever a
+    // stage has exactly one dispatched role (loop's single-workstream build,
+    // or any track/config combo where active_roles narrows down to one area)
+    // — the dispatch writes the STAGE gate directly, so there's normally
+    // nothing left to merge by the time next() would ask for one.
+    //
+    // A real hello-world-codex-loop --track loop run halted with
+    // "merge-failed" here anyway: its role brief still hardcoded the old
+    // "<stage>.<role>.json" suffix unconditionally (fixed in roles/backend.md
+    // and roles/frontend.md), so the dispatch wrote a role-suffixed gate
+    // instead of the bare one next() expected — and an already-`devteam
+    // init`'d project's installed role brief copy won't pick up that fix
+    // until it's re-initialized, so the same stale write can still happen.
+    // Handle both outcomes instead of refusing outright: if the bare gate
+    // is already there, this "merge" is a no-op success; if only the legacy
+    // suffixed gate exists, promote it to the stage gate path.
+    if (plan.length === 0) {
+      return { merged: false, reason: "no workstreams to merge for this stage" };
+    }
+    const entry = plan[0];
+    const stageGatePath = path.join(gatesDir, `${stageDef.stage}.json`);
+    if (fs.existsSync(stageGatePath)) {
+      const { gate, error } = loadGateSafe(stageGatePath);
+      if (!error) return { merged: true, file: stageGatePath, gate };
+    }
+    const legacySuffixedPath = path.join(gatesDir, `${stageDef.stage}.${entry.role}.json`);
+    if (fs.existsSync(legacySuffixedPath)) {
+      const { gate, error } = loadGateSafe(legacySuffixedPath);
+      if (error) return { merged: false, reason: `unreadable workstream gate (${entry.role}): ${error}` };
+      fs.writeFileSync(stageGatePath, JSON.stringify(gate, null, 2) + "\n", "utf8");
+      try { require("./gates/chain").stampChain(gatesDir, stageName, track); } catch { /* chain-stamp is best-effort */ }
+      return { merged: true, file: stageGatePath, gate };
+    }
     return { merged: false, reason: "single-workstream stage; no merge needed" };
   }
 

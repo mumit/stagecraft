@@ -272,6 +272,35 @@ describe("orchestrator: mergeWorkstreamGates aggregation", () => {
     assert.match(r.reason, /single-(role|workstream)/);
   });
 
+  // Regression: a real hello-world-codex-loop --track loop run halted with
+  // "merge-failed" — next() correctly identified build's single workstream
+  // (backend) as complete and asked to merge, but mergeWorkstreamGates
+  // refused unconditionally for any plan.length<=1 stage, even though
+  // workstreamId() collapses to the bare stage gate path in exactly this
+  // case, so there's normally nothing left to merge by the time next() asks.
+  it("single-workstream stage (loop build): a no-op merge succeeds when the bare stage gate already exists", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04", { workstream: "backend", host: "codex", track: "loop", status: "PASS" });
+    const r = mergeWorkstreamGates("build", { cwd, track: "loop" });
+    assert.equal(r.merged, true);
+    assert.equal(r.gate.status, "PASS");
+  });
+
+  // The actual incident: the role brief that ran (stale on an already-
+  // `devteam init`'d project) still hardcoded the multi-role
+  // "<stage>.<role>.json" suffix unconditionally, so the dispatch wrote
+  // pipeline/gates/stage-04.backend.json instead of the bare stage-04.json
+  // next() expected. Rather than refusing outright, promote it.
+  it("single-workstream stage (loop build): promotes a legacy role-suffixed gate to the stage gate path", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "codex", track: "loop", status: "PASS" });
+    const r = mergeWorkstreamGates("build", { cwd, track: "loop" });
+    assert.equal(r.merged, true);
+    assert.equal(r.gate.status, "PASS");
+    assert.equal(r.gate.workstream, "backend");
+    assert.ok(fs.existsSync(path.join(cwd, "pipeline", "gates", "stage-04.json")));
+  });
+
   it("reports missing workstreams without merging", () => {
     const cwd = track(makeTargetProject());
     seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });

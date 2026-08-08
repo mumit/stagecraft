@@ -119,7 +119,14 @@ describe("contract: stages ↔ roles", () => {
   // `pipeline/gates/stage-07.pm.json`. A role brief pointing at the wrong
   // path for a multi-role stage is exactly the kind of prose/reality drift
   // that only surfaces once a model actually follows the instruction.
-  it("a multi-role stage's role brief never hardcodes the bare merged-stage gate path", () => {
+  it("a multi-role stage's role brief never hardcodes the bare merged-stage gate path unqualified", () => {
+    // A role brief may legitimately mention the bare stage path — e.g.
+    // explaining that a track like `loop` collapses a multi-role stage down
+    // to a single workstream (whose gate IS the bare stage path) — as long
+    // as that mention is qualified. What's never correct is stating the bare
+    // path with no nearby qualifier, telling the model to always write there
+    // regardless of dispatch shape.
+    const QUALIFIER_RE = /loop|collaps|single[-\s]workstream|single[-\s]role|except|unless|usually|track/i;
     for (const [name, def] of Object.entries(STAGES)) {
       if (!def || !Array.isArray(def.roles) || def.roles.length < 2) continue;
       const bareGatePath = `pipeline/gates/${def.stage}.json`;
@@ -127,11 +134,18 @@ describe("contract: stages ↔ roles", () => {
         const briefPath = path.join(REPO_ROOT, "roles", `${role}.md`);
         if (!fs.existsSync(briefPath)) continue;
         const content = fs.readFileSync(briefPath, "utf8");
-        assert.ok(
-          !content.includes(bareGatePath),
-          `roles/${role}.md hardcodes "${bareGatePath}" but stage "${name}" is multi-role — `
-          + `${role}'s own gate is "pipeline/gates/${def.stage}.${role}.json"`,
-        );
+        let searchFrom = 0;
+        let idx;
+        while ((idx = content.indexOf(bareGatePath, searchFrom)) !== -1) {
+          const window = content.slice(Math.max(0, idx - 150), idx);
+          assert.ok(
+            QUALIFIER_RE.test(window),
+            `roles/${role}.md mentions "${bareGatePath}" with no nearby qualifier (loop/collapses/single-workstream/etc.) but `
+            + `stage "${name}" is multi-role — ${role}'s own gate is "pipeline/gates/${def.stage}.${role}.json" `
+            + `except on a track that collapses to a single workstream`,
+          );
+          searchFrom = idx + bareGatePath.length;
+        }
       }
     }
   });

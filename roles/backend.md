@@ -71,10 +71,14 @@ Before build or review work, read:
      Reviewers and the orchestrator will read this section first. A PASS gate
      whose `## Verify` is empty, missing, or lists ACs you didn't actually
      exercise is invalid and will be flagged at peer review.
-9. Write `pipeline/gates/stage-04.backend.json` with `"status": "PASS"`. PASS is
-   only honest when every AC has a `## Verify` bullet with a real command and a
-   real observed output. If even one AC is unverified, the right status is FAIL
-   or escalate back to the PM for clarification — not PASS.
+9. Write the gate at the path given in your dispatch's "## Gate to write"
+   section (usually `pipeline/gates/stage-04.backend.json` — but a single-
+   workstream track like `loop` collapses it to the bare
+   `pipeline/gates/stage-04.json`; always use the exact path your dispatch
+   states, never assume the `.backend.json` suffix) with `"status": "PASS"`.
+   PASS is only honest when every AC has a `## Verify` bullet with a real
+   command and a real observed output. If even one AC is unverified, the
+   right status is FAIL or escalate back to the PM for clarification — not PASS.
 
 ## On a Code Review Task
 
