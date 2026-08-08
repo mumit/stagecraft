@@ -293,7 +293,7 @@ describe("openai-compat: cache_control breakpoints (32.1)", () => {
     assert.ok(!blocks[2].cache_control, "layer 4 remains non-cacheable even after layer 3 is dropped");
   });
 
-  test("invoke(): sends cache_control content blocks when hosts.openai-compat.caching.enabled is true", async () => {
+  test("invoke(): preserves cache_control blocks on the orchestrator's pre-rendered prompt path", async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-cache-control-"));
     const origFetch = global.fetch;
     try {
@@ -328,10 +328,15 @@ hosts:
       };
 
       const { invoke } = require(path.join(REPO_ROOT, "hosts", "openai-compat", "invoke"));
+      const adapter = require(path.join(REPO_ROOT, "hosts", "openai-compat", "adapter"));
       const descriptor = descriptorFor("build", "backend", { workstreamId: "stage-04.backend" });
       const ctx = { track: "full", feature: "x", cwd, isolation: "in-place", changeId: null };
 
-      await invoke(descriptor, ctx, null);
+      // runStageHeadless always supplies this third argument. Before this
+      // regression fix, doing so flattened the layers and disabled every
+      // explicit cache_control marker despite caching.enabled being true.
+      const preRenderedPrompt = adapter.renderStagePrompt(descriptor, ctx);
+      await invoke(descriptor, ctx, preRenderedPrompt);
 
       assert.ok(capturedBody, "fetch must have been called");
       assert.ok(Array.isArray(capturedBody.messages[0].content),
@@ -344,6 +349,21 @@ hosts:
     } finally {
       global.fetch = origFetch;
       delete process.env.PROMPT_LAYOUT_TEST_KEY;
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("contentForInvocation: keeps a transformed pre-rendered prompt as a plain string", () => {
+    const { contentForInvocation } = require(path.join(REPO_ROOT, "hosts", "openai-compat", "invoke"));
+    const adapter = require(path.join(REPO_ROOT, "hosts", "openai-compat", "adapter"));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-cache-transform-"));
+    try {
+      const descriptor = descriptorFor("build", "backend", { workstreamId: "stage-04.backend" });
+      const ctx = { track: "full", feature: "x", cwd, isolation: "in-place", changeId: null };
+      const transformed = `provider-directive\n${adapter.renderStagePrompt(descriptor, ctx)}`;
+      assert.equal(contentForInvocation(adapter, descriptor, ctx, transformed, true), transformed,
+        "cache recovery must never discard an orchestrator prompt transformation");
+    } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
   });

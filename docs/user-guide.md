@@ -983,6 +983,13 @@ default — only enable it against an endpoint that actually understands
 `cache_control`; a plain OpenAI-compatible endpoint will typically just
 ignore the extra field, but some strict implementations may reject it.
 
+The normal `devteam stage --headless` and `devteam run` paths pre-render the
+prompt in the orchestrator. The adapter preserves the four content blocks
+when that pre-rendered text is byte-identical to its layered rendering. If a
+host-specific orchestration step transforms the text, the adapter sends the
+transformed prompt as a plain string instead of dropping the transformation
+to force cache markers.
+
 #### Environment variables
 
 | Variable | Purpose | Default |
