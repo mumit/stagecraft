@@ -112,6 +112,29 @@ describe("contract: stages ↔ roles", () => {
       );
     }
   });
+
+  // Regression: roles/pm.md's "On a Sign-off Request" section told the model
+  // to write `pipeline/gates/stage-07.json` — the merged *stage* gate path —
+  // when pm's actual per-workstream gate (per buildDescriptor/roleWrites) is
+  // `pipeline/gates/stage-07.pm.json`. A role brief pointing at the wrong
+  // path for a multi-role stage is exactly the kind of prose/reality drift
+  // that only surfaces once a model actually follows the instruction.
+  it("a multi-role stage's role brief never hardcodes the bare merged-stage gate path", () => {
+    for (const [name, def] of Object.entries(STAGES)) {
+      if (!def || !Array.isArray(def.roles) || def.roles.length < 2) continue;
+      const bareGatePath = `pipeline/gates/${def.stage}.json`;
+      for (const role of def.roles) {
+        const briefPath = path.join(REPO_ROOT, "roles", `${role}.md`);
+        if (!fs.existsSync(briefPath)) continue;
+        const content = fs.readFileSync(briefPath, "utf8");
+        assert.ok(
+          !content.includes(bareGatePath),
+          `roles/${role}.md hardcodes "${bareGatePath}" but stage "${name}" is multi-role — `
+          + `${role}'s own gate is "pipeline/gates/${def.stage}.${role}.json"`,
+        );
+      }
+    }
+  });
 });
 
 describe("contract: ORDERED_STAGE_NAMES ↔ STAGES_BY_TRACK", () => {

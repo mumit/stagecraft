@@ -158,7 +158,7 @@ Write your findings to `pipeline/gates/stage-02.json` field `"pm_approved"`.
 
 Read `pipeline/test-report.md` and `pipeline/brief.md` side by side.
 Check each acceptance criterion: PASS or FAIL.
-If all pass: write `"pm_signoff": true` to `pipeline/gates/stage-07.json`.
+If all pass: write `"pm_signoff": true` to `pipeline/gates/stage-07.pm.json`.
 If any fail: write `"pm_signoff": false` and list delta items.
 Delta items must be specific and scoped — not a full rewrite request.
 

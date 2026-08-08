@@ -20,10 +20,10 @@ Multi-role stages appear once per dispatched role. The CI advisory
 
 | Stage     | Name                      | Role       | Framework B | Role brief B | Dispatch B | Tokens~ |
 | --------- | ------------------------- | ---------- | ----------- | ------------ | ---------- | ------- |
-| stage-01  | requirements              | pm         | 13,670      | 9,828        | 23,498     | 5875    |
+| stage-01  | requirements              | pm         | 13,670      | 9,831        | 23,501     | 5876    |
 | stage-02  | design                    | principal  | 13,670      | 14,528       | 28,198     | 7050    |
-| stage-03  | clarification             | pm         | 13,670      | 9,828        | 23,498     | 5875    |
-| stage-03b | executable-spec           | pm         | 13,670      | 9,828        | 23,498     | 5875    |
+| stage-03  | clarification             | pm         | 13,670      | 9,831        | 23,501     | 5876    |
+| stage-03b | executable-spec           | pm         | 13,670      | 9,831        | 23,501     | 5876    |
 | stage-04  | build                     | backend    | 13,670      | 7,530        | 21,200     | 5300    |
 | stage-04  | build                     | frontend   | 13,670      | 6,295        | 19,965     | 4992    |
 | stage-04  | build                     | platform   | 13,670      | 2,400        | 16,070     | 4018    |
@@ -38,7 +38,7 @@ Multi-role stages appear once per dispatched role. The CI advisory
 | stage-06c | observability-gate        | platform   | 13,670      | 2,400        | 16,070     | 4018    |
 | stage-06d | verification-beyond-tests | verifier   | 13,670      | 9,089        | 22,759     | 5690    |
 | stage-06e | performance-budget        | qa         | 13,670      | 2,718        | 16,388     | 4097    |
-| stage-07  | sign-off                  | pm         | 13,670      | 9,828        | 23,498     | 5875    |
+| stage-07  | sign-off                  | pm         | 13,670      | 9,831        | 23,501     | 5876    |
 | stage-07  | sign-off                  | platform   | 13,670      | 2,400        | 16,070     | 4018    |
 | stage-08  | deploy                    | platform   | 13,670      | 2,400        | 16,070     | 4018    |
 | stage-09  | retrospective             | principal  | 13,670      | 14,528       | 28,198     | 7050    |
@@ -49,7 +49,7 @@ Multi-role stages appear once per dispatched role. The CI advisory
 | ------------------- | ------ | ------- |
 | roles/principal.md  | 14,528 | 3632    |
 | roles/red-team.md   | 13,683 | 3421    |
-| roles/pm.md         | 9,828  | 2457    |
+| roles/pm.md         | 9,831  | 2458    |
 | roles/verifier.md   | 9,089  | 2273    |
 | roles/migrations.md | 8,272  | 2068    |
 
@@ -78,10 +78,10 @@ This replaces eager changed-file content loading: agents inspect file bodies on 
 when the manifest shows a relevant path or digest change.
 
 <!-- budget-data
-stage-01,23498
+stage-01,23501
 stage-02,28198
-stage-03,23498
-stage-03b,23498
+stage-03,23501
+stage-03b,23501
 stage-04,21200
 stage-04a,16070
 stage-04b,20973
@@ -93,7 +93,7 @@ stage-06b,16388
 stage-06c,16070
 stage-06d,22759
 stage-06e,16388
-stage-07,23498
+stage-07,23501
 stage-08,16070
 stage-09,28198
 -->
