@@ -251,4 +251,20 @@ describe("contract: gates split — gates-core.md and per-stage gate sections", 
       }
     }
   });
+
+  // Regression: a real headless sign-off dispatch (stage-07.pm on a
+  // hello-world-claude-quick demo run) ended its turn with only a prose
+  // clarifying question and no gate at all, even though pipeline/context.md
+  // already carried a PRINCIPAL-RULING resolving the exact ambiguity it
+  // raised. gates-core.md is in every role's readFirst (asserted above) —
+  // this pins the universal directive that a headless dispatch must always
+  // write the gate, escalating rather than asking a question when blocked.
+  it("gates-core.md tells every role a headless dispatch must always write the gate, never just ask a question", () => {
+    const content = fs.readFileSync(path.join(REPO_ROOT, "rules", "gates-core.md"), "utf8");
+    assert.match(content, /non-interactive/i);
+    assert.match(content, /no human present/i);
+    assert.match(content, /"status":\s*"ESCALATE"/);
+    assert.match(content, /escalation_reason/);
+    assert.match(content, /PRINCIPAL-RULING/);
+  });
 });

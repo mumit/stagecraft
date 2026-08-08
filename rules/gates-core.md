@@ -7,6 +7,28 @@ The orchestrator reads JSON, not prose. Gates are machine-readable.
 > each stage's rules/stage-NN.md file. This file covers only the universal
 > contract that applies to every gate regardless of stage.
 
+## Non-interactive execution: always write the gate
+
+This dispatch runs headless — there is no human present to read a question
+and answer it. A turn that ends with only a prose question is
+indistinguishable to the orchestrator from a crash: it sees no gate at all
+and halts with a structural-input error. "Ask and wait for a reply" is not
+an available outcome.
+
+If you are genuinely blocked by an open question or ambiguity, **write the
+gate anyway**, with `"status": "ESCALATE"` and a detailed `escalation_reason`
+explaining the ambiguity and what a human needs to decide. This is the
+normal, expected way to raise a blocking question — `devteam ruling` /
+`devteam fix-escalation` exist specifically to resolve it. Ending your turn
+without writing the required gate file is never correct, no matter how
+severe the ambiguity feels.
+
+Before escalating on a question, check `pipeline/context.md` for a
+`PRINCIPAL-RULING:` entry that already answers it — earlier retries or
+escalations in this run's history may have already settled the exact
+question you are about to raise. A ruling already on record takes
+precedence over asking again; apply it and write the gate accordingly.
+
 ## Required Fields (all gates)
 
 ```json

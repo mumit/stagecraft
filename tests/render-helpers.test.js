@@ -197,4 +197,25 @@ describe("render-helpers: appendGateFooter", () => {
     const hashB = linesB.join("\n").match(/sha256:[0-9a-f]+/)[0];
     assert.notEqual(hashA, hashB, "different preambles must produce different hashes");
   });
+
+  it("tells the model the dispatch is non-interactive and it must write the gate even if blocked", () => {
+    // Regression: a real headless sign-off dispatch (stage-07.pm on a
+    // hello-world-claude-quick demo run) ended its turn with only a prose
+    // clarifying question and no gate at all — everything above this footer
+    // reads as reference material (Objective/Read first/Allowed writes)
+    // unless told otherwise, so the orchestrator saw no gate and halted
+    // with a structural-input error. This line is the last thing the model
+    // reads before the JSON skeleton, and must survive any future edit to
+    // appendGateFooter.
+    const { descriptor, ctx } = fixture();
+    const lines = [];
+    appendGateFooter(lines, descriptor, ctx, "claude-code");
+    const out = lines.join("\n");
+    assert.match(out, /non-interactive/);
+    assert.match(out, /no human present/);
+    assert.match(out, /"status": "ESCALATE"/);
+    assert.match(out, /escalation_reason/);
+    // Must appear before "## Gate to write" — recency, not buried after it.
+    assert.ok(out.indexOf("non-interactive") < out.indexOf("## Gate to write"));
+  });
 });

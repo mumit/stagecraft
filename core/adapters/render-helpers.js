@@ -340,6 +340,16 @@ function appendGateFooter(lines, descriptor, ctx, hostName) {
   // for a write target. Byte-identical to `gatePathRel` whenever
   // ctx.processCwd is unset or equals ctx.cwd (every run before review mode).
   const gatePath = resolveFrameworkPath(gatePathRel, ctx);
+  // This is the last thing the model reads before the gate JSON skeleton —
+  // maximum recency. It exists because a headless dispatch has been observed
+  // ending its turn with only a prose clarifying question and no gate at
+  // all (everything above reads as reference material unless told
+  // otherwise): the orchestrator sees no gate and halts with a
+  // structural-input error. See rules/gates-core.md's own "Non-interactive
+  // execution" section for the full rationale; this line is the recency-
+  // boosted reminder of the same rule.
+  lines.push(`This dispatch is non-interactive — there is no human present to read a question. Perform the task above now and end your turn only after writing the gate below. If genuinely blocked, write it anyway with "status": "ESCALATE" and a detailed "escalation_reason" instead of asking a question and stopping.`);
+  lines.push("");
   lines.push(`## Gate to write`);
   lines.push(`Write to \`${gatePath}\`. You provide:`);
   lines.push("```json");
