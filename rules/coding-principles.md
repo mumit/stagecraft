@@ -30,6 +30,13 @@ Before your first `Write` or `Edit` in any build task:
 Reviewers apply the same rule: if you can't tell which interpretation the
 author chose, that's a BLOCKER, not a SUGGESTION.
 
+**No `pipeline/design-spec.md` for this track?** Lean tracks (`quick`,
+`nano`, `loop`, `config-only`, `dep-update`) skip Stage 2 design entirely —
+its absence there is expected, not a defect. Treat `pipeline/brief.md`'s
+acceptance criteria as the authoritative implementation contract instead,
+note the fallback as an `## Assumptions` entry, and proceed. Do not refuse
+or escalate solely because `pipeline/design-spec.md` is missing.
+
 ## 2. Simplicity First
 
 **Minimum code that satisfies the spec. Nothing speculative.**

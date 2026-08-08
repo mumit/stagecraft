@@ -172,6 +172,20 @@ describe("contract: stages ↔ roles", () => {
     }
   });
 
+  // Regression: the same real codex build-stage escalation also cited
+  // pipeline/design-spec.md as an unconditional blocker ("no implementation
+  // ... is possible against an absent approved design"), even though lean
+  // tracks (quick/nano/loop/config-only/dep-update) never run Stage 2
+  // design and its absence there is expected. coding-principles.md is read
+  // by every build role via Standing Rules — it's the natural single place
+  // to say design-spec.md's absence on those tracks isn't a defect.
+  it("coding-principles.md tells build roles a missing pipeline/design-spec.md on a lean track is expected, not a blocker", () => {
+    const content = fs.readFileSync(path.join(REPO_ROOT, "rules", "coding-principles.md"), "utf8");
+    assert.match(content, /design-spec\.md/i);
+    assert.match(content, /quick.*nano.*loop|loop.*nano.*quick/is);
+    assert.match(content, /brief\.md.*authoritative|authoritative.*brief\.md/is);
+    assert.match(content, /refuse\s+or\s+escalate\s+solely/i);
+  });
 });
 
 describe("contract: ORDERED_STAGE_NAMES ↔ STAGES_BY_TRACK", () => {
