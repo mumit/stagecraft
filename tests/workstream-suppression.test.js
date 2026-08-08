@@ -190,6 +190,79 @@ describe("computeDispatchPlan: keyword inference from out_of_scope_items", () =>
 });
 
 // ---------------------------------------------------------------------------
+// computeDispatchPlan: design's file_ownership overrides an over-eager
+// out_of_scope_items keyword inference
+// ---------------------------------------------------------------------------
+
+describe("computeDispatchPlan: design's file_ownership overrides out_of_scope_items inference", () => {
+  function writeStage02Gate(cwd, fileOwnership) {
+    const gDir = path.join(cwd, "pipeline", "gates");
+    fs.mkdirSync(gDir, { recursive: true });
+    fs.writeFileSync(path.join(gDir, "stage-02.json"), JSON.stringify({
+      stage: "stage-02", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-06-01T00:00:00Z", blockers: [], warnings: [],
+      arch_approved: true, pm_approved: true, adr_count: 0, adrs_consulted: [], adrs_superseded: [],
+      file_ownership: fileOwnership,
+    }, null, 2));
+  }
+
+  it("keeps frontend active when design assigns it owned files, even though requirements' out_of_scope_items mentions 'frontend'", () => {
+    // Regression: a real hello-world-codex-loop build silently dropped both
+    // frontend (owns src/frontend/**) and platform (owns pyproject.toml,
+    // README.md) from every build dispatch — including both retries —
+    // because stage-01 said "Frontend framework, build pipeline, or
+    // client-side routing" (scoping OUT heavy tooling, not frontend work
+    // entirely) and "... cloud infrastructure" (scoping out deployment
+    // infra, not basic scaffolding). QA correctly failed on files that
+    // could never get built, and the driver exhausted its retry budget
+    // re-running the same wrong role set forever.
+    const cwd = track(makeTargetProject());
+    writeStage01Gate(cwd, {
+      active_roles: null,
+      out_of_scope_items: [
+        "Frontend framework, build pipeline, or client-side routing",
+        "Production deployment, public hosting, TLS, custom domains, or cloud infrastructure",
+      ],
+    });
+    writeStage02Gate(cwd, {
+      "src/backend/**": "backend",
+      "src/frontend/**": "frontend",
+      "tests/**": "qa",
+      "pyproject.toml": "platform",
+      "README.md": "platform",
+    });
+    const roles = dispatchPlanRoles(cwd, "build");
+    assert.ok(roles.includes("frontend"), `frontend owns src/frontend/** in design — must not be suppressed; got: ${roles}`);
+    assert.ok(roles.includes("platform"), `platform owns pyproject.toml/README.md in design — must not be suppressed; got: ${roles}`);
+    assert.equal(roles.length, 4);
+  });
+
+  it("still suppresses a role via out_of_scope_items when design's file_ownership never assigns it any files", () => {
+    const cwd = track(makeTargetProject());
+    writeStage01Gate(cwd, { active_roles: null, out_of_scope_items: ["No frontend or web UI work"] });
+    writeStage02Gate(cwd, { "src/backend/**": "backend", "tests/**": "qa" });
+    const roles = dispatchPlanRoles(cwd, "build");
+    assert.ok(!roles.includes("frontend"), `frontend owns nothing in design and is out of scope — should stay suppressed; got: ${roles}`);
+  });
+
+  it("does not override an explicit active_roles decision (PM's deliberate scoping wins over design)", () => {
+    const cwd = track(makeTargetProject());
+    writeStage01Gate(cwd, { active_roles: ["backend", "qa"] });
+    writeStage02Gate(cwd, { "src/frontend/**": "frontend" });
+    const roles = dispatchPlanRoles(cwd, "build");
+    assert.ok(!roles.includes("frontend"), `PM's explicit active_roles should not be overridden by design's file_ownership; got: ${roles}`);
+  });
+
+  it("falls back to the keyword-only inference when no stage-02 gate exists yet", () => {
+    const cwd = track(makeTargetProject());
+    writeStage01Gate(cwd, { active_roles: null, out_of_scope_items: ["No frontend or web UI work"] });
+    // No stage-02.json written — design hasn't run yet (e.g. this is peer-review's own plan mid-run).
+    const roles = dispatchPlanRoles(cwd, "build");
+    assert.ok(!roles.includes("frontend"), `should behave exactly as before when no design gate exists; got: ${roles}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // computeDispatchPlan for peer-review (stage-05) with active_roles filter
 // ---------------------------------------------------------------------------
 

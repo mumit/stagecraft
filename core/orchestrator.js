@@ -264,7 +264,10 @@ const OOS_KEYWORDS = {
   qa:       ["qa workstream", "test workstream"],
 };
 
-function inferActiveRoles(stage01Gate, allRoles, alwaysDispatch) {
+// fileOwnership is stage-02 (design)'s file_ownership map, when available —
+// see the why-comment below on where it overrides the out_of_scope_items
+// inference.
+function inferActiveRoles(stage01Gate, allRoles, alwaysDispatch, fileOwnership) {
   // active_roles lists only workstream slots (backend, frontend, qa, platform).
   // Non-workstream roles like "pm" and "principal" never appear in active_roles
   // and must always be passed through — never filter them out.
@@ -298,7 +301,44 @@ function inferActiveRoles(stage01Gate, allRoles, alwaysDispatch) {
       if (keywords.some(k => lower.includes(k))) suppressed.add(role);
     }
   }
+  // Design (stage-02) is a later, more specific refinement of the initial
+  // brief — if it explicitly assigns owned files to a role, that role is
+  // unambiguously active regardless of how the earlier requirements-stage
+  // out_of_scope_items happens to be worded. A real build silently dropped
+  // both `frontend` (owns src/frontend/**) and `platform` (owns
+  // pyproject.toml, README.md) from every build dispatch — including both
+  // retries — because stage-01 said "Frontend framework, build pipeline, or
+  // client-side routing" (scoping OUT heavy tooling, not frontend work
+  // entirely) and "... cloud infrastructure" (scoping out deployment infra,
+  // not basic scaffolding), and the keyword match above can't distinguish
+  // "no X framework" from "no X at all." QA then correctly failed on files
+  // that could never get built, and every retry re-ran the same wrong role
+  // set forever, burning the retry budget on a fix that could never land.
+  // This override only applies to the weaker keyword-inference path, never
+  // to explicit active_roles above — a PM decision that conflicts with
+  // design's file_ownership is a real conflict, not something to silently
+  // paper over.
+  if (fileOwnership && typeof fileOwnership === "object") {
+    for (const owner of Object.values(fileOwnership)) {
+      suppressed.delete(owner);
+    }
+  }
   return suppressed.size === 0 ? null : allRoles.filter(r => !suppressed.has(r));
+}
+
+// stage-02 (design)'s file_ownership map, when a merged design gate exists —
+// see inferActiveRoles' why-comment for how this overrides an over-eager
+// out_of_scope_items inference. Returns null when absent, unreadable, or
+// not an object, so every call site can pass the result straight through.
+function loadFileOwnership(gatesDir) {
+  try {
+    const p = path.join(gatesDir, "stage-02.json");
+    if (!fs.existsSync(p)) return null;
+    const { gate } = loadGateSafe(p);
+    return (gate && gate.file_ownership && typeof gate.file_ownership === "object") ? gate.file_ownership : null;
+  } catch {
+    return null;
+  }
 }
 
 function computeDispatchPlan(stageDef, config, track, opts = {}) {
@@ -326,7 +366,7 @@ function computeDispatchPlan(stageDef, config, track, opts = {}) {
     if (fs.existsSync(s1Path)) {
       const { gate } = loadGateSafe(s1Path);
       if (gate) {
-        const filtered = inferActiveRoles(gate, roles, stageDef.alwaysDispatch);
+        const filtered = inferActiveRoles(gate, roles, stageDef.alwaysDispatch, loadFileOwnership(opts.gatesDir));
         if (filtered) roles = filtered;
       }
     }
@@ -2203,7 +2243,7 @@ function evaluateStageInPipeline(stageName, ctx) {
       if (fs.existsSync(s1Path)) {
         const { gate: s1Gate } = loadGateSafe(s1Path);
         if (s1Gate) {
-          const filtered = inferActiveRoles(s1Gate, baseRoles, stageDef.alwaysDispatch);
+          const filtered = inferActiveRoles(s1Gate, baseRoles, stageDef.alwaysDispatch, loadFileOwnership(gatesDir));
           if (filtered) effectiveRoles = filtered;
         }
       }
@@ -2517,7 +2557,7 @@ function summary(opts = {}) {
       if (fs.existsSync(s1Path)) {
         const s1Data = readJSONSafe(s1Path);
         if (s1Data) {
-          const filtered = inferActiveRoles(s1Data, baseRoles);
+          const filtered = inferActiveRoles(s1Data, baseRoles, undefined, loadFileOwnership(gatesDir));
           if (filtered) effectiveRoles = filtered;
         }
       }
