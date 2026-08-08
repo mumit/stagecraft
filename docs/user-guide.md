@@ -1646,7 +1646,7 @@ For when to use `ruling` vs `devteam stage`, vs hand-editing gates, vs `devteam 
 ### Stoplist blocked my change
 
 ```
-This change matches the safety stoplist. Use /pipeline instead.
+This change matches the safety stoplist. Re-run with --track full instead.
 Reasons:
   - authentication: matched "auth" in: add auth middleware
 ```

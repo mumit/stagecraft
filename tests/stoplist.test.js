@@ -51,6 +51,38 @@ describe("stoplist: passes harmless changes", () => {
     const m = checkStoplist({ description: "", cwd: CLEAN_CWD });
     assert.equal(m.length, 0);
   });
+
+  // Regression: a real hello-world-codex-loop brief.md's own out-of-scope
+  // paragraph ("It does not include authentication, persistent storage,
+  // deployment infrastructure...") tripped the stoplist purely by naming a
+  // topic it was explicitly excluding — halting a --track loop run on an
+  // app with no auth at all, with no way forward short of --force on every
+  // single run.
+  it("doesn't match a keyword the text explicitly excludes ('does not include X')", () => {
+    const m = checkStoplist({
+      description: "It does not include authentication, persistent storage, or deployment infrastructure.",
+      cwd: CLEAN_CWD,
+    });
+    assert.equal(m.length, 0);
+  });
+
+  it("doesn't match a keyword explicitly marked out of scope", () => {
+    const m = checkStoplist({ description: "Payments integration is out of scope for this change.", cwd: CLEAN_CWD });
+    assert.equal(m.length, 0);
+  });
+
+  it("still matches the same keyword elsewhere in the text even when one mention is negated", () => {
+    const m = checkStoplist({
+      description: "This does not include authentication. Also add a new login endpoint with session cookies.",
+      cwd: CLEAN_CWD,
+    });
+    assert.ok(m.length > 0, "a genuine, non-negated mention in a later sentence must still be caught");
+  });
+
+  it("still matches an un-negated keyword (bias toward false positives preserved)", () => {
+    const m = checkStoplist({ description: "add auth middleware", cwd: CLEAN_CWD });
+    assert.ok(m.length > 0);
+  });
 });
 
 describe("stoplist: explanation", () => {
@@ -59,6 +91,20 @@ describe("stoplist: explanation", () => {
     const text = explainMatches(m);
     assert.match(text, /safety stoplist/i);
     assert.match(text, /--force/);
+  });
+
+  // Regression: the remedy line said "Use /pipeline instead" — a stale
+  // ghost-command reference (no /pipeline command exists; this same class
+  // of leftover slash-command prose was already swept from rules/ and
+  // roles/ once before). Confusing at best, actionless in headless mode
+  // where there's no chat surface to type a slash command into at all.
+  it("tells the user the actual actionable remedy (--track full), not a stale slash command", () => {
+    const m = checkStoplist({ description: "add auth middleware", cwd: CLEAN_CWD });
+    const text = explainMatches(m);
+    assert.match(text, /--track full/);
+    // ".devteam/rules/pipeline.md" (a real file reference) is fine — only
+    // the stale "Use /pipeline" ghost-command phrasing must be gone.
+    assert.doesNotMatch(text, /Use \/pipeline/);
   });
 
   it("shows only the matching line, not the entire source document", () => {

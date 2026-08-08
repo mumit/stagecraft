@@ -1,0 +1,7 @@
+### Fixed
+
+- **The safety stoplist false-triggered on a brief that explicitly excluded the flagged topic**, halting a `--track loop` run on a hello-world app with no auth at all because its own out-of-scope paragraph said "It does not include authentication..." — naming the word was enough to trip the keyword match regardless of the negation right in front of it. `findStoplistMatches` now scans the full sentence around each candidate match for a negation cue (`does not include`, `out of scope`, `excludes`, `without`, `never`, etc.) in either direction relative to the keyword; a genuinely negated mention no longer counts, while any non-negated mention — including a later, different sentence — still triggers exactly as before. The "err toward false positives" bias documented in the file is preserved for real ambiguity.
+
+- **The stoplist's remedy message told the user to run a command that doesn't exist.** `"Use /pipeline instead"` is a stale ghost-command reference — no `/pipeline` command exists anywhere in `devteam` (a prior sweep already replaced this exact class of leftover slash-command prose in `rules/`/`roles/`, but missed this file and two doc examples) — and is especially unhelpful in headless mode, where there's no chat surface to type a slash command into. Changed to the actual actionable instruction: `"Re-run with --track full instead."`
+
+  6 new tests in `tests/stoplist.test.js` (all confirmed to fail without the fix). Verified against the real project's brief text that previously false-positived — the stoplist now clears.

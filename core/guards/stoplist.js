@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-// Safety stoplist — categories of changes that must use the full /pipeline
-// track regardless of size or area. Defined in .devteam/rules/pipeline.md
-// Stage 0. The lighter tracks (/quick, /nano, /config-only, /dep-update)
-// must not be used to bypass this list, so devteam calls
-// checkStoplist() before scaffolding any lighter-track run and refuses if a
-// pattern matches.
+// Safety stoplist — categories of changes that must use the full track
+// (--track full) regardless of size or area. Defined in
+// .devteam/rules/pipeline.md Stage 0. The lighter tracks (quick, nano,
+// config-only, dep-update, loop) must not be used to bypass this list, so
+// devteam calls checkStoplist() before scaffolding any lighter-track run
+// and refuses if a pattern matches.
 //
 // Patterns intentionally err toward false positives. Users with a genuine
 // false positive can pass --force.
@@ -91,21 +91,56 @@ function gatherCandidates({ description, cwd }) {
   return list;
 }
 
+// Negation cues that, when they appear anywhere in the SAME sentence as a
+// matched keyword, mean the sentence is explicitly excluding the topic
+// rather than introducing it — e.g. "It does not include authentication,
+// persistent storage, ..." (cue before the keyword) or "Payments
+// integration is out of scope for this change." (cue after the keyword).
+// A real hello-world-codex-loop brief triggered the stoplist purely because
+// its own out-of-scope paragraph named "authentication" while disclaiming
+// it. Patterns still intentionally err toward false positives for anything
+// NOT explicitly negated this way.
+const NEGATION_RE = /\b(no|not|n't|without|except|excludes?|excluding|out[-\s]of[-\s]scope|not[-\s]in[-\s]scope|never)\b/i;
+
+// True when `matchIndex` in `str` falls in a sentence whose full text
+// (start of sentence through end of sentence, not just up to the match)
+// contains a negation cue — the cue can precede or follow the keyword.
+function isNegatedAt(str, matchIndex) {
+  const before = str.slice(0, matchIndex);
+  const sentenceStart = Math.max(
+    before.lastIndexOf(". "), before.lastIndexOf("! "),
+    before.lastIndexOf("? "), before.lastIndexOf("\n"),
+  );
+  const after = str.slice(matchIndex);
+  const relEnd = after.search(/[.!?]\s|\n|$/);
+  const sentenceEnd = matchIndex + (relEnd === -1 ? after.length : relEnd);
+  const sentence = str.slice(sentenceStart + 1, sentenceEnd);
+  return NEGATION_RE.test(sentence);
+}
+
 // Find every (string, pattern) pair that matches. Returns a deduplicated
 // array of { name, re, matched } objects, where matched is the first
-// substring that triggered the pattern.
+// non-negated substring that triggered the pattern (a pattern that only
+// ever appears negated in a string produces no match for that string).
 function findStoplistMatches(strings, patterns = STOPLIST_PATTERNS) {
   const seen = new Set();
   const matches = [];
   for (const str of strings) {
     if (typeof str !== "string" || str.length === 0) continue;
     for (const pattern of patterns) {
-      const m = str.match(pattern.re);
-      if (!m) continue;
-      const key = `${pattern.name}:${m[0].toLowerCase()}`;
+      const flags = pattern.re.flags.includes("g") ? pattern.re.flags : pattern.re.flags + "g";
+      const globalRe = new RegExp(pattern.re.source, flags);
+      let m;
+      let found = null;
+      while ((m = globalRe.exec(str)) !== null) {
+        if (!isNegatedAt(str, m.index)) { found = m; break; }
+        if (m.index === globalRe.lastIndex) globalRe.lastIndex++; // guard against zero-length matches
+      }
+      if (!found) continue;
+      const key = `${pattern.name}:${found[0].toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      matches.push({ name: pattern.name, re: pattern.re, matched: m[0], source: str });
+      matches.push({ name: pattern.name, re: pattern.re, matched: found[0], source: str });
     }
   }
   return matches;
@@ -130,7 +165,7 @@ function matchingLine(source, matched) {
 // Format matches for display to the user. Returns a multi-line string.
 function explainMatches(matches) {
   const lines = [];
-  lines.push("This change matches the safety stoplist. Use /pipeline instead.");
+  lines.push("This change matches the safety stoplist. Re-run with --track full instead.");
   lines.push("Reasons:");
   for (const m of matches) {
     lines.push(`  - ${m.name}: matched "${m.matched}" in: ${matchingLine(m.source, m.matched)}`);

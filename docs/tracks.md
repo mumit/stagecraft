@@ -180,7 +180,7 @@ A match prints the reason and exits 2:
 
 ```
 $ devteam stage build --feature "add auth middleware to API"
-This change matches the safety stoplist. Use /pipeline instead.
+This change matches the safety stoplist. Re-run with --track full instead.
 Reasons:
   - authentication: matched "auth" in: add auth middleware to API
 
