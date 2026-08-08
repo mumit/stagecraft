@@ -1,6 +1,8 @@
 # Phase 37 — Interface & Token Efficiency
 
-Status: **proposed** (2026-08-04). From
+Status: **complete** (2026-08-05). Items 37.1–37.5 shipped in commits
+`ba9b7b9`, `96ba341`, `b98100f`, `0bb8d19`, and `c78c6d4`; item 37.6 accepted
+ADR-017 in `1f648b6`, followed by wave execution in `6bf6d26`. From
 [experience-review-2026-08.md](experience-review-2026-08.md).
 Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §37.
 

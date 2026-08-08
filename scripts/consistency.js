@@ -167,6 +167,26 @@ function scanDirs(relDirs, re, scanRoot, trackedSet) {
   return results;
 }
 
+function scanMarkdownFiles(relFiles, re, scanRoot, trackedSet) {
+  const root = scanRoot || REPO_ROOT;
+  const results = [];
+  for (const rel of relFiles) {
+    if (trackedSet !== null && trackedSet !== undefined && !trackedSet.has(rel)) continue;
+    const abs = path.join(root, rel);
+    let content;
+    try { content = fs.readFileSync(abs, "utf8"); } catch { continue; }
+    const lines = content.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const matcher = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+      let match;
+      while ((match = matcher.exec(lines[i])) !== null) {
+        results.push({ file: rel, line: i + 1, text: lines[i].trim(), match });
+      }
+    }
+  }
+  return results;
+}
+
 // ---------------------------------------------------------------------------
 // Checks — original contract checks (preserved unchanged)
 // ---------------------------------------------------------------------------
@@ -522,11 +542,16 @@ function checkStageIdAndCountClaims(scanRoot, trackedSet) {
 function checkTrackListClaims(scanRoot, trackedSet) {
   const root = scanRoot || REPO_ROOT;
   const scanRelDirs = ["rules", "roles", "docs"];
-  const TRUE_TRACK_COUNT = TRACKS.length; // currently 6
+  const TRUE_TRACK_COUNT = TRACKS.length;
   const TRACK_SET = new Set(TRACKS);
+  const countWords = new Map([
+    ["four", 4], ["five", 5], ["six", 6], ["seven", 7],
+    ["eight", 8], ["nine", 9], ["ten", 10],
+  ]);
 
-  // (a) "N tracks" or "Four tracks", "five tracks", etc.
-  const trackCountRe = /\b(\d+|[Ff]our|[Ff]ive|[Ss]ix)\s+tracks?\b/g;
+  // (a) "N tracks" or a common written count. README.md is an active
+  // product entry point outside docs/, so include it explicitly too.
+  const trackCountRe = /\b(\d+|four|five|six|seven|eight|nine|ten)\s+tracks?\b/gi;
 
   // (b) "valid values: ..." lines or similar that enumerate tracks
   //     We look for lines that list some track names but not all, when at
@@ -534,16 +559,15 @@ function checkTrackListClaims(scanRoot, trackedSet) {
   const validValuesRe = /[Vv]alid(?:\s+values?)?[:\s]+([^\n]{5,})/g;
 
   // (a) Count claims
-  const countHits = scanDirs(scanRelDirs, trackCountRe, root, trackedSet);
+  const countHits = scanDirs(scanRelDirs, trackCountRe, root, trackedSet)
+    .concat(scanMarkdownFiles(["README.md"], trackCountRe, root, trackedSet));
   const seenCount = new Set();
   for (const hit of countHits) {
     const raw = hit.match[1];
     let claimed;
     if (/^\d+$/.test(raw)) claimed = parseInt(raw, 10);
-    else if (/four/i.test(raw)) claimed = 4;
-    else if (/five/i.test(raw)) claimed = 5;
-    else if (/six/i.test(raw)) claimed = 6;
-    else continue;
+    else claimed = countWords.get(raw.toLowerCase());
+    if (claimed === undefined) continue;
 
     if (claimed !== TRUE_TRACK_COUNT) {
       const key = `track-count:${hit.file}:${hit.match[0].trim()}`;

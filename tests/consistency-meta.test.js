@@ -269,6 +269,21 @@ test("check 3 track-list: wrong track count claim is detected", () => {
   }
 });
 
+test("check 3 track-list: written count in root README is detected", () => {
+  const root = mkFixtureRoot();
+  try {
+    writeFile(root, "README.md", "The nine tracks cover every change.\n");
+
+    const r = runChecker(root, { noBaseline: true });
+    assert.equal(r.status, 1,
+      `expected exit 1 but got ${r.status}:\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, /track-list/);
+    assert.match(r.stdout, /nine tracks/i);
+  } finally {
+    cleanup(root);
+  }
+});
+
 test("check 3 track-list: correct track count exits 0", () => {
   const root = mkFixtureRoot();
   try {
