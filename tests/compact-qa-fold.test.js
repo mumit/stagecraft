@@ -95,6 +95,15 @@ describe("29.4: foldQaSweep / isCompactQaTrack", () => {
 // ADR-017 (32.6, 2026-08-05): each of the four gains `dependsOn: ["qa"]` —
 // this snapshot is updated to match, deliberately, since that's new
 // intentional behavior this item adds, not drift the test should catch.
+//
+// 2026-08-08: accessibility-audit/observability-gate/performance-budget gain
+// "pipeline/context.md" in allowedWrites (verification-beyond-tests is
+// unaffected — roles/verifier.md doesn't read coding-principles.md). Same
+// deliberate-update rationale: coding-principles.md — read by qa/platform's
+// own Standing Rules — mandates appending Assumptions/QUESTION:/CONCERN:
+// entries there, and a post-hoc-audit host (codex) was correctly refusing to
+// do so when the write wasn't authorized. See core/pipeline/stages.js's
+// why-comment on build's allowedWrites for the full incident.
 const FULL_TRACK_QA_SNAPSHOT = {
   "accessibility-audit": {
     stage: "stage-06b",
@@ -102,7 +111,7 @@ const FULL_TRACK_QA_SNAPSHOT = {
     dependsOn: ["qa"],
     objective: "Audit UI changes for WCAG accessibility violations using axe-core / pa11y / lighthouse. PASS requires zero critical + zero serious findings.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/accessibility-report.md", "pipeline/axe-report.json", "pipeline/gates/stage-06b.json"],
+    allowedWrites: ["pipeline/accessibility-report.md", "pipeline/axe-report.json", "pipeline/context.md", "pipeline/gates/stage-06b.json"],
     artifact: "pipeline/accessibility-report.md",
     template: "test-report-template.md",
     gate: {
@@ -120,7 +129,7 @@ const FULL_TRACK_QA_SNAPSHOT = {
     dependsOn: ["qa"],
     objective: "Verify that every metric / log / trace the design-spec promised is actually emitted by the shipped code. Closes the gap where designs claim instrumentation that never lands.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/observability-report.md", "pipeline/gates/stage-06c.json"],
+    allowedWrites: ["pipeline/observability-report.md", "pipeline/context.md", "pipeline/gates/stage-06c.json"],
     artifact: "pipeline/observability-report.md",
     template: "test-report-template.md",
     gate: {
@@ -168,7 +177,7 @@ const FULL_TRACK_QA_SNAPSHOT = {
     dependsOn: ["qa"],
     objective: "Measure Lighthouse performance scores, bundle size delta, and load-test throughput against project budgets. FAIL if any budget is exceeded. PASS (with skipped_reason) when the change has no performance-relevant surface.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/performance-report.md", "pipeline/lhci-result.json", "pipeline/gates/stage-06e.json"],
+    allowedWrites: ["pipeline/performance-report.md", "pipeline/lhci-result.json", "pipeline/context.md", "pipeline/gates/stage-06e.json"],
     artifact: "pipeline/performance-report.md",
     template: "performance-report-template.md",
     requiredCapabilities: { shell: true },

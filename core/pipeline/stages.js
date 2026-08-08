@@ -210,12 +210,20 @@ const STAGES = {
     roles: ["backend", "frontend", "platform", "qa"],
     objective: "Implement the approved design in role-owned workstreams and record local verification.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md"],
-    allowedWrites: ["src/backend/", "src/frontend/", "src/infra/", "src/tests/", "pipeline/pr-*.md", "pipeline/build-plan.md", "pipeline/gates/stage-04.*.json", "pipeline/gates/stage-04.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
+    // pipeline/context.md is listed here (and in each role's roleWrites below)
+    // because coding-principles.md — read by every build role via its own
+    // Standing Rules — mandates appending ## Assumptions/QUESTION:/CONCERN:
+    // entries there before the first Write/Edit of any build task. Without
+    // it, a host with real allowedWrites enforcement (codex's post-hoc write-
+    // audit; claude-code's own hooks are broader than this list and never
+    // actually blocked the write, which is why this only surfaced on codex)
+    // correctly refuses to follow that mandate, then refuses to build at all.
+    allowedWrites: ["src/backend/", "src/frontend/", "src/infra/", "src/tests/", "pipeline/pr-*.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.*.json", "pipeline/gates/stage-04.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
     roleWrites: {
-      backend:  ["src/backend/", "src/tests/", "pipeline/pr-backend.md",  "pipeline/build-plan.md", "pipeline/gates/stage-04.backend.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
-      frontend: ["src/frontend/",               "pipeline/pr-frontend.md", "pipeline/build-plan.md", "pipeline/gates/stage-04.frontend.json"],
-      platform: ["src/infra/",                  "pipeline/pr-platform.md", "pipeline/build-plan.md", "pipeline/gates/stage-04.platform.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
-      qa:       ["src/tests/",                  "pipeline/pr-qa.md",                                  "pipeline/gates/stage-04.qa.json"],
+      backend:  ["src/backend/", "src/tests/", "pipeline/pr-backend.md",  "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.backend.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
+      frontend: ["src/frontend/",               "pipeline/pr-frontend.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.frontend.json"],
+      platform: ["src/infra/",                  "pipeline/pr-platform.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.platform.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json"],
+      qa:       ["src/tests/",                  "pipeline/pr-qa.md",      "pipeline/context.md",     "pipeline/gates/stage-04.qa.json"],
     },
     artifact: "pipeline/build-plan.md",
     template: "build-template.md",
@@ -246,7 +254,10 @@ const STAGES = {
     roles: ["platform"],
     objective: "Run lint, tests, dependency/license review, and trigger checks for security review (stage-04b) + migration safety (stage-04d) before peer review.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/build-plan.md", "pipeline/pr-*.md"],
-    allowedWrites: ["pipeline/pre-review.md", "pipeline/lint-output.txt", "pipeline/pre-review-output.txt", "pipeline/gates/stage-04a.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above
+    // — platform reads coding-principles.md here too (Standing Rules) and is
+    // bound by the same Assumptions/QUESTION/CONCERN mandate.
+    allowedWrites: ["pipeline/pre-review.md", "pipeline/lint-output.txt", "pipeline/pre-review-output.txt", "pipeline/context.md", "pipeline/gates/stage-04a.json"],
     artifact: "pipeline/pre-review.md",
     template: "pre-review-template.md",
     requiredCapabilities: { shell: true },
@@ -290,7 +301,8 @@ const STAGES = {
       { path: "pipeline/build-plan.md", optional: true },
       { path: "pipeline/pr-*.md", optional: true },
     ],
-    allowedWrites: ["pipeline/security-review.md", "pipeline/gates/stage-04b.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["pipeline/security-review.md", "pipeline/context.md", "pipeline/gates/stage-04b.json"],
     artifact: "pipeline/security-review.md",
     template: "review-template.md",
     gate: {
@@ -434,7 +446,10 @@ const STAGES = {
       { path: "pipeline/review-input/diff.patch", optional: true },
       { path: "pipeline/review-input/changed-files.md", optional: true },
     ],
-    allowedWrites: ["pipeline/code-review/by-<reviewer>.md", "pipeline/gates/stage-05.*.json", "pipeline/gates/stage-05.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above
+    // — reviewer.md reads coding-principles.md too and is bound by the same
+    // Assumptions/QUESTION/CONCERN mandate.
+    allowedWrites: ["pipeline/code-review/by-<reviewer>.md", "pipeline/context.md", "pipeline/gates/stage-05.*.json", "pipeline/gates/stage-05.json"],
     artifact: "pipeline/code-review/by-<reviewer>.md",
     template: "review-template.md",
     gate: {
@@ -493,7 +508,8 @@ const STAGES = {
     roles: ["qa"],
     objective: "Verify every acceptance criterion with a one-to-one test mapping and report results. When stage-03b has run, every Scenario in pipeline/spec.feature must also map to at least one test — the AC→Scenario→test chain is the G2 contract.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/spec.feature"],
-    allowedWrites: ["src/tests/", "pipeline/test-report.md", "pipeline/gates/stage-06.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["src/tests/", "pipeline/test-report.md", "pipeline/context.md", "pipeline/gates/stage-06.json"],
     artifact: "pipeline/test-report.md",
     template: "test-report-template.md",
     requiredCapabilities: { shell: true },
@@ -552,7 +568,8 @@ const STAGES = {
     dependsOn: ["qa"],
     objective: "Audit UI changes for WCAG accessibility violations using axe-core / pa11y / lighthouse. PASS requires zero critical + zero serious findings.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/accessibility-report.md", "pipeline/axe-report.json", "pipeline/gates/stage-06b.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["pipeline/accessibility-report.md", "pipeline/axe-report.json", "pipeline/context.md", "pipeline/gates/stage-06b.json"],
     artifact: "pipeline/accessibility-report.md",
     template: "test-report-template.md",
     gate: {
@@ -571,7 +588,8 @@ const STAGES = {
     dependsOn: ["qa"],
     objective: "Verify that every metric / log / trace the design-spec promised is actually emitted by the shipped code. Closes the gap where designs claim instrumentation that never lands.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/observability-report.md", "pipeline/gates/stage-06c.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["pipeline/observability-report.md", "pipeline/context.md", "pipeline/gates/stage-06c.json"],
     artifact: "pipeline/observability-report.md",
     template: "test-report-template.md",
     gate: {
@@ -643,7 +661,8 @@ const STAGES = {
     dependsOn: ["qa"],
     objective: "Measure Lighthouse performance scores, bundle size delta, and load-test throughput against project budgets. FAIL if any budget is exceeded. PASS (with skipped_reason) when the change has no performance-relevant surface.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/performance-report.md", "pipeline/lhci-result.json", "pipeline/gates/stage-06e.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["pipeline/performance-report.md", "pipeline/lhci-result.json", "pipeline/context.md", "pipeline/gates/stage-06e.json"],
     artifact: "pipeline/performance-report.md",
     template: "performance-report-template.md",
     requiredCapabilities: { shell: true },
@@ -669,7 +688,8 @@ const STAGES = {
     roles: ["qa"],
     objective: "Combined verification sweep for compact-ceremony tracks (29.4). Run exactly the specialty QA checks this track folds into one dispatch — on quick that's accessibility (WCAG audit) and performance budget (Lighthouse/bundle/load-test), the same PASS/FAIL bar as the standalone stage-06b/stage-06e dispatches, just reported as sections of one gate. Populate sections_included with exactly the sections this track requires and leave every other section null.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md", "pipeline/test-report.md"],
-    allowedWrites: ["pipeline/verification-sweep-report.md", "pipeline/axe-report.json", "pipeline/lhci-result.json", "pipeline/gates/stage-06x.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["pipeline/verification-sweep-report.md", "pipeline/axe-report.json", "pipeline/lhci-result.json", "pipeline/context.md", "pipeline/gates/stage-06x.json"],
     artifact: "pipeline/verification-sweep-report.md",
     template: "verification-sweep-template.md",
     requiredCapabilities: { shell: true },
@@ -711,7 +731,8 @@ const STAGES = {
     roles: ["platform"],
     objective: "Execute the deploy runbook and record results.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/runbook.md"],
-    allowedWrites: ["pipeline/deploy-log.md", "pipeline/gates/stage-08.json"],
+    // pipeline/context.md: see the why-comment on build's allowedWrites above.
+    allowedWrites: ["pipeline/deploy-log.md", "pipeline/context.md", "pipeline/gates/stage-08.json"],
     artifact: "pipeline/deploy-log.md",
     template: "pr-summary-template.md",
     requiredCapabilities: { shell: true },

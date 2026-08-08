@@ -135,6 +135,43 @@ describe("contract: stages ↔ roles", () => {
       }
     }
   });
+
+  // Regression: a real headless codex dispatch (stage-04 backend on a
+  // hello-world-codex-loop demo run, --track loop) escalated rather than
+  // building anything, citing "pipeline/context.md is missing... creating
+  // it is outside this dispatch's allowed writes" as a blocker.
+  // coding-principles.md — read by backend/frontend/platform/qa/reviewer/
+  // security via their own Standing Rules — mandates appending
+  // ## Assumptions/QUESTION:/CONCERN: entries to pipeline/context.md before
+  // the first Write/Edit of any build task, but stages.js's allowedWrites
+  // for build/pre-review/security-review/peer-review/qa never listed
+  // pipeline/context.md. claude-code masked this (its real permission grant
+  // is a blanket "Write(pipeline/**)", broader than the advisory
+  // allowedWrites list it renders into the prompt), but codex's post-hoc
+  // write-audit enforces the literal list, so it correctly refused to
+  // follow the mandate — then refused to build at all.
+  it("every stage whose dispatched role brief mandates writing to pipeline/context.md (coding-principles.md) allows that write", () => {
+    for (const [name, def] of Object.entries(STAGES)) {
+      if (!def || !Array.isArray(def.roles) || def.roles.length === 0) continue;
+      for (const role of def.roles) {
+        // Peer-review (and any other subagent-overridden stage) dispatches
+        // the subagent's brief, not roles/<role>.md, for this workstream.
+        const briefRole = def.subagent || role;
+        const briefPath = path.join(REPO_ROOT, "roles", `${briefRole}.md`);
+        if (!fs.existsSync(briefPath)) continue;
+        const briefContent = fs.readFileSync(briefPath, "utf8");
+        if (!briefContent.includes(".devteam/rules/coding-principles.md")) continue;
+        const effectiveWrites = def.roleWrites?.[role] ?? def.allowedWrites;
+        assert.ok(
+          Array.isArray(effectiveWrites) && effectiveWrites.includes("pipeline/context.md"),
+          `stage "${name}" role "${role}" reads coding-principles.md (via roles/${briefRole}.md) — its `
+          + `mandate to write ## Assumptions/QUESTION:/CONCERN: to pipeline/context.md requires it in `
+          + `allowedWrites, but stage "${name}"'s effective allowedWrites for "${role}" omits it`,
+        );
+      }
+    }
+  });
+
 });
 
 describe("contract: ORDERED_STAGE_NAMES ↔ STAGES_BY_TRACK", () => {
