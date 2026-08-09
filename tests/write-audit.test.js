@@ -243,6 +243,7 @@ describe("isIgnoredRuntimeArtifact", () => {
   // show up in a different workstream's own before/after diff.
   test("matches pipeline/verification-receipts/ (orchestrator's own stamping bookkeeping, not an agent write)", () => {
     assert.ok(isIgnoredRuntimeArtifact("pipeline/verification-receipts/a8ed22fa9860e76c1be2deefaef2a53c0cda213dd9495b46807209663df516f6.json"));
+    assert.ok(isIgnoredRuntimeArtifact("pipeline/changes/checkout/verification-receipts/a8ed22fa.json"));
   });
 });
 

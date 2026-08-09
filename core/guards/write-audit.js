@@ -148,7 +148,7 @@ function isIgnoredRuntimeArtifact(filePath) {
   // workstream had just written as an "unauthorized write" for platform,
   // flipping an otherwise-passing gate to FAIL over a file platform never
   // touched and was never meant to be constrained by its own allowedWrites.
-  if (/(^|\/)pipeline\/verification-receipts\//.test(normalized)) return true;
+  if (/(^|\/)pipeline(?:\/changes\/[^/]+)?\/verification-receipts\//.test(normalized)) return true;
   return false;
 }
 
