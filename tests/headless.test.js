@@ -681,6 +681,47 @@ test("usageFormat: adapters without the capability are unaffected — no usage/t
   }
 });
 
+test("captureOutput returns assistant stdout without enabling transcript logs", async () => {
+  const ctx = makeCtx({ log: false, captureOutput: true });
+  const scriptPath = path.join(ctx.cwd, "answer.js");
+  fs.writeFileSync(scriptPath, [
+    "process.stdin.resume();",
+    "process.stdin.on('end', () => process.stdout.write('grounded answer\\n'));",
+  ].join("\n"));
+  try {
+    const r = await withEnv(
+      "DEVTEAM_HEADLESS_COMMAND",
+      `"${process.execPath}" "${scriptPath}"`,
+      () => runHeadless(makeAdapter(), makeDescriptor("coordinator-turn"), ctx, "bounded prompt"),
+    );
+    assert.equal(r.output, "grounded answer\n");
+    assert.equal(r.logPath, null);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
+test("captureOutput returns parsed agent text rather than codex JSONL", async () => {
+  const ctx = makeCtx({ log: false, captureOutput: true });
+  const scriptPath = path.join(ctx.cwd, "codex-answer.js");
+  fs.writeFileSync(scriptPath, [
+    'process.stdout.write(JSON.stringify({type:"item.completed",item:{type:"agent_message",text:"senior answer"}})+"\\n");',
+    'process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:12,cached_input_tokens:2,output_tokens:3}})+"\\n");',
+  ].join("\n"));
+  try {
+    const r = await withEnv(
+      "DEVTEAM_HEADLESS_COMMAND",
+      `"${process.execPath}" "${scriptPath}"`,
+      () => runHeadless(makeCodexJsonAdapter(), makeDescriptor("coordinator-turn"), ctx, "bounded prompt"),
+    );
+    assert.equal(r.output, "senior answer\n");
+    assert.equal(r.usage.tokensIn, 12);
+    assert.equal(r.logPath, null);
+  } finally {
+    fs.rmSync(ctx.cwd, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // capabilities.usageFormat: "codex-exec-json" (phase-28 item 28.3)
 // ---------------------------------------------------------------------------

@@ -25,6 +25,11 @@ const CMD_DIR = path.join(ROOT, "core", "cli", "commands");
 // Synopsis and description live here; flags are loaded from the command modules.
 const COMMANDS = [
   {
+    name:        "chat",
+    synopsis:    "devteam chat [\"question\"] [options]",
+    description: "Grounded, read-only conversation about current pipeline state and the safest next command. No question opens a TTY session; chat never executes its recommendation.",
+  },
+  {
     name:        "stage",
     synopsis:    "devteam stage <name> [options]",
     description: "Render stage prompt(s) for <name>, or drive the host CLI non-interactively with --headless.",

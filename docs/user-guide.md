@@ -13,6 +13,7 @@ If you've never used Stagecraft before, read EXAMPLE first. This page is a refer
 - [Your three moments of control](#your-three-moments-of-control)
 - [Install + first run](#install--first-run)
 - [Daily loop](#daily-loop)
+- [Conversational coordinator](#conversational-coordinator)
 - [Prototype first, harden later](#prototype-first-harden-later)
 - [Running each stage](#running-each-stage)
 - [Multi-host setups](#multi-host-setups)
@@ -148,6 +149,32 @@ A third command becomes relevant after any stage that produces deferred findings
 ```bash
 devteam advise          # "triage the noted_for_followup items"
 ```
+
+## Conversational coordinator
+
+Use `devteam chat` when the action object is correct but terse, or when you want
+to understand the tradeoff before approving a command:
+
+```bash
+devteam chat "Why is peer review blocked, and what is the cheapest safe recovery?"
+devteam chat                         # interactive TTY session
+devteam chat "What next?" --json     # one-shot integration output
+devteam chat "What will the host see?" --dry-run
+```
+
+Stagecraft builds a bounded snapshot locally from config, run state, stage
+summary, and `next()`. Only that snapshot, the current question, and at most
+eight recent in-memory turns are sent through the routed Principal host. The
+answer may recommend an exact command, but chat cannot execute it. Local
+interactive commands (`/status`, `/context`, `/next`, `/refresh`) do not call a
+model.
+
+No transcript is written. Secret-shaped snapshot strings are removed, model
+tools are disabled where the adapter exposes a tool boundary, and the host runs
+from a disposable directory rather than the project checkout. This is not an OS
+sandbox for CLI hosts: their process still has the invoking user's filesystem
+permissions. See [`docs/conversational-coordinator.md`](conversational-coordinator.md)
+for the exact trust boundary and host behavior.
 
 ## Prototype first, harden later
 

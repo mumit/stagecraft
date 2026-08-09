@@ -120,7 +120,7 @@ No open items. B7 moved to [Shipped](#shipped) in Phase 19.
 | # | Idea | I | E | Notes |
 |---|---|---|---|---|
 | E3 | **VS Code extension** | 3 | 3 | Sidebar with stage status, "run next stage" button, gate viewer. |
-| E9 | **Conversational stage mode** `[cmp-E-4]` | 3 | 3 | `devteam stage requirements --interactive` opens a conversation with the PM subagent to refine the brief through Q&A before producing the artifact. Useful specifically for upstream stages (requirements, design, clarification) where the artifact benefits from refinement before being rendered. Architecture supports it (adapters could expose streaming-conversation alongside one-shot render). Implement if user feedback indicates the gate-driven loop is too rigid for upstream stages. Related to E7 but different mechanism: E7 is host-loops-until-condition; E9 is stage-manager-converses-with-agent. |
+| E9 | **Conversational coordination** `[cmp-E-4]` | 3 | 3 | ✅ First slice shipped: `devteam chat` is a grounded, read-only coordinator over deterministic config/run/summary/next state, with bounded in-memory history, no transcript, disposable host workspace, disabled tools where mechanically available, and exact command recommendations it cannot execute. Interactive artifact refinement inside requirements/design remains a separate, feedback-gated follow-up; do not silently turn chat into a write-capable stage. See [conversational-coordinator.md](conversational-coordinator.md). |
 | E11 | **Prototype mode** | 4 | 2 | `devteam prototype` creates a lightweight pre-SDLC packet, can run the build prompt in a packet workspace, captures feedback, and records explicit discard/iterate/promote decisions. It is deliberately not a production gate track; promotion hands off into `devteam run --feature-file ... --track <t>`. |
 | E12 | **Rich live run UX** ([#314](https://github.com/telus-labs/stagecraft/issues/314)) | 4 | 2 | ✅ First slice in progress: `devteam run`, `--watch`, and `status --verbose` now expose active workstreams, last workstream, host/log/gate paths, elapsed time, and durable lifecycle events. Remaining depth: verification substeps, retry/backoff timeline, queue state, and richer `devteam log` views. |
 
@@ -157,8 +157,8 @@ dispatch evidence durable, Phase 18 added explicit accepted-resolution evidence 
 H3, Phase 19 shipped polyglot verification in PR #264, and Phase 20 implements the
 separable `devteam run --watch` operator UX without enabling active stall response. The
 next capability horizon is real collection followed by review, not calendar-driven
-activation. E9 conversational stage mode remains a discovery proposal until five real
-users report upstream rigidity.
+activation. E9's write-capable upstream artifact-refinement variant remains a
+discovery proposal until real users report that grounded advisory chat is not enough.
 
 Completed from this audit cycle: dashboard HTML safety and lifecycle (PR #235),
 native Windows CI evidence, support wording, and A6 promotion (PR #236), and bounded

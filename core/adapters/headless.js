@@ -60,6 +60,7 @@ const USAGE_EXTRACTORS = {
 };
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_CAPTURE_BYTES = 256 * 1024;
 
 function createTranscriptWriter(logPath, header) {
   let fd = fs.openSync(logPath, "w");
@@ -223,6 +224,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
   // log growth to the liveness probe while the child is active, and lets the
   // close handler flush the descriptor before runHeadless settles.
   const logDisabled = process.env.DEVTEAM_NO_LOG === "1" || ctx.log === false;
+  const captureOutput = ctx.captureOutput === true;
   const liveTee = ctx.tee === true ||
     process.env.DEVTEAM_HEADLESS_TEE === "1" ||
     process.env.DEVTEAM_VERBOSE === "1";
@@ -258,6 +260,12 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
   function appendLog(chunk) {
     logWriter?.append(chunk);
   }
+  let capturedOutput = "";
+  function appendCaptured(chunk) {
+    if (!captureOutput || chunk == null || capturedOutput.length >= MAX_CAPTURE_BYTES) return;
+    const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+    capturedOutput += text.slice(0, MAX_CAPTURE_BYTES - capturedOutput.length);
+  }
   // Idempotent log-flush. First caller writes the trailer and flushes
   // to disk synchronously. Subsequent calls are no-ops. Safe to call
   // from both spawn-error and close handlers.
@@ -267,13 +275,12 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     logWriter?.end(`\n# ---\n# Ended: ${new Date().toISOString()}\n# Exit: ${reason}\n`);
   }
 
-  // Usage extraction needs stdout piped through us, so it only runs when
-  // transcript logging is on (the default). DEVTEAM_NO_LOG=1 / ctx.log:false
-  // reverts to inherit-style stdio (see stdio choice below) — telemetry is
-  // unavailable in that mode, same as any host without usageFormat set.
+  // Usage extraction normally follows transcript logging. A caller that sets
+  // captureOutput (the read-only conversational coordinator) also needs the
+  // structured host stream parsed even though it deliberately disables logs.
   const usageFormat = adapter.capabilities && adapter.capabilities.usageFormat;
   const extractorFactory = USAGE_EXTRACTORS[usageFormat];
-  const streamExtractor = extractorFactory && logWriter !== null
+  const streamExtractor = extractorFactory && (logWriter !== null || captureOutput)
     ? extractorFactory()
     : null;
 
@@ -283,7 +290,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
       // When logging is on we read stdout/stderr ourselves to duplicate
       // them into the transcript; when off, inherit gets us the historical
       // terminal-color behavior for free.
-      stdio: logWriter !== null ? ["pipe", "pipe", "pipe"] : ["pipe", "inherit", "inherit"],
+      stdio: (logWriter !== null || captureOutput) ? ["pipe", "pipe", "pipe"] : ["pipe", "inherit", "inherit"],
       ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
     });
 
@@ -293,13 +300,14 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     // streamExtractor is set, stdout is parsed as claude's stream-json
     // and only the extracted readable text reaches the log/terminal —
     // raw JSONL would make the transcript unreadable.
-    if (logWriter !== null) {
+    if (logWriter !== null || captureOutput) {
       child.stdout.on("data", (chunk) => {
         const text = streamExtractor ? streamExtractor.push(chunk) : chunk;
         if (liveTee) {
           try { process.stdout.write(text); } catch { /* */ }
         }
         appendLog(text);
+        appendCaptured(text);
       });
       child.stderr.on("data", (chunk) => {
         if (liveTee) {
@@ -343,6 +351,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
             try { process.stdout.write(trailing); } catch { /* */ }
           }
           appendLog(trailing);
+          appendCaptured(trailing);
         }
         ({ usage, telemetry } = streamExtractor.result());
       }
@@ -420,6 +429,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
         durationMs: Date.now() - start,
         timedOut,
         writeViolations,
+        ...(captureOutput ? { output: capturedOutput } : {}),
         ...(streamExtractor ? { usage, telemetry } : {}),
       });
     });
