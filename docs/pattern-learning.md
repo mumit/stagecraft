@@ -259,14 +259,15 @@ These are wired, not aspirational:
 - **`noise_reports`** remains reserved for a future operator-facing "this pattern is
   wrong for us" report; nothing increments it yet.
 
-`devteam patterns review` flags a promoted pattern as a **demotion candidate** once
-`recurrence_after_injection` reaches `patterns.demotion_recurrence_threshold` in
-`.devteam/config.yml` (default `3`). This is a flag only — nothing demotes or retires
-automatically. `devteam patterns demote <pattern-id>` is the explicit operator action
-that sends a promoted pattern back to candidate status, recording an audit line (who,
-when, reason, and the counters at the moment of demotion) that survives a later
-`devteam patterns promote <pattern-id>` re-promotion. Demotion is reversible; retirement
-(`devteam patterns retire`) is not.
+Evaluation uses deltas since the pattern's latest promotion, not lifetime totals.
+The statuses are `untried`, `no-recurrence-observed`, `monitor`, and `quarantined`.
+Once recurrence since promotion reaches `patterns.demotion_recurrence_threshold`
+in `.devteam/config.yml` (default `3`), selection automatically quarantines the
+pattern: it remains promoted in the audit store but stops entering prompts. Nothing
+is automatically promoted, demoted, edited, or retired. `devteam patterns demote
+<pattern-id>` remains the explicit operator action; after revision, re-promotion
+starts a new evaluation window while preserving lifetime counters and the demotion
+audit trail. Demotion is reversible; retirement (`devteam patterns retire`) is not.
 
 ## Reflector (ACE-lite)
 
@@ -315,13 +316,15 @@ Decisions](#open-decisions)).
 
 ## Prompt Injection
 
-At dispatch time, Stagecraft selects relevant promoted patterns and adds a bounded
-section to the descriptor before the adapter renders the host prompt.
+At dispatch time, Stagecraft selects relevant, non-quarantined promoted patterns
+and adds them to the bounded [Project Knowledge Pack](project-knowledge.md) before
+the adapter renders the host prompt.
 
 ```text
 devteam run
   → buildDescriptor(...)
   → load promoted patterns
+  → exclude outcome-quarantined guidance
   → score by stage, workstream, language, framework, feature hints, and recent failures
   → inject top budgeted patterns
   → renderStagePrompt(...)
@@ -337,7 +340,9 @@ Default injection budget:
 Example prompt section:
 
 ```markdown
-## Known Project Patterns
+## Project Knowledge Pack
+
+### Reviewed patterns and outcome evidence
 
 - If adding or changing a user-visible HTTP endpoint, update README.md,
   docs/reference/*, or changelog.d/* during implementation rather than waiting for
@@ -429,7 +434,7 @@ because it would create or select executable repair behavior.
 2. `devteam patterns collect`, `list`, `review`, `promote`, `retire`, and `stats`.
 3. Collection from blockers, warnings, follow-ups, archived retry failures, and
    retry-stage markers.
-4. Budgeted `Known Project Patterns` injection into rendered stage prompts.
+4. Budgeted reviewed-pattern injection through the Project Knowledge Pack.
 5. Privacy checks for sanitized observations and secret-shaped promoted text.
 6. Tests for idempotent collection, promotion gating, injection relevance, prompt
    rendering, retired-pattern suppression, archived retry collection, and secret-shaped
@@ -456,8 +461,8 @@ initialized host declares a skills directory; nothing is auto-installed.
 ## Open Decisions
 
 - Whether auto-promotion should exist at all, or remain permanently human-reviewed.
-  Demotion follows the same rule: `devteam patterns review` flags a recurrence-heavy
-  pattern, but only `devteam patterns demote <id>` moves it — never automatically.
+  Outcome quarantine changes prompt eligibility only; `devteam patterns demote <id>`
+  remains the only action that changes a promoted record's status.
 - Whether imported promoted patterns should default to disabled until locally reviewed.
 - How much local raw example text is acceptable in `pending-review.json`.
 - Whether pattern matching should start rule-based only or use the existing memory

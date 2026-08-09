@@ -310,6 +310,15 @@ Per-project semantic memory under `.devteam/memory/`. Uses a local embedder (`Xe
 
 See [`docs/memory.md`](memory.md) for embedder options, the `.gitignore` note, and the opt-out marker.
 
+### Project Knowledge Pack — senior context without rediscovery
+
+Every stage prompt has one bounded, provenance-labeled learned-context block.
+It combines automatically discovered stack/convention/verification facts,
+operator-promoted project patterns with outcome evidence, and relevant semantic
+memory. `.devteam/knowledge/project.json` is generated at init or first use and
+refreshes when manifests, tooling configuration, or source-directory metadata
+change. See [`docs/project-knowledge.md`](project-knowledge.md).
+
 ### Org-shared lessons-learned — knowledge that travels across projects
 
 Lifts ADRs and lessons from any project into a shared store at `~/.stagecraft/memory/` (overridable via `STAGECRAFT_ORG_MEMORY_DIR`).
@@ -341,9 +350,10 @@ the next agent repeats the same mistake.
   reinforcing
 - Outcome feedback closes the loop: `stats.injected` counts real dispatches that
   included the pattern; `stats.recurrence_after_injection` counts blockers that
-  recurred anyway. `devteam patterns review` flags recurrence-heavy patterns as
-  demotion candidates (configurable threshold, default 3); `devteam patterns demote
-  <id>` is the explicit, reversible operator action — never automatic
+  recurred anyway. Guidance reaching the configurable recurrence threshold
+  (default 3) is quarantined from future prompt selection until an operator
+  demotes, revises, and re-promotes it. Demotion remains explicit and reversible;
+  re-promotion starts a new evaluation window without erasing lifetime history
 
 See [`docs/pattern-learning.md`](pattern-learning.md) for the value model, storage
 shape, taxonomy, safety boundaries, and promotion workflow.
@@ -399,10 +409,10 @@ into a non-root container for unattended local orchestration.
 
 **`devteam standards discover [--cwd <dir>] [--json] [--dry-run] [--force]`** — static analysis of a project's conventions.
 
-- Scans the project file system and writes `docs/project-conventions.md` with seven detected properties: tech stack (JS/TS/Python/Go/Rust), module system (ESM/CJS/mixed), file layout (top-level dirs + source subdirs), naming style (kebab/PascalCase/camelCase/snake_case plurality), tooling (TypeScript/ESLint/Prettier/Biome/Husky/EditorConfig), test configuration (framework, co-location, pattern), and most-used imports (top 10 by frequency, skipping builtins)
+- Scans the project file system and writes `docs/project-conventions.md` with tech stack, module system, file layout, naming style, tooling, test configuration, common imports, and canonical verification commands
 - `--dry-run` prints without writing; `--json` emits the structured discovery result; `--force` overwrites an existing file
 - Pure static analysis — no external processes, no network, no AI. Reads manifests, source files, and config files only
-- Add `docs/project-conventions.md` to your AGENTS.md or readFirst lists to inject discovered conventions into agent prompts
+- Refreshes `.devteam/knowledge/project.json`; its bounded facts are injected automatically through the Project Knowledge Pack
 
 **`devteam commit [--all] [--dry-run] [--message <msg>] [--json]`** — stage exactly the right pipeline artifacts and commit. (Phase 12.2, ADR-010)
 

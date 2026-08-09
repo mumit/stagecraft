@@ -485,6 +485,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // null on a workstream's first-ever dispatch — nothing to diff against.
     contextDelta: opts.contextDelta || null,
     knownPatterns: Array.isArray(opts.knownPatterns) ? opts.knownPatterns : [],
+    projectFacts: Array.isArray(opts.projectFacts) ? opts.projectFacts : [],
     // 30.4: pre-fetched by runStageHeadless() (embedding is async; this
     // function is not) — see core/memory/inject.js's module header.
     priorKnowledge: Array.isArray(opts.priorKnowledge) ? opts.priorKnowledge : [],
@@ -685,6 +686,9 @@ function runStage(stageName, opts = {}) {
     "devteam.feature": ctx.feature || undefined,
   }, () => {
     const contextManifest = collectChangedFileManifest(ctx.cwd);
+    const projectFacts = Array.isArray(opts.projectFacts)
+      ? opts.projectFacts
+      : require("./knowledge-pack").loadCurrentProjectFacts(ctx.cwd);
     const dispatches = effectivePlan.map((entry) => withSpan("pipeline.workstream", {
       "devteam.stage": stageDef.stage,
       "devteam.workstream.role": entry.role,
@@ -731,7 +735,7 @@ function runStage(stageName, opts = {}) {
       // (ctx.processCwd, 36.1's codeRoot) — see resolveReadFirstItem() above.
       // Unset on every non-review path today, matching ctx.processCwd's own
       // "not set by any orchestrator path yet" state (hosts/acp/adapter.js).
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, projectFacts, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature
@@ -780,7 +784,7 @@ function memoryQueryText(cwd, changeId, feature) {
   return parts.join("\n\n");
 }
 
-// 30.4: pre-fetch "## Prior Project Knowledge" before the synchronous
+// 30.4: pre-fetch retrieved history for the Project Knowledge Pack before the synchronous
 // runStage()/buildDescriptor() pipeline runs — see core/memory/inject.js's
 // module header for why this can't live inside buildDescriptor() itself.
 // A no-op (no extra requires, no embedder load) when opts.priorKnowledge
@@ -833,6 +837,10 @@ function dispatchWavesFor(plan, config) {
 
 async function runStageHeadless(stageName, opts = {}) {
   opts = await resolvePriorKnowledgeOpts(stageName, opts);
+  if (opts.projectFacts === undefined) {
+    const cwd = opts.cwd || process.cwd();
+    opts = { ...opts, projectFacts: require("./knowledge-pack").loadCurrentProjectFacts(cwd, { persist: true }) };
+  }
   const plan = runStage(stageName, opts);
   const config = opts.config || loadConfig(opts.cwd || process.cwd());
   const onWorkstreamEvent = typeof opts.onWorkstreamEvent === "function" ? opts.onWorkstreamEvent : null;
@@ -896,7 +904,7 @@ async function runStageHeadless(stageName, opts = {}) {
       process.stderr.write(`[devteam] experimental: dispatching ${plan.workstreams.length} workstreams → omnigent director (headless)\n`);
       // 30.2(a): director mode still dispatches every workstream's rendered
       // prompt (bundled into one call) — record each workstream's own
-      // Known Project Patterns as injected.
+      // Reviewed pattern entries in the Project Knowledge Pack count as injected.
       for (const ws of plan.workstreams) {
         require("./patterns").recordInjection({
           cwd: plan.ctx.cwd,
@@ -1058,7 +1066,7 @@ async function runStageHeadless(stageName, opts = {}) {
       const queueSuffix = queue.queueMs > 0 ? ` after ${queue.queueMs}ms queue` : "";
       process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)${queueSuffix}\n`);
       // 30.2(a): this is a real dispatch (past --skip-completed), so any
-      // Known Project Patterns rendered into ws.descriptor count as injected.
+      // Reviewed pattern entries rendered into the pack count as injected.
       require("./patterns").recordInjection({
         cwd: plan.ctx.cwd,
         pipelineRoot: pipelineRoot(plan.ctx.cwd, plan.ctx.changeId),

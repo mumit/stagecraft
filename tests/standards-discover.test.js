@@ -26,6 +26,7 @@ const {
   detectTooling,
   detectTestConfig,
   detectCommonImports,
+  detectVerificationCommands,
   classifyFilename,
   discover,
   formatReport,
@@ -148,6 +149,15 @@ describe("detectTechStack", () => {
     assert.deepEqual(ts.languages, []);
     assert.deepEqual(ts.frameworks, []);
     assert.equal(ts.test_runner, null);
+  });
+});
+
+describe("detectVerificationCommands", () => {
+  it("derives bounded canonical commands from known package scripts", () => {
+    const cwd = track(makeTargetProject());
+    makePkg(cwd, { scripts: { test: "node --test", lint: "eslint .", typecheck: "tsc --noEmit", release: "npm publish" } });
+    const stack = detectTechStack(cwd);
+    assert.deepEqual(detectVerificationCommands(cwd, stack), ["npm test", "npm run lint", "npm run typecheck"]);
   });
 });
 
@@ -415,7 +425,7 @@ describe("discover integration", () => {
     const cwd = track(makeTargetProject());
     const result = discover(cwd);
     const keys = ["timestamp", "cwd", "tech_stack", "module_system", "file_structure",
-      "naming", "tooling", "test_config", "common_imports"];
+      "naming", "tooling", "test_config", "common_imports", "verification_commands"];
     for (const k of keys) assert.ok(k in result, `missing key: ${k}`);
   });
 
@@ -473,6 +483,7 @@ describe("formatReport", () => {
       tooling: { typescript: true, eslint: true, prettier: false, biome: false, husky: false, editorconfig: false },
       test_config: { framework: "Jest", co_located: true, pattern: "**/*.test.ts" },
       common_imports: [{ source: "react", count: 5 }, { source: "lodash", count: 2 }],
+      verification_commands: ["npm test", "npm run lint"],
       ...overrides,
     };
   }
@@ -514,9 +525,11 @@ describe("formatReport", () => {
     assert.ok(r.includes("none detected"));
   });
 
-  it("ends with footer note about AGENTS.md", () => {
+  it("renders verification commands and ends with the automatic-pack note", () => {
     const r = formatReport(makeResult());
-    assert.ok(r.includes("AGENTS.md"));
+    assert.ok(r.includes("## Verification commands"));
+    assert.ok(r.includes("`npm test`"));
+    assert.ok(r.includes("included automatically in stage prompts"));
   });
 });
 
@@ -528,6 +541,7 @@ describe("CLI: devteam standards discover", () => {
     const r = runCLI(["standards", "discover", "--cwd", cwd], { cwd });
     assert.equal(r.status, 0, `stderr: ${r.stderr}`);
     assert.ok(fs.existsSync(path.join(cwd, "docs", "project-conventions.md")));
+    assert.ok(fs.existsSync(path.join(cwd, ".devteam", "knowledge", "project.json")));
   });
 
   it("--dry-run prints report without writing file", () => {

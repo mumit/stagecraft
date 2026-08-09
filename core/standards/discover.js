@@ -420,6 +420,22 @@ function detectCommonImports(sourceFiles) {
     .map(([source, count]) => ({ source, count }));
 }
 
+function detectVerificationCommands(cwd, techStack) {
+  const commands = [];
+  const pkg = readJSONSafe(path.join(cwd, "package.json"));
+  if (pkg && pkg.scripts) {
+    const manager = techStack.package_manager || "npm";
+    for (const name of ["test", "lint", "typecheck", "check", "build"]) {
+      if (!pkg.scripts[name]) continue;
+      commands.push(name === "test" ? `${manager} test` : `${manager} run ${name}`);
+    }
+  }
+  if (techStack.test_runner === "pytest" && !commands.includes("pytest")) commands.push("pytest");
+  if (techStack.test_runner === "go test") commands.push("go test ./...");
+  if (techStack.test_runner === "cargo test") commands.push("cargo test");
+  return [...new Set(commands)].slice(0, 6);
+}
+
 // ─── discover ────────────────────────────────────────────────────────────────
 
 function discover(cwd, opts = {}) {
@@ -431,6 +447,7 @@ function discover(cwd, opts = {}) {
   const tooling    = detectTooling(cwd);
   const testConfig = detectTestConfig(cwd, techStack);
   const commonImports = detectCommonImports(sourceFiles);
+  const verificationCommands = detectVerificationCommands(cwd, techStack);
 
   return {
     timestamp: new Date().toISOString(),
@@ -442,6 +459,7 @@ function discover(cwd, opts = {}) {
     tooling,
     test_config: testConfig,
     common_imports: commonImports,
+    verification_commands: verificationCommands,
   };
 }
 
@@ -450,6 +468,7 @@ function discover(cwd, opts = {}) {
 function formatReport(result) {
   const lines = [];
   const { tech_stack: ts, module_system: ms, file_structure: fs_, naming, tooling, test_config: tc, common_imports: ci } = result;
+  const verificationCommands = result.verification_commands || [];
 
   lines.push(`# Project Conventions`);
   lines.push(`_Discovered by \`devteam standards discover\` on ${result.timestamp}_`);
@@ -541,8 +560,15 @@ function formatReport(result) {
     lines.push(``);
   }
 
+  if (verificationCommands.length > 0) {
+    lines.push(`## Verification commands`);
+    lines.push(``);
+    for (const command of verificationCommands) lines.push(`- \`${command}\``);
+    lines.push(``);
+  }
+
   lines.push(`---`);
-  lines.push(`_Add \`docs/project-conventions.md\` to your \`AGENTS.md\` or stage \`readFirst\` lists so pipeline agents see these conventions._`);
+  lines.push(`_A bounded machine-readable subset is refreshed in \`.devteam/knowledge/project.json\` and included automatically in stage prompts._`);
 
   return lines.join("\n") + "\n";
 }
@@ -560,6 +586,7 @@ module.exports = {
   detectTooling,
   detectTestConfig,
   detectCommonImports,
+  detectVerificationCommands,
   collectSourceFiles,
   classifyFilename,
 };

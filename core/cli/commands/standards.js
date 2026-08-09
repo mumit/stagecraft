@@ -49,8 +49,10 @@ function run(positional, _flags) {
     }
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, report, "utf8");
+    const knowledge = require(path.join(__dirname, "..", "..", "knowledge-pack")).writeProjectFacts(cwd, result);
     console.log(`✓ wrote ${path.relative(cwd, outPath)}`);
-    console.log(`  Add it to your AGENTS.md or readFirst lists to inject into agent prompts.`);
+    console.log(`✓ refreshed ${path.relative(cwd, knowledge.file)} (${knowledge.facts.length} bounded fact(s))`);
+    console.log(`  Stage prompts include these facts automatically in the Project Knowledge Pack.`);
     return;
   }
 
