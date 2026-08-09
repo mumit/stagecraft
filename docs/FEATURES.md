@@ -354,6 +354,23 @@ shape, taxonomy, safety boundaries, and promotion workflow.
 
 ### Core commands — the everyday loop
 
+**`devteam chat ["question"]`** — grounded conversational coordination without
+turning conversation into an execution backdoor.
+
+- Builds a deterministic, versioned snapshot from config, run state, stage
+  summary, and the pure `next()` action, with a suggested exact CLI command
+- Supports one-shot text/JSON, prompt-only `--dry-run`, and a TTY conversation;
+  `/status`, `/context`, `/next`, and `/refresh` are local and cost no model call
+- Keeps only eight bounded turns in memory and persists no transcript
+- Removes secret-shaped strings, does not expose the project path or raw gate
+  bodies, and invokes the routed host from a disposable directory
+- Disables OpenAI-compatible tools and denies all ACP permission requests;
+  CLI-host isolation is practical checkout separation, not an OS sandbox
+- Advisory only: it never executes a suggested `devteam` command or mutates the
+  pipeline
+
+Full boundary and examples: [`docs/conversational-coordinator.md`](conversational-coordinator.md).
+
 **`devteam prototype <start|build|note|promote>`** — pre-SDLC prototype mode
 for fast learning before a change deserves delivery gates.
 

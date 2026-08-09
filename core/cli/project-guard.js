@@ -31,7 +31,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const GUARDED_COMMANDS = Object.freeze(["next", "summary", "status", "log", "validate"]);
+const GUARDED_COMMANDS = Object.freeze(["chat", "next", "summary", "status", "log", "validate"]);
 
 const UNGUARDED_COMMANDS = Object.freeze([
   "init", "review", "review-pr", "hosts", "stages", "help", "doctor",

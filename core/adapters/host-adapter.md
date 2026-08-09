@@ -98,7 +98,7 @@ interface HostAdapter {
   // 3. INVOKE — optional, only if capabilities.headless = true.
   // Run the host non-interactively for a stage. Returns the exit code and
   // the gate JSON path the host wrote. user-driven mode skips this entirely.
-  invoke?(stage: StageDescriptor, ctx: PipelineContext): Promise<InvokeResult>;
+  invoke?(stage: StageDescriptor, ctx: PipelineContext, preRenderedPrompt?: string): Promise<InvokeResult>;
 
   // 4. STATUS — verify the install is healthy in a target project.
   // Called by `devteam doctor`. Returns missing/broken pieces.
@@ -133,6 +133,7 @@ interface StageDescriptor {
   template: string;                      // "build-template.md"
   expectedGate: object;                  // JSON Schema for the gate file
   goalCondition: string | null;          // Convergence condition for goal-loop hosts; null if none
+  disableTools?: boolean;                // Offer/permit no tools; fail closed where the protocol supports it
 }
 
 interface PipelineContext {
@@ -140,12 +141,14 @@ interface PipelineContext {
   feature: string;                       // free-text title
   cwd: string;
   isolation: "in-place" | "isolated";
+  captureOutput?: boolean;               // Return bounded assistant text without enabling transcript logs
 }
 
 interface InvokeResult {
   exitCode: number;
   gatePath: string | null;
   durationMs: number;
+  output?: string;                       // Present only when captureOutput was requested and supported
 }
 
 interface StatusReport {
@@ -155,6 +158,15 @@ interface StatusReport {
   notes: string[];
 }
 ```
+
+`captureOutput` is an additive adapter boundary used by read-only conversational
+turns. A CLI adapter captures at most 256 KiB of parsed assistant stdout;
+structured Claude/Codex streams are reduced to assistant text before capture.
+HTTP-native OpenAI-compatible and ACP adapters return the equivalent assistant
+content. It does not imply tool denial: `disableTools` is the separate request.
+OpenAI-compatible hosts advertise no tools and reject a returned tool call; ACP
+rejects every permission request. Same-user CLI processes must still be treated
+as unsandboxed.
 
 ## Lifecycle: how a stage actually runs
 

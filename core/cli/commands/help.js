@@ -26,7 +26,7 @@ function loadCommand(commandName) {
 // can't be added without being grouped).
 const GROUPS = [
   { label: "Start here", commands: ["init", "doctor", "assess", "standards"] },
-  { label: "Daily", commands: ["run", "stage", "next", "commit", "compact", "advise", "preflight"] },
+  { label: "Daily", commands: ["chat", "run", "stage", "next", "commit", "compact", "advise", "preflight"] },
   { label: "Review", commands: ["review", "review-pr", "report"] },
   { label: "Verify", commands: ["verify", "verify-chain", "validate", "consistency", "spec", "replay", "reproduce"] },
   { label: "Fix & retry", commands: ["restart", "ruling", "fix-escalation", "derive-approvals", "merge", "stamp-chain"] },
@@ -73,6 +73,11 @@ function printFullHelp() {
 Usage: devteam <command> [args]
 
 Commands:
+  chat ["question"] [--host <name>] Grounded, read-only conversation about
+       [--model <name>]               current pipeline state and the safest
+       [--feature "..."]              next command. With no question, opens
+       [--dry-run]                    an interactive TTY session. Chat never
+                                      executes the suggested command.
   init --host <list> [--force]     Install host adapter(s) into the current
        [--adapter <name>]           project. <list> is comma-separated, e.g.
        [--profile dogfood]          "claude-code" or "claude-code,codex".

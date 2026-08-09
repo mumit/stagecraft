@@ -9,6 +9,7 @@ module.exports = Object.freeze({
   stages: "stages",
   hosts: "hosts",
   doctor: "doctor",
+  chat: "chat",
   summary: "summary",
   log: "log",
   stage: "stage",
