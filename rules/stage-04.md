@@ -1,17 +1,19 @@
-# Stage 4 — Build (3 Devs, parallel via git worktrees)
+# Stage 4 — Build (4 role-owned workstreams)
 
-Each dev works in its own worktree:
-  `git worktree add ../dev-team-backend feature/backend`
-  `git worktree add ../dev-team-frontend feature/frontend`
-  `git worktree add ../dev-team-platform feature/platform`
+The orchestrator dispatches backend, frontend, platform, and QA in parallel.
+They share the checkout by default. When the project opts into
+`pipeline.workstream_isolation: git-worktree`, Stagecraft creates a detached
+worktree for every planned role and reconciles only role-authorized results.
+Do not create, merge, or remove worktrees yourself during a managed dispatch.
 
 Invoke in parallel:
   `dev-backend`  → `src/backend/`  → `pipeline/pr-backend.md`
   `dev-frontend` → `src/frontend/` → `pipeline/pr-frontend.md`
   `dev-platform` → `src/infra/` + root toolchain config → `pipeline/pr-platform.md`
+  `qa`           → `src/tests/` → `pipeline/pr-qa.md`
 
 Gate file per workstream: `pipeline/gates/stage-04.{area}.json`
-All three must have `"status": "PASS"` before proceeding.
+Every planned workstream must have `"status": "PASS"` before proceeding.
 
 Pre-review checks (stage-04a) run after the three build gates PASS and
 before Stage 5 starts. See `stage-04a.md` (lint + dep review + SCA) and

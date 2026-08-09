@@ -112,7 +112,7 @@ The merged gate's `workstreams[]` array lists each contributing workstream with 
 
 Platform reads every workstream's `pipeline/pr-*.md`, including `pr-backend.md` written by Codex. The reviewer reads files on disk; which host produced which PR summary is irrelevant at this stage. This is the gate-JSON-as-contract principle: artifacts are exchanged through the filesystem, not through host-specific channels.
 
-What *is* asymmetric here: the `allowed_writes` enforcement. Claude Code's hooks block writes outside the role's `allowedWrites` at tool-call time. Codex has no equivalent — the prompt instructs the model not to write outside `src/backend/`, and the validator audits the diff after the fact (`npm run audit:writes` is the recommended post-hoc check; see `core/pipeline/stages.js:102-107` for the per-role allowed-writes table). The pre-review gate flags an `enforcement_method` warning when any workstream ran on a `prompt-only` host.
+What *is* asymmetric here: the `allowed_writes` enforcement. Claude Code's hooks block writes outside the role's `allowedWrites` at tool-call time. Codex has no equivalent — the prompt instructs the model not to write outside `src/backend/`, and the validator audits the diff after the fact (`npm run audit:writes` is the recommended post-hoc check; see `core/pipeline/stages.js` for the per-role allowed-writes table). The pre-review gate flags an `enforcement_method` warning when any workstream ran on a `prompt-only` host. Operators who enable `pipeline.workstream_isolation: git-worktree` get an additional host-neutral reconciliation boundary: unauthorized paths are not copied back into the operator checkout, although the agent still has the invoking user's OS permissions.
 
 ### Stage 04c — Red-team (Red-team → claude-code)
 
@@ -152,7 +152,7 @@ The five things that hold up cleanly across the host boundary:
 
 ## Where the asymmetry leaks through (known and documented)
 
-- **`allowed_writes` enforcement.** Claude Code enforces at tool-call time via hooks; Codex enforces in the prompt and is audited post-hoc. The pre-review gate carries an `enforcement_method` field per workstream so a reviewer can see which is which. There is no plan to close this — Codex doesn't expose the hook surface required.
+- **`allowed_writes` enforcement.** Claude Code enforces at tool-call time via hooks; Codex enforces in the prompt and is audited post-hoc. The pre-review gate carries an `enforcement_method` field per workstream so a reviewer can see which is which. [ADR-019](../adr/019-isolated-build-workstreams.md) does not invent a missing Codex hook, but its opt-in core-managed worktrees prevent unauthorized or conflicting workstream results from being reconciled into the operator checkout.
 - **Cost telemetry.** Tokens are not comparable across model families. `core/pricing.js` records per-host pricing; `npm run dashboard:cost --by host` is the supported view. Cross-host totals are best-effort.
 - **`readFirst` paths.** Each adapter generates a host-shaped path for its rule files (`AGENTS.md` for Codex, `CLAUDE.md` for Claude Code). The canonical source is `rules/*.md` in this repo; adapters render at install time.
 
