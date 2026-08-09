@@ -5,6 +5,7 @@ Stagecraft records per-workstream LLM cost in the gate JSON and aggregates it in
 This is the **D6** BACKLOG item. It is the data foundation for D4 (per-role per-model performance scores) and D5 (adaptive routing). On its own it answers "where did our LLM spend go this sprint?"
 
 - [Quick start](#quick-start)
+- [Pre-run cost planning](#pre-run-cost-planning)
 - [How cost gets into the gate](#how-cost-gets-into-the-gate)
 - [Pricing table](#pricing-table)
 - [What cost data unlocks (D4 + D5)](#what-cost-data-unlocks-d4--d5)
@@ -46,6 +47,33 @@ Total duration: 24.3m
 | codex       | 4 | $0.42 | 240,100 | 18,500 |  4.1m | $0.105 |
 | gemini-cli  | 2 | $0.11 |  80,000 |  3,000 |  1.5m | $0.055 |
 ```
+
+## Pre-run cost planning
+
+`devteam assess` shows the recommended track and a side-by-side comparison of
+the three primary assurance choices: `loop`, `quick`, and `full`. Its JSON
+output exposes the recommendation as `ceremony_preview` and the comparison as
+`assurance_options`.
+
+Before a run has enough comparable history, the planner estimates prompt input
+from framework and on-disk pipeline artifacts. It resolves a model in this
+order:
+
+1. the explicit `{host, model}` pin for the stage or role;
+2. the most recently observed model for the unpinned `(role, host)` pair;
+3. unresolved — no dollar figure is shown.
+
+Each static dispatch includes `model_source: "configured"`, `"observed"`, or
+`null`. Static `tokens_scope` is `estimated-input` and `cost_scope` is
+`input-only-floor`: output generation is excluded because its volume cannot be
+known before execution. This is useful for comparing ceremony but is not a
+budget ceiling. Use `devteam run --budget-usd <amount>` as a runtime halt
+threshold; it checks recorded spend before the next dispatch and can overshoot
+by one dispatch or miss spend a host did not report.
+
+After at least five completed runs of the exact track, the preview switches to
+an empirical median with `tokens_scope` and `cost_scope` set to
+`observed-total`. All figures remain estimates rather than provider invoices.
 
 ## How cost gets into the gate
 
