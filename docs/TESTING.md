@@ -120,9 +120,10 @@ results are never reused, and uncertain lookup falls back to execution. Set
   quoted executable dispatch, CLI help, fresh init, and doctor
 
 Node 20 was dropped after it reached EOL in 2026. The matrix now tests the minimum
-supported Maintenance LTS (22) and Active LTS (24). Lint, consistency, and informational
-coverage run once on Node 22; both versions still run the complete offline test suite and
-CLI smoke checks.
+supported Maintenance LTS (22) and Active LTS (24). Lint and consistency run once on
+Node 22; both versions still run the complete offline test suite and CLI smoke checks.
+Informational coverage runs once on Node 22 after merges to `main`, keeping the telemetry
+without doubling pull-request feedback time.
 
 ## What's NOT tested (deliberately out of scope)
 
