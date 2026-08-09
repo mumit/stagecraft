@@ -76,12 +76,42 @@ container or restricted OS account when the host itself is not trusted. Chat's
 boundary protects against accidental project coupling; it does not contain a
 malicious same-user executable.
 
+## Approval-bound artifact refinement
+
+Requirements and design use a deliberately split proposal/apply workflow. The
+conversational turn still has tools disabled and cannot edit the checkout:
+
+```bash
+devteam chat "make AC-3 measurable" --refine requirements
+devteam chat "make the retry boundary explicit" --refine design
+```
+
+The host receives the current artifact plus a bounded stage snapshot and project knowledge
+facts, then must return one versioned full-replacement envelope. Stagecraft validates it,
+stores a pending proposal under `pipeline/proposals/`, and prints its id. The proposal
+contains the base hash, exact diff, and existing gates that would be invalidated. It does
+not store the question, transcript, hidden reasoning, arbitrary paths, or commands.
+
+```bash
+devteam chat --proposal <id>          # inspect exact diff + gates
+devteam chat --proposal <id> --apply  # explicit local mutation
+devteam chat --proposal <id> --reject
+devteam chat --list-proposals
+```
+
+Apply rechecks the artifact hash, proposal expiry, and exact gate set. Concurrent changes
+make it stale; Stagecraft never asks the model to rebase. The artifact write and gate
+invalidation use a recoverable local transaction. Requirements invalidates stage-01 and
+downstream gates; design keeps stage-01 and invalidates stage-02 onward.
+Proposal lifecycle counters and provenance are appended to `pipeline/proposals/events.jsonl`;
+instructions and transcripts are never written there.
+
 ## What it is not
 
 - It is not a replacement for `devteam next --json`; automation should consume
   the deterministic action object, not model prose.
-- It is not a write-capable conversational stage. Requirements/design artifact
-  refinement may be added later under an explicit approval and gate contract.
+- It is not an arbitrary write-capable agent. Only the fixed requirements/design
+  proposal schema above can reach the separate explicit apply operation.
 - It is not persistent project memory. Reviewed conventions and outcomes belong
   in the knowledge/pattern/memory systems, not an opaque chat transcript.
 - It is not free: each natural-language turn is a model invocation. Prefer local
