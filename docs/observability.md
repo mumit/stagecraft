@@ -225,11 +225,45 @@ devteam evals gc [--json]
 Removes `.devteam/evals/blobs/` entries no case's `inputs/manifest.json`
 references anymore (e.g. after manually deleting a case directory).
 
-## Next roadmap
+## Cross-run performance calibration
+
+`devteam performance calibration` aggregates the local dispatch corpus and durable run log
+into sample-counted p50/p95 latency, cost provenance, cost per successful dispatch/run and
+accepted resolution, cache hits, knowledge-pack selection correlation, track-fit feedback,
+and the exact Phase 41 readiness thresholds. Add another local project without uploading
+data:
+
+```bash
+devteam performance calibration --input ../another-project
+devteam performance calibration --input ../another-project --json
+```
+
+Project paths are replaced by stable private references in the report. Estimates remain
+separate from provider-observed cost, every percentile carries a denominator, and fixture
+data must not be represented as real-project evidence.
+
+After a run, record whether assessed ceremony fit using bounded values rather than a free
+text transcript:
+
+```bash
+devteam performance feedback --fit right --reason latency
+# fit: too-light | right | too-heavy
+```
+
+Use `devteam log --timeline` for one durable queue/invoke/verification/retry/reconciliation/
+blocker view derived from `run-log.jsonl`.
+
+The repeatable two-project protocol is in
+[Dogfooding Stagecraft](guides/dogfooding.md#two-project-calibration-protocol). Missing
+verification/reconciliation/blocker durations remain `null`; the report does not invent
+timings from event order. Knowledge item-use coverage is likewise reported as unavailable
+until a host exposes a trustworthy usage signal.
+
+## Remaining roadmap
 
 OpenTelemetry is useful when a tracing backend is configured, but it is not the
-whole operator experience. The Phase 26 plan tracks a broader run-visibility and
-performance effort:
+whole operator experience. Phase 39 supersedes the still-open measurement portion of the
+older Phase 26 plan:
 
 - [#312](https://github.com/telus-labs/stagecraft/issues/312) — parent performance,
   observability, and run-usability overhaul

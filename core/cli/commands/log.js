@@ -10,6 +10,7 @@ const flags = {
   feature: { type: "string",  description: "Feature name (bounded isolation mode)" },
   json:    { type: "boolean", description: "JSON output (one object per line)" },
   follow:  { type: "boolean", description: "Tail pipeline/ at 1s poll" },
+  timeline:{ type: "boolean", description: "Show durable queue/invoke/verification/retry/blocker timeline" },
   help:    { type: "boolean", description: "Show this help" },
 };
 
@@ -41,6 +42,20 @@ function run(positional, _flags) {
   const { resolveChangeId } = require(path.join(__dirname, "..", "resolve-change-id"));
   const changeId = resolveChangeId(_flags, config);
   const { buildEvents } = require(path.join(__dirname, "..", "..", "log", "journal"));
+
+  if (_flags.timeline) {
+    if (_flags.follow) {
+      console.error("devteam log: --timeline and --follow are mutually exclusive");
+      process.exit(2);
+    }
+    const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
+    const { buildTimeline, readJsonLines, renderTimeline } = require(path.join(__dirname, "..", "..", "performance", "critical-path"));
+    const events = readJsonLines(path.join(pipelineRoot(cwd, changeId), "run-log.jsonl")).events;
+    const rows = buildTimeline(events);
+    if (_flags.json) rows.forEach((row) => console.log(JSON.stringify(row)));
+    else process.stdout.write(renderTimeline(rows));
+    return;
+  }
 
   function emit(events) {
     if (_flags.json) {

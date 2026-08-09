@@ -255,6 +255,13 @@ function analyzeEvents(events, opts = {}) {
   const parallelSavingsMs = rows.reduce((total, row) => total + (row.parallel_savings_ms || 0), 0);
   const queueWaitMs = rows.reduce((total, row) => total + (row.queue_ms || 0), 0);
   const { waves, waveRealizedSavingsMs } = computeWaveSavings(rows);
+  const categoryDurationMs = { verification: null, reconciliation: null, blocker: null };
+  for (const { event } of parsed) {
+    const category = timelineCategory(event.outcome || "");
+    if (!Object.prototype.hasOwnProperty.call(categoryDurationMs, category)) continue;
+    const duration = typeof event.duration_ms === "number" ? event.duration_ms : null;
+    if (duration !== null) categoryDurationMs[category] = (categoryDurationMs[category] || 0) + duration;
+  }
 
   const report = {
     schema_version: SCHEMA_VERSION,
@@ -269,6 +276,7 @@ function analyzeEvents(events, opts = {}) {
     parallel_savings_ms: rows.length > 0 ? parallelSavingsMs : null,
     retry_delay_ms: retryDelayMs,
     queue_wait_ms: queueWaitMs,
+    category_duration_ms: categoryDurationMs,
     // ADR-017 (32.6): empty array / 0 when the run predates waves or never
     // formed one — distinct from `null`, since "no waves happened" is a valid
     // (and, pre-32.6-rollout, the common) observed state, not missing data.
@@ -354,6 +362,48 @@ function analyzeProject(cwd, { changeId = null, generatedAt } = {}) {
   return report;
 }
 
+function timelineCategory(outcome) {
+  if (/queued/.test(outcome)) return "queue";
+  if (/workstream-(started|finished)|dispatch/.test(outcome)) return "invoke";
+  if (/verif|stamp/.test(outcome)) return "verification";
+  if (/reconcil/.test(outcome)) return "reconciliation";
+  if (/retry/.test(outcome)) return "retry";
+  if (/merge/.test(outcome)) return "merge";
+  if (/halt|ceiling|budget|blocked/.test(outcome)) return "blocker";
+  return null;
+}
+
+function buildTimeline(events) {
+  return events
+    .map((event, index) => ({ event, index, ms: parseTs(event.ts) }))
+    .filter((row) => row.ms !== null && timelineCategory(row.event.outcome || ""))
+    .sort((a, b) => a.ms - b.ms || a.index - b.index)
+    .map(({ event }) => ({
+      ts: event.ts,
+      category: timelineCategory(event.outcome || ""),
+      event: event.outcome,
+      stage: event.name || event.stage || null,
+      workstream: event.role || event.workstream_id || null,
+      duration_ms: typeof event.duration_ms === "number" ? event.duration_ms : null,
+      queue_ms: typeof event.queue_ms === "number" ? event.queue_ms : null,
+      delay_ms: typeof event.delay_ms === "number" ? event.delay_ms : null,
+      reason: event.reason || event.halt_reason || null,
+    }));
+}
+
+function renderTimeline(rows) {
+  if (rows.length === 0) return "_No durable queue/invoke/verification/retry/reconciliation/blocker events found._\n";
+  const out = ["# devteam log — execution timeline", "", "| Time | Category | Event | Stage | Workstream | Detail |", "|---|---|---|---|---|---|"];
+  for (const row of rows) {
+    const detail = row.duration_ms !== null ? `duration ${durationLabel(row.duration_ms)}`
+      : row.queue_ms !== null ? `queue ${durationLabel(row.queue_ms)}`
+      : row.delay_ms !== null ? `delay ${durationLabel(row.delay_ms)}`
+      : row.reason || "—";
+    out.push(`| ${row.ts} | ${row.category} | ${row.event} | ${row.stage || "—"} | ${row.workstream || "—"} | ${detail} |`);
+  }
+  return out.join("\n") + "\n";
+}
+
 function renderMarkdown(report) {
   const out = [];
   out.push("# devteam performance — critical path");
@@ -433,9 +483,11 @@ module.exports = {
   SCHEMA_VERSION,
   analyzeEvents,
   analyzeProject,
+  buildTimeline,
   collectVerificationReuseCandidates,
   computeWaveSavings,
   durationLabel,
   readJsonLines,
   renderMarkdown,
+  renderTimeline,
 };
