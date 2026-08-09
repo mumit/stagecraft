@@ -152,7 +152,7 @@ The five things that hold up cleanly across the host boundary:
 
 ## Where the asymmetry leaks through (known and documented)
 
-- **`allowed_writes` enforcement.** Claude Code enforces at tool-call time via hooks; Codex enforces in the prompt and is audited post-hoc. The pre-review gate carries an `enforcement_method` field per workstream so a reviewer can see which is which. [ADR-018](../adr/018-isolated-build-workstreams.md) does not invent a missing Codex hook, but its opt-in core-managed worktrees prevent unauthorized or conflicting workstream results from being reconciled into the operator checkout.
+- **`allowed_writes` enforcement.** Claude Code enforces at tool-call time via hooks; Codex enforces in the prompt and is audited post-hoc. The pre-review gate carries an `enforcement_method` field per workstream so a reviewer can see which is which. [ADR-019](../adr/019-isolated-build-workstreams.md) does not invent a missing Codex hook, but its opt-in core-managed worktrees prevent unauthorized or conflicting workstream results from being reconciled into the operator checkout.
 - **Cost telemetry.** Tokens are not comparable across model families. `core/pricing.js` records per-host pricing; `npm run dashboard:cost --by host` is the supported view. Cross-host totals are best-effort.
 - **`readFirst` paths.** Each adapter generates a host-shaped path for its rule files (`AGENTS.md` for Codex, `CLAUDE.md` for Claude Code). The canonical source is `rules/*.md` in this repo; adapters render at install time.
 
