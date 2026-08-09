@@ -1,7 +1,0 @@
-### Fixed
-
-- **A `devteam review` run could still halt with `resolve-escalation` on `red-team` or `security-review`, not just `peer-review`.** The earlier fix that made a peer-review disagreement terminal in tracks with no build stage (`review-only`, `review-pr`) checked `stageDef.stage === "stage-05"` specifically — it only ever covered peer-review. Every other stage in those tracks has the identical characteristic: no build stage exists to act on its findings, so re-dispatching the same stage against unchanged code always reproduces the same must-fix findings, and escalating asks a human to rule on someone else's code the review was never going to change anyway. A real `devteam review` run against an external repo hit this exact wall on `red-team` (stage-04c) instead.
-
-  `core/orchestrator.js#next()`'s check is now generalized to `!stageList.includes("build")`, independent of which stage it's evaluating — any track with no build stage treats a `FAIL`/`ESCALATE` gate as terminal for *every* stage in it, not one hardcoded name. Tracks with a real build stage (`full`, `quick`, `nano`, `loop`, `hotfix`, `dep-update`, `config-only`, `refactor`) are unaffected — verified explicitly for `red-team` there too.
-
-  5 new tests in `tests/next.test.js` (3 confirmed to fail without the fix, one using the real halt message verbatim as a fixture) cover `red-team`/`security-review` FAIL and ESCALATE in `review-only`, a multi-stage progression to `pipeline-complete`, and the `full`-track regression check.

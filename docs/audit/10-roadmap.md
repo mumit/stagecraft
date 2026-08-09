@@ -1,9 +1,9 @@
 # 10 — Sequenced roadmap
 
 > **Historical audit roadmap.** Batches below describe the 2026-06 audit cycle. The current
-> execution sequence is [Phase 38 containment](../../plans/phase-38-execution-trust-profiles.md)
-> → [Phase 39 measurement](../../plans/phase-39-evidence-performance-calibration.md) →
-> [Phase 40 conversation](../../plans/phase-40-conversational-artifact-refinement.md).
+> [Phase 38 containment](../../plans/phase-38-execution-trust-profiles.md),
+> [Phase 39 measurement](../../plans/phase-39-evidence-performance-calibration.md), and
+> [Phase 40 conversation](../../plans/phase-40-conversational-artifact-refinement.md) are complete.
 > [Phase 41 learning/routing](../../plans/phase-41-evidence-gated-learning-routing.md)
 > remains blocked on real-project evidence.
 

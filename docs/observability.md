@@ -259,11 +259,12 @@ verification/reconciliation/blocker durations remain `null`; the report does not
 timings from event order. Knowledge item-use coverage is likewise reported as unavailable
 until a host exposes a trustworthy usage signal.
 
-## Remaining roadmap
+## Evidence collection horizon
 
 OpenTelemetry is useful when a tracing backend is configured, but it is not the
-whole operator experience. Phase 39 supersedes the still-open measurement portion of the
-older Phase 26 plan:
+whole operator experience. Phase 39 completed the useful measurement and live-timeline
+portion of the older Phase 26 plan. The related implementation issues are retained here
+for provenance:
 
 - [#312](https://github.com/telus-labs/stagecraft/issues/312) — parent performance,
   observability, and run-usability overhaul
@@ -281,8 +282,9 @@ older Phase 26 plan:
   workstreams and artifact pointers, and `devteam status --verbose` exposes the
   same state for post-hoc inspection.
 
-The next timing gap is deeper verification and stamping substeps: today the
-critical-path report can detect repeated stamped commands and dispatch/merge
+The remaining work is real-project collection for Phase 41. Deeper verification and
+stamping substeps stay explicitly nullable: today the critical-path report can detect
+repeated stamped commands and dispatch/merge
 wall time, but individual stamp phases are still summarized inside gate metadata
 rather than streamed as first-class run-log events.
 

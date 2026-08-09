@@ -1,7 +1,8 @@
 # Phase 41 — Evidence-Gated Learning & Routing
 
-Status: **blocked on real-project evidence** (2026-08-08). Planning is approved; activation
-and implementation are not. Phase 39 makes the decision measurable.
+Status: **blocked on real-project evidence** (2026-08-09). Planning is approved; activation
+and implementation are not. Phases 38–40 are complete; Phase 39 makes the collection and
+decision measurable.
 
 ## Why
 
@@ -67,4 +68,3 @@ policy remain reviewable source changes.
 Shadow recommendations demonstrate a predeclared improvement without violating quality,
 cost, privacy, capability, or trust constraints; promotion and rollback are auditable; and
 the evidence review is reproducible from consented, privacy-bounded aggregates.
-

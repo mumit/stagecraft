@@ -1,3 +1,0 @@
-### Fixed
-
-- **`roles/pm.md`'s "On a Sign-off Request" section told the model to write `pipeline/gates/stage-07.json` — the merged *stage* gate path — but PM's actual per-workstream gate (per `buildDescriptor`/`stages.js`'s `roleWrites`) is `pipeline/gates/stage-07.pm.json`.** Sign-off is a multi-role stage (`pm` + `platform`, each writing its own workstream gate that the orchestrator later merges); the role brief's prose never caught up to that split. A new contract test (`tests/contract.test.js`, confirmed to fail without the fix) checks every multi-role stage's role briefs for a hardcoded reference to the bare, unqualified stage gate path, so this class of drift is now caught for `build`, `peer-review`, and `sign-off` alike, not just this one instance.

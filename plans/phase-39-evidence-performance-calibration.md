@@ -1,6 +1,6 @@
 # Phase 39 — Evidence & Performance Calibration
 
-Status: **implemented; ready for review in PR #414** (2026-08-08). This phase builds measurement and
+Status: **complete; merged in PR #414** (2026-08-08). This phase builds measurement and
 calibration tooling; it does not manufacture the real-project evidence required by Phase 41.
 
 ## Why

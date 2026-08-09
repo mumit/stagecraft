@@ -4,11 +4,10 @@ Phase plans produced from the 2026-06-10 full-framework review and subsequent au
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
 written to be executed one item at a time.
 
-**Current state (2026-08-08):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, 35, 36,
-and 37 are complete. Phase 32 is mostly complete with one open item (32.4, deferred).
-Phases 38–40 are approved for execution in that order. Phase 41 is designed but remains
-blocked on real-project evidence. Phases 21, 25, and 26 are proposed or parked; Phase 26's
-still-useful measurement work is re-scoped into Phase 39. See
+**Current state (2026-08-09):** phases 1–20, 22, 24, 27–31, and 33–40 are complete.
+Phase 32 is mostly complete with one open item (32.4, deferred). Phase 41 is designed but
+remains blocked on real-project evidence. Phases 21 and 25 are proposed or parked; Phase
+26's still-useful measurement work shipped through Phase 39. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
 listed under [Evidence reviews](#evidence-reviews).
@@ -40,7 +39,7 @@ listed under [Evidence reviews](#evidence-reviews).
 | 22 | [phase-22-docker-headless-runner.md](phase-22-docker-headless-runner.md) | — | Docker-based unattended local runner for long headless pipelines | ✅ complete — ADR-014 + `hosts/docker/` |
 | 24 | [phase-24-omnigent-runtime.md](phase-24-omnigent-runtime.md) | — | Omnigent as a host runtime with policy/session bridge and experimental director prototype | ✅ complete (PRs #298–#304) |
 | 25 | [phase-25-omnigent-director-hardening.md](phase-25-omnigent-director-hardening.md) | — | Harden the Omnigent director prototype through dogfood, partial resume design, session evidence, policy conformance, and topology decisions | 📝 proposed and parked (#305) |
-| 26 | [phase-26-performance-observability-usability.md](phase-26-performance-observability-usability.md) | — | Performance, live-run observability, and operator usability overhaul | 📝 proposed (#312) |
+| 26 | [phase-26-performance-observability-usability.md](phase-26-performance-observability-usability.md) | — | Performance, live-run observability, and operator usability overhaul | superseded; useful scope delivered through phases 28, 32, 37, and 39 |
 | 27 | [phase-27-pattern-learning.md](phase-27-pattern-learning.md) | — | D12 project-local pattern learning: `devteam patterns`, sanitized candidate collection, explicit promotion, bounded prompt injection | ✅ complete (PRs #333 plan · #334 implementation); the learning loop was closed later by phase 30 |
 | 28 | [phase-28-ground-truth-telemetry.md](phase-28-ground-truth-telemetry.md) | [prompts](prompts/roadmap-2026-prompts.md) | Token/cost telemetry at the adapter layer, sanitized run corpus, Antigravity host continuity | ✅ complete — 28.1 claude-code usage · 28.2 openai-compat usage · 28.3 codex usage + labelled estimates · 28.4 budget on observed cost · 28.5 run corpus + `devteam corpus stats` · 28.6 Antigravity adapter |
 | 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | ✅ complete — 29.1 `loop` track · 29.2 assess-by-default (ADR-016) · 29.3 ceremony cost preview · 29.4 compact QA fold (`stage-06x`) · 29.5 docs repositioning |
@@ -52,9 +51,9 @@ listed under [Evidence reviews](#evidence-reviews).
 | 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | ✅ complete — 35.1 review-only track (PR #373) · 35.2 `devteam review-pr` (PR #375) · 35.3 stage-06d stamping (PR #376) · 35.4 findings report (PR #377) · 35.5 refactor track (PR #378) |
 | 36 | [phase-36-external-review-mode.md](phase-36-external-review-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | External review mode (ACP-first): two-root permissions with enforced read-only, framework paths across roots, review workspace, `devteam review <path>`, standalone `review-pr` | ✅ complete (2026-08-04) — all seven items 36.0–36.6; see [`acp-read-scope.md`](acp-read-scope.md) for the 36.0 spike findings |
 | 37 | [phase-37-interface-and-token-efficiency.md](phase-37-interface-and-token-efficiency.md) | [prompts](prompts/roadmap-2026-prompts.md) | Interface and token efficiency: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, ADR-017 decision | ✅ complete (2026-08-05) — 37.1–37.6 shipped; **adds no capability by design** |
-| 38 | [phase-38-execution-trust-profiles.md](phase-38-execution-trust-profiles.md) | — | Explicit trust profiles and disposable, fail-closed contained workstreams | 🚧 approved; depends on PR #410 |
-| 39 | [phase-39-evidence-performance-calibration.md](phase-39-evidence-performance-calibration.md) | — | Cross-run latency/cost calibration, usefulness signals, right-sizing feedback, bottleneck timeline | 🚧 approved; depends on PRs #408–#409 |
-| 40 | [phase-40-conversational-artifact-refinement.md](phase-40-conversational-artifact-refinement.md) | — | Proposal-first requirements/design conversation with exact diff, explicit apply, and deterministic invalidation | 🚧 approved; depends on PR #411 |
+| 38 | [phase-38-execution-trust-profiles.md](phase-38-execution-trust-profiles.md) | — | Explicit trust profiles and disposable, fail-closed contained workstreams | ✅ complete (PR #413) |
+| 39 | [phase-39-evidence-performance-calibration.md](phase-39-evidence-performance-calibration.md) | — | Cross-run latency/cost calibration, usefulness signals, right-sizing feedback, bottleneck timeline | ✅ complete (PR #414) |
+| 40 | [phase-40-conversational-artifact-refinement.md](phase-40-conversational-artifact-refinement.md) | — | Proposal-first requirements/design conversation with exact diff, explicit apply, and deterministic invalidation | ✅ complete (PR #415) |
 | 41 | [phase-41-evidence-gated-learning-routing.md](phase-41-evidence-gated-learning-routing.md) | — | Shadow routing and controlled recipe candidates after explicit multi-project thresholds | ⛔ evidence-gated; do not implement yet |
 
 **Execution format:** older phases with prompt packs retain their paste-ready prompts for
@@ -67,17 +66,14 @@ the plan records an unavoidable stack dependency.
 ## What is not delivered yet
 
 Everything below is either written-but-unbuilt or deliberately parked. Status was
-reconciled against upstream and the active prerequisite PRs on 2026-08-08.
+reconciled against upstream on 2026-08-09.
 
 | Work | Where | Why it is open |
 |---|---|---|
-| **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred. PR #410 supplies a core-managed isolation primitive, but best-of-N multiplies cost and should be re-evaluated only after that primitive lands and Phase 39 measures quality per dollar. |
+| **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred. PR #410 supplied a core-managed isolation primitive, but best-of-N multiplies cost and should be re-evaluated only after real Phase 39 calibration data establishes quality per dollar. |
 | **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
-| **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Superseded as an execution plan. Phases 28, 32, and 37 shipped much of it; remaining measurement/live-timeline work is re-scoped into Phase 39. |
-| **Phase 38 — contained execution** | [phase-38](phase-38-execution-trust-profiles.md) | Approved. Starts after its workstream-isolation dependency (PR #410); trusted CLI execution remains explicitly unsandboxed. |
-| **Phase 39 — calibration** | [phase-39](phase-39-evidence-performance-calibration.md) | Approved. Builds measurement and dogfood tooling; real-project collection continues afterward. |
-| **Phase 40 — conversational refinement** | [phase-40](phase-40-conversational-artifact-refinement.md) | Approved. Starts from the read-only coordinator in PR #411 and keeps mutation behind explicit local apply. |
+| **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Superseded as an execution plan. Phases 28, 32, 37, and 39 shipped its useful measurement and live-timeline scope. |
 | **Phase 41 — learning/routing activation** | [phase-41](phase-41-evidence-gated-learning-routing.md) | Blocked until the plan's per-route and cross-project evidence thresholds are met. Test fixtures do not count. |
 
 Capability gates that stay shut for lack of real-project data — not for lack of code —

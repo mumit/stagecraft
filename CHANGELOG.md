@@ -10,6 +10,237 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ---
 
+## [0.11.0] — 2026-08-09
+
+### Added
+
+- Add proposal-first conversational refinement for requirements and design: captured no-tool turns produce an exact local diff, explicit apply/reject rechecks artifact hashes, and apply atomically invalidates downstream gates.
+
+- **Route-aware ceremony pricing and simpler assurance choices.** `devteam assess`
+  now compares the three primary assurance levels (`loop`, `quick`, `full`)
+  while preserving specialist tracks for change shapes such as dependency
+  updates and incident response. Static cost previews price explicit
+  per-stage/per-role model pins immediately and fall back to the most recently
+  observed model only when routing does not pin one. Each dispatch reports
+  whether its model came from configuration or observation. *Honest scope
+  note:* output-token volume remains unknown before a run, so static dollars
+  are explicitly labeled as an input-cost floor; empirical dollars are
+  observed total cost. Unpriced models still suppress the figure rather than
+  showing a misleading partial cost.
+
+- **Grounded conversational coordinator** (BACKLOG E9 first slice). `devteam chat`
+  adds one-shot and TTY conversation over a bounded deterministic snapshot of
+  config, run state, stage summary, cost, blockers, and the pure next action. It
+  recommends exact commands but cannot execute them, persists no transcript,
+  redacts secret-shaped strings, runs adapters from a disposable workspace,
+  disables OpenAI-compatible tools, and rejects all ACP permission requests.
+  Adapter output capture is additive and bounded. *Honest scope note:* same-user
+  CLI hosts are not OS-sandboxed; write-capable conversational requirements or
+  design refinement remains deferred behind an explicit approval contract.
+
+- **Current documentation now matches the shipped track and roadmap surface.** The active entry points describe all ten tracks, distinguish the recommended `loop` workflow from the conservative `full` factory fallback and the assessor's current behavior, replace the evaluator's manual 18-stage/PASS-gate walkthrough with an autonomous bounded run, mark phases 36/37 and ADR-017 accurately, and remove the obsolete fixed test-duration claim. The consistency checker now recognizes written track counts through ten and scans the root README, with a regression fixture proving a stale written count is rejected.
+
+### Added
+
+- Add fingerprinted `trusted` and fail-closed Docker `contained` execution profiles with disposable worktrees, scoped environment, default-deny network, resource limits, and validated output reconciliation. Reserve `remote` without silently degrading it.
+
+### Fixed
+
+- **`devteam review`'s ACP review-mode execute allowlist denied nearly every realistic exploration command, so reviewing agents gave up before ever writing a review.** `hosts/acp/permissions.js`'s deny-by-default execute gate (phase-36 item 36.1) denied any command containing `&&`, `|`, `;`, or a redirect outright, regardless of what the command actually was. A real reviewing agent's natural exploration style — `cd <dir> && find . | head -50 && echo "---" && cat file 2>/dev/null` — had every piece of that refused, and three of four peer-review workstreams in a real `devteam review` run gave up and asked for permission instead of writing `by-<role>.md`, cascading into missing gates and a `structural-input` halt with 0 findings.
+
+  This was explicitly anticipated in the original design comment: *"if [this] turns out to make real reviews impractical, the fix is the exec_allowlist extension point or a narrower parse, not silently loosening the default."* Implemented that narrower parse rather than weakening the security model: a command is now split (quote-aware — handles an operator glued directly onto a preceding quoted argument or redirect with no space, e.g. `echo "---";next`) on `&&`/`||`/`;`/`|`, and **each resulting piece is validated independently** against the same read-only allowlist — a chain or pipe of read-only commands is itself read-only, by construction. `cd`, `echo`, `sort`, `head`, and `tail` were added to the allowlist (zero security cost — none can write or execute arbitrary code). A real file redirect (`>`, `>>`, `<`) or backgrounding (`&`) still denies the **entire** command outright; only filesystem-inert stream redirects (`2>/dev/null`, `2>&1`) are recognized as safe and skipped. Command substitution (`` ` ``, `$(...)`) is still denied unconditionally, unparsed.
+
+  Verified against the exact commands a real ACP review dispatch produced and had denied: all now allow. Verified every pre-existing malicious pattern (`rm -rf`, `git checkout`, piping to a non-allowlisted binary, command substitution, `cd /tmp && rm -rf *`) still denies. 4 new tests in `tests/host-acp.test.js` (2 confirmed to fail without the fix); all 29 pre-existing tests in that file pass unchanged.
+
+### Fixed
+
+- **A `devteam review` run could still halt with `resolve-escalation` on `red-team` or `security-review`, not just `peer-review`.** The earlier fix that made a peer-review disagreement terminal in tracks with no build stage (`review-only`, `review-pr`) checked `stageDef.stage === "stage-05"` specifically — it only ever covered peer-review. Every other stage in those tracks has the identical characteristic: no build stage exists to act on its findings, so re-dispatching the same stage against unchanged code always reproduces the same must-fix findings, and escalating asks a human to rule on someone else's code the review was never going to change anyway. A real `devteam review` run against an external repo hit this exact wall on `red-team` (stage-04c) instead.
+
+  `core/orchestrator.js#next()`'s check is now generalized to `!stageList.includes("build")`, independent of which stage it's evaluating — any track with no build stage treats a `FAIL`/`ESCALATE` gate as terminal for *every* stage in it, not one hardcoded name. Tracks with a real build stage (`full`, `quick`, `nano`, `loop`, `hotfix`, `dep-update`, `config-only`, `refactor`) are unaffected — verified explicitly for `red-team` there too.
+
+  5 new tests in `tests/next.test.js` (3 confirmed to fail without the fix, one using the real halt message verbatim as a fixture) cover `red-team`/`security-review` FAIL and ESCALATE in `review-only`, a multi-stage progression to `pipeline-complete`, and the `full`-track regression check.
+
+### Fixed
+
+- **`README.md` was never writable by any role in the entire pipeline, and no Python project manifest file (`pyproject.toml`, `requirements.txt`, etc.) was writable either.** A real Python/FastAPI build's `design-spec.md` explicitly assigned `pyproject.toml` and `README.md` to `platform` (its acceptance criteria required both), but `build`'s `allowedWrites`/`roleWrites` only ever anticipated a JS/Node project shape — `package.json`, `tsconfig.json`, ESLint configs, `Dockerfile`. `platform` correctly refused to write outside its own authorized boundary rather than sneak around it, and QA could never pass acceptance criteria that depended on files nothing was ever allowed to create.
+
+  `README.md`, `pyproject.toml`, `requirements.txt`, `requirements-dev.txt`, `setup.py`, `setup.cfg`, `Pipfile`, and `Pipfile.lock` now sit alongside the existing JS/Node project files in `build`'s stage-level `allowedWrites` and in `backend`'s and `platform`'s `roleWrites` — the same two roles that already carry `package.json`/`Dockerfile`/etc. 2 new contract tests (confirmed to fail without the fix).
+
+### Fixed
+
+- **A real headless `devteam run --track loop` on codex refused to build anything, citing `"pipeline/context.md is missing... creating it is outside this dispatch's allowed writes"` as a blocker.** `coding-principles.md` — read by backend/frontend/platform/qa/reviewer/security via their own Standing Rules — mandates appending `## Assumptions`/`QUESTION:`/`CONCERN:` entries to `pipeline/context.md` before the first `Write`/`Edit` of any build task, but `stages.js`'s `allowedWrites` for `build`, `pre-review`, `security-review`, `peer-review`, `qa`, `accessibility-audit`, `observability-gate`, `performance-budget`, `verification-sweep`, and `deploy` never listed it. claude-code masked this gap — its real permission grant is a blanket `Write(pipeline/**)`, broader than the advisory `allowedWrites` list it renders into the prompt — but codex's post-hoc write-audit enforces the literal list, so it correctly refused to follow its own mandated protocol, then refused to build at all rather than proceed with an unauthorized write.
+
+  `pipeline/context.md` is now in `allowedWrites` (and each affected role's `roleWrites`, for `build`) on every stage whose dispatched role brief reads `coding-principles.md`. A new contract test (`tests/contract.test.js`, confirmed to fail without the fix) checks every stage/role combination generically, so a future stage or role gaining the same mandate without the matching write authorization is caught automatically instead of waiting for a live codex run to surface it. Two existing golden-snapshot tests (`tests/compact-qa-fold.test.js`) updated to reflect the intentional `allowedWrites` change for `accessibility-audit`/`observability-gate`/`performance-budget`.
+
+### Fixed
+
+- **A long-running claude-code subagent dispatch could silently self-truncate at claude's own internal 10-minute background-task ceiling, completely independent of `--timeout-ms`.** Every stagecraft role prompt says "Use the X subagent for this workstream" — claude-code dispatches that via its own Task tool. That subagent dispatch has an internal background-task ceiling (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`, default 600000ms) that `core/adapters/headless.js`'s own `ctx.timeoutMs`/`DEFAULT_TIMEOUT_MS` has no visibility into or control over. When a subagent's turn ran long — a retry, a connection error, genuinely thorough verification work — claude silently terminated the wait and the top-level `--print` invocation exited anyway, reporting exit 0 with no gate: the exact "structural-input" failure ("clean exit, no output") the guard exists to catch, except here there *was* a real cause devteam never got to see (claude prints it to its own transcript: `Background tasks still running after 600s; terminating. Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.`). `--timeout-ms 0` ("wait indefinitely" at the devteam level) had zero effect on this — it's an unrelated mechanism that fired regardless.
+
+  `runHeadless()` now propagates `ctx.timeoutMs` into whatever env var the adapter declares for this via a new `printBackgroundCeilingEnv` capability (`claude-code` → `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`; the only host declaring `capabilities.subagents: true`, so codex/antigravity/acp/omnigent are untouched), with `0` meaning "wait indefinitely" identically on both sides — matching devteam's own `timeoutMs: 0` convention. Never overrides a value already set in the environment.
+
+  Verified against a real stuck run, not just synthetic tests: a `verification-beyond-tests` (stage-06d) dispatch that had hung 45 minutes and produced no gate under the old behavior completed cleanly in ~32 minutes with a real `WARN` gate once this fix was live — well past the 600s ceiling that used to cut it off. The same run then drove cleanly through `sign-off` → `deploy` → `retrospective` to `pipeline-complete` with zero further structural halts.
+
+  4 new tests in `tests/headless.test.js` (2 confirmed to fail without the fix) cover: the env var being set to `ctx.timeoutMs`, `0` propagating as `"0"`, an operator-set value never being overridden, and no env override at all for a host that doesn't declare `printBackgroundCeilingEnv`.
+
+### Fixed
+
+- **A real `pre-review` dispatch on codex escalated after exhausting its retry budget: `"Python dependency vulnerability review is incomplete because pip-audit cannot resolve pypi.org on this host."`** codex's `workspace-write` sandbox blocks network access by default — confirmed directly from the codex binary's own embedded guidance ("In `workspace-write`, network access still depends on your Codex configuration (for example `[sandbox_workspace_write] network_access = true]`)"), and empirically: `curl https://pypi.org` failed to resolve under the stagecraft-configured sandbox and succeeded (HTTP 200) once the flag was added, same sandbox mode otherwise. `hosts/codex/capabilities.json` had already (incorrectly) declared `enforces.network: true` — without this fix that was aspirational, not actual: every codex-routed project's dependency-vulnerability scan, and any other network-dependent build step, was unconditionally broken, and no retry could ever fix an environmental constraint like this one.
+
+  `hosts/codex/capabilities.json`'s `headlessCommand` now passes `-c sandbox_workspace_write.network_access=true`, enabling network access while keeping `workspace-write`'s filesystem restriction intact (a narrower grant than jumping to `danger-full-access`). 1 new test (confirmed to fail without the fix). Verified against the real project: `pre-review` re-dispatched after clearing the escalated gate.
+
+### Fixed
+
+- **A real `devteam run` on `hello-world-codex-loop` silently dropped `frontend` and `platform` from every `build` dispatch — including both retries — then exhausted its retry budget and escalated, because the same wrong role set could never actually fix what QA reported failing.** `inferActiveRoles()`'s `out_of_scope_items` keyword inference matched "frontend" in the requirements brief's "Frontend framework, build pipeline, or client-side routing" (scoping OUT heavy tooling, not frontend work entirely) and "infrastructure" in "... or cloud infrastructure" (scoping out deployment infra, not basic scaffolding like `pyproject.toml`/`README.md`), suppressing both roles from every build dispatch even though `design-spec.md`'s own `file_ownership` map explicitly assigned `src/frontend/**` to `frontend` and `pyproject.toml`/`README.md` to `platform`. QA then correctly failed on files that could never get built (missing `src/frontend/index.html`, `README.md`, `pyproject.toml`), and the driver kept re-running the same incomplete role set until the retry budget (2/2) was exhausted.
+
+  `inferActiveRoles()` now takes design (stage-02)'s `file_ownership` map as an optional fourth argument: any role design explicitly assigns owned files to is exempt from the `out_of_scope_items` keyword-inference suppression, since design is a later, more specific refinement of the initial brief. This override applies only to the weaker keyword-inference path, never to an explicit `active_roles` decision — a PM decision that conflicts with design's `file_ownership` is a real conflict, not something to silently paper over.
+
+  5 new tests in `tests/workstream-suppression.test.js` (the key case confirmed to fail without the fix — it suppressed both `frontend` and `platform`, not just the one keyword directly hit). Verified against the real project: `computeDispatchPlan` for `build` now includes all four roles instead of just `backend`/`qa`.
+
+### Fixed
+
+- **The same real headless `devteam run --track loop` on codex also cited `pipeline/design-spec.md` as an unconditional blocker** — "no implementation, lint run, or test run is possible against an absent approved design" — even though lean tracks (`quick`, `nano`, `loop`, `config-only`, `dep-update`) never run Stage 2 design, so its absence there is expected, not a defect. Build-role briefs assumed `design-spec.md` always exists with no fallback guidance for lean tracks; codex treated the gap as a hard blocker, claude-code happened to proceed anyway.
+
+  `coding-principles.md` — read by every build role via Standing Rules — now says explicitly: on a track with no `design-spec.md`, treat `pipeline/brief.md`'s acceptance criteria as the authoritative implementation contract, note the fallback as an `## Assumptions` entry, and proceed rather than refuse or escalate. A new contract test (confirmed to fail without the fix) pins the guidance's presence.
+
+### Fixed
+
+- **`devteam review`'s findings report rendered `[object Object]` for every peer-review finding, `(no summary provided)` for every red-team finding, and silently dropped a passing security-review's own informational findings entirely.** `core/report/collect-findings.js`'s collectors assumed the exact field names each stage's own JSON schema documents (`summary` for a finding's description, blockers as plain strings) — but real gate output drifts from that in practice: a real `devteam review` run against an external repo produced a `stage-05.json` whose `blockers` were structured objects (`{id, area, severity, file, scenario, workstream}`, adversarial-mode reviewer objections) rather than strings, a `stage-04c.json` using `.scenario` for `must_address_before_peer_review` items and `.text` for `noted_for_followup` items instead of the schema's `summary`, and a `stage-04b.json` (security-review) with a fully-populated `noted_for_followup` array (modeled on red-team's own convention, which isn't in stage-04b's schema at all) that the collector never read — it only ever scanned `pipeline/security-review.md` for literal `BLOCKER:` lines, so a clean PASS with only informational notes surfaced zero findings despite carrying four.
+
+  Two shared helpers — `describeItem()` (tries `.summary`/`.scenario`/`.text`/`.description`/`.claim` in order, passes a plain string through unchanged) and `fileLineFromItem()` (prefers an item's own `.file` field, including the `path:NN-MM` range form, before falling back to parsing the description text) — replace direct field access across every collector (red-team, security-review, peer-review, mutation, verification-beyond-tests). `mkFinding()` itself gained a last-line-of-defense guard so a future collector regression handing it a raw object degrades to the existing "(no summary provided)" placeholder instead of ever reproducing `[object Object]` again. `collectSecurityReviewFindings` now reads `gate.noted_for_followup` in addition to `BLOCKER:` lines, regardless of which one (or both) a gate happens to carry findings in.
+
+  5 new tests in `tests/findings-report.test.js` (all 5 confirmed to fail without the fix) lock in each case using the real pegasus gate shapes verbatim, plus the defense-in-depth guard directly.
+
+### Fixed
+
+- **The C2 guard against claude-code's 4000-char headless prompt limit was dead code on every real dispatch — fixed at its actual composition point, and against the real constraint.** `core/orchestrator.js` always pre-composes the invocation prompt before dispatch — prepending `/goal "<goalCondition>"\n\n` for goal-loop hosts (claude-code, codex) — and hands that already-composed string to `core/adapters/headless.js`'s `runHeadless()` as `preRenderedPrompt`. The existing C2 fallback chain is gated on `!preRenderedPrompt`, so it never once ran in production — only in unit tests that call `runHeadless` directly. A dispatch carrying enough `patchItems` (the normal auto-fix/targeted-retry mechanism) to push the *composed* prompt over 4000 chars — even when the base role prompt alone was comfortably under — silently hit claude-code's "Goal condition is limited to 4000 characters" rejection, exit 0, no gate written, no error surfaced.
+
+  The fallback chain now lives where the prompt is actually assembled: `core/orchestrator.js`'s `dispatchWorker`, via a new shared `core/adapters/render-helpers.js#shrinkComposedPrompt` (used by both call sites, so the drop-patchItems / drop-inlined-framework logic isn't duplicated). It tries, in order: drop `patchItems`, drop inlined framework content, drop the `/goal` directive itself.
+
+  That last step turned out to matter more than expected. Reading claude-code's own binary (`strings` against the compiled executable) and confirming against the real CLI: the 4000-char check lives *only* inside the `/goal` slash command's own handler, measuring whatever text follows `/goal ` — in `--print` mode the whole piped stdin is one message with no way to separate "the goal" from "the rest of the prompt", so the check sees the entire composed string, not just the short `goalCondition` template. A plain prompt with no `/goal` prefix has no such ceiling at any size (verified directly: identical filler text with the prefix removed dispatches fine). The check is therefore skipped entirely when there's no `goalCondition` to prefix, and once the prefix is dropped as a last resort the dispatch simply proceeds — there is nothing left to enforce, so no further fallback or rejection is needed.
+
+  Scoped precisely to the hosts that actually enforce this ceiling: a new `promptCharLimit: 4000` capability on `claude-code`, `codex`, and `antigravity` (the only three adapters that route through `runHeadless`'s CLI-pipe transport) — ACP, generic, openai-compat, and omnigent are untouched, since none of them share this constraint or even call `runHeadless`.
+
+  Two tests in `tests/orchestrator.test.js` (a real headless dispatch through `runStageHeadless`, `DEVTEAM_HEADLESS_COMMAND=cat` to capture the exact bytes sent) cover the patchItems-drop recovery and the drop-the-/goal-directive-and-still-dispatch case; both verified to fail without the fix.
+
+### Fixed
+
+- **claude-code headless dispatches no longer silently stall once a prompt carries phase-37.2's inlined framework content.** `core/adapters/headless.js`'s "C2" guard against claude-code's `--print` mode 4000-char "Goal condition" limit (which rejects the prompt and exits 0 with no gate written — a silent, structural-input halt) only ever backed off `patchItems`. It never accounted for `prompts.inline_framework` (default `true` since 37.2), which inlines `AGENTS.md`, `.devteam/rules/*.md`, and the role brief — ~18-22 KB — directly into the prompt. Every claude-code headless dispatch past the first couple of stages was therefore guaranteed to exceed the limit regardless of `patchItems`, with no error surfaced.
+
+  The fallback chain now backs off in order: drop `patchItems`, then drop the inlined framework/role-brief content (`core/adapters/render-helpers.js#shouldInlineFramework` gained a per-call `ctx.inlineFrameworkOverride === false` escape hatch, independent of `.devteam/config.yml`), and — if still over budget after both — reject with a clear error instead of spawning a dispatch that would silently no-op.
+
+  Three new tests in `tests/headless.test.js` cover each branch of the chain (patchItems-only overflow, framework-only overflow, and the hard-reject case), verified to fail without the fix.
+
+  Honest scope note: projects on `prompts.inline_framework: true` (the default) with a large `AGENTS.md`/rules set routed to claude-code headless may still want `inline_framework: false` set explicitly for that host — this fix stops the silent stall, but a run that leans on the fallback loses the cache-prefix benefit 37.2 was for on every affected dispatch.
+
+### Fixed
+
+- **A headless dispatch could end its turn with only a prose clarifying question and no gate at all, halting the run with a "structural-input" error indistinguishable from a crash.** A real `devteam run` sign-off dispatch on a `quick`-track promotion asked "What would you like me to do here?" instead of writing `pipeline/gates/stage-07.pm.json` — even though `roles/pm.md`'s own "Gate Writing Rules" already said to use `status: ESCALATE` when blocked, and `pipeline/context.md` already carried a `PRINCIPAL-RULING` resolving the exact ambiguity the model raised. Root cause: the composed stage prompt is entirely declarative (`## Objective`, `## Read first`, `## Allowed writes`, `## Artifact`, `## Gate to write`) with no imperative line telling the model this is a one-shot, non-interactive dispatch — it read as reference material rather than an actionable task.
+
+  Two reinforcing fixes: `rules/gates-core.md` (read first by every role, every stage) gained a "Non-interactive execution: always write the gate" section explaining there is no human to answer a question, that `status: ESCALATE` with `escalation_reason` is the normal way to raise a blocking concern, and to check `pipeline/context.md` for an existing `PRINCIPAL-RULING` before escalating on something already settled. `core/adapters/render-helpers.js`'s `appendGateFooter` — shared by every host adapter, always the last thing rendered — repeats the same directive as the very last line before the gate JSON skeleton, for maximum recency.
+
+  2 new tests (`tests/render-helpers.test.js`, `tests/contract.test.js`, both confirmed to fail without the fix) pin the directive's presence. Verified against the real failure: re-dispatching the same stage/role/track with the fix in place now produces a correct `PASS` gate with a genuine `signoff_basis` instead of a question.
+
+### Fixed
+
+- **A real `devteam run --track loop` halted with `(merge-failed) — reason: single-workstream stage; no merge needed` right after its one dispatched workstream (backend) passed.** `next()` correctly identified the completed workstream and asked to merge, but `mergeWorkstreamGates()` refused unconditionally for any stage with one dispatched role — even though `workstreamId()` already collapses a single-workstream stage's gate path to the bare `pipeline/gates/<stage>.json`, the same path the merged stage gate would use, so there's normally nothing left to merge by the time `next()` asks. The actual trigger: `roles/backend.md` (and `roles/frontend.md`) still hardcoded the multi-role `pipeline/gates/stage-04.<role>.json` suffix unconditionally in their "On a Build Task" procedure, so the dispatch wrote a role-suffixed gate instead of the bare one — and an already-`devteam init`'d project's installed role brief won't pick up a source fix until it's re-initialized, so the same stale write can still happen even after this fix ships.
+
+  `mergeWorkstreamGates()` now handles the single-workstream case instead of refusing: if the bare stage gate already exists, treat the merge as a no-op success; if only a legacy role-suffixed gate exists, promote it to the stage gate path. `roles/backend.md`/`roles/frontend.md` now defer to the dynamic path stated in each dispatch's "## Gate to write" section rather than hardcoding a suffix that's wrong whenever a track collapses the stage to one workstream. A contract test from an earlier fix in this area was tightened to allow a *qualified* mention of the bare path (explaining the collapse) while still catching an *unqualified* one (the original drift class).
+
+  3 new/updated tests (`tests/orchestrator.test.js`, `tests/contract.test.js`, all confirmed to fail without the fix). Verified against the real stuck project: `mergeWorkstreamGates` promoted its existing `stage-04.backend.json` to `stage-04.json` and the pipeline advanced to `qa`.
+
+### Fixed
+
+- **`devteam next`/`devteam run` stalled forever on a `loop`-track build even after the single dispatched workstream passed**, reporting `1/4 workstreams complete... remaining: frontend, platform, qa` for roles the `loop` track never dispatches in the first place. The multi-role completed/remaining computation used the static 4-role `stageDef.roles` matrix instead of `rolesForStage()` (which correctly narrows `build` to `["backend"]` on `loop`) — a fix already applied for `stage-05` (peer-review's own track-dependent role narrowing) but never generalized to `stage-04` (build), which varies by track in exactly the same way.
+
+  Both affected spots in `core/orchestrator.js` (`next()`'s driving decision and `summary()`'s status display) now call `rolesForStage()` unconditionally instead of special-casing `stage-05` — a strict superset since `rolesForStage()` already falls back to `stageDef.roles` for every stage/track it doesn't special-case, so behavior elsewhere is unchanged. New regression test in `tests/next.test.js` (confirmed to fail without the fix) pins a `loop`-track build with only `backend`'s gate present resolving to `merge`, not `continue-stage` waiting on roles that will never run.
+
+### Fixed
+
+- **A `review_shape: "matrix"` peer-review stage no longer halts with a false "produced no gate" when it fully passed.** A matrix-shaped gate (e.g. `stage-05.<role>.json`) is derived from *sibling* workstreams' `by-*.md` review files via the idempotent rescan in `core/adapters/headless.js`, which runs at each workstream's own process close. The role that finishes first sees none of its later-finishing peers' review files yet and closes with `gatePath: null` — even though a slower sibling's own rescan, minutes later, derives and writes that exact gate as a side effect of finishing. That `null` was baked permanently into the early-finishing role's dispatch result, so `core/driver-dispatch.js`'s `wroteGate` check (every workstream needs a gate) evaluated false and the driver halted with `"structural-input"`, even though every gate on disk was `PASS`.
+
+  `core/orchestrator.js#runStageHeadless` now re-checks disk once more after each dispatch wave settles — i.e. once every sibling in that wave has actually finished — for any clean-exit result still missing a gate, and patches it in if one materialized late. Scoped tightly to `exitCode === 0`, not timed out, not a stub gate, so a genuine no-gate failure still halts exactly as before.
+
+  Two new tests in `tests/orchestrator.test.js` (real headless dispatch via `DEVTEAM_HEADLESS_COMMAND`, four concurrent roles) cover both the recovery case and the still-halts-on-a-genuine-failure case; the recovery test is verified to fail without the fix.
+
+  Honest scope note: this recovers the gate *path* onto the dispatch result so the run doesn't falsely halt. It does not retroactively run the observed-usage/prompt-pack-version/tool-budget telemetry patches that normally stamp a gate as it completes — a late-recovered gate can end up missing `_orchestrator_observed` and similar stamps that its on-time siblings carry. Cosmetic, not blocking; a follow-up if the missing telemetry turns out to matter for corpus/eval analysis.
+
+### Fixed
+
+- **`roles/pm.md`'s "On a Sign-off Request" section told the model to write `pipeline/gates/stage-07.json` — the merged *stage* gate path — but PM's actual per-workstream gate (per `buildDescriptor`/`stages.js`'s `roleWrites`) is `pipeline/gates/stage-07.pm.json`.** Sign-off is a multi-role stage (`pm` + `platform`, each writing its own workstream gate that the orchestrator later merges); the role brief's prose never caught up to that split. A new contract test (`tests/contract.test.js`, confirmed to fail without the fix) checks every multi-role stage's role briefs for a hardcoded reference to the bare, unqualified stage gate path, so this class of drift is now caught for `build`, `peer-review`, and `sign-off` alike, not just this one instance.
+
+### Fixed
+
+- **A real build flagged `platform`'s gate FAIL over `"[write-audit] unauthorized write: pipeline/verification-receipts/<hash>.json"` — a file `platform` never touched.** That file is written by the orchestrator's own post-dispatch stamping step (`core/verify/runner.js#writeReceipt`), never by the dispatched agent, and the directory is shared across every workstream's own stamp step rather than scoped per-role — a concurrently- or previously-stamped sibling workstream's receipt can show up in a different workstream's own before/after write-audit diff. `isIgnoredRuntimeArtifact()` (already used for the same purpose with Python/test cache directories) now also excludes `pipeline/verification-receipts/`. 1 new test (confirmed to fail without the fix). Verified against the real project: re-dispatching the previously-affected workstream no longer flags the receipt file.
+
+### Fixed
+
+- **`devteam review`/`devteam review-pr` halted with `resolve-escalation` on any real peer-review disagreement, even though the disagreement was already fully captured as a finding.** `core/orchestrator.js#next()`'s peer-review retry/escalation logic assumes a build stage sits between retry attempts — the same reviewers see *different* code next time because a build workstream acted on their blockers. `review-only` and `review-pr` have no build stage at all (they exist specifically to review code the pipeline never touches). Retrying there just re-dispatches the same reviewers against the same, unchanged code, reproduces the identical disagreement, burns a full `retryDelayMs` wait for nothing, and then escalates asking a human to rule on someone else's code the review was never going to change anyway. The disagreement itself *is* the review's output — `core/report/collect-findings.js` already reads it straight from the merged gate's blockers and the `by-*.md` `CHANGES_REQUESTED` content, independent of what `next()` recommends.
+
+  A `FAIL` or `ESCALATE` peer-review gate — including the case where an individual reviewer writes `ESCALATE` directly into its own workstream gate (`mergeWorkstreamGates` then propagates that to the merged gate) — is now terminal in any track with no build stage to depend on (checked generically via `!stageList.includes("build")`, so it covers any future read-only track too, not just `review-only`/`review-pr` by name): `next()` returns `pipeline-complete` instead of `resolve-escalation`, exactly like PASS/WARN. The gate file itself is untouched — still genuinely `FAIL`/`ESCALATE` for anything reading it directly (`devteam validate`, etc.) — only the orchestration decision changes. Tracks with a real build stage (`full`, `quick`, `nano`, `loop`, `hotfix`, `dep-update`, `config-only`, `refactor`) are unaffected — verified explicitly, peer-review still `fix-and-retry`s and eventually escalates there exactly as before.
+
+  Six new tests in `tests/next.test.js` (3 confirmed to fail without the fix) cover: `review-only`/`review-pr` FAIL and ESCALATE both resolving to `pipeline-complete`, the gate file staying untouched, and `full` track's unchanged behavior for both statuses.
+
+### Fixed
+
+- **`devteam review` had no way to raise (or disable) the per-dispatch timeout, unlike `devteam run`.** Every dispatch is hardcapped at `core/adapters/headless.js`'s `DEFAULT_TIMEOUT_MS` (10 minutes) unless the caller overrides `ctx.timeoutMs` — `devteam run` has exposed `--timeout-ms` for this since it was added, but `core/cli/commands/review.js` never accepted or passed one through to `core/driver.js#run()`. A thorough adversarial/security-review stage over a large diff can legitimately run past 10 minutes; one real run was killed mid-`Write` while producing its final report, with no way to ask for more time short of editing `headless.js` directly.
+
+  Added `--timeout-ms` to `devteam review`, threaded through to `runDriver({ timeoutMs })` exactly as `devteam run` already does — `0` disables the timeout entirely, matching `run`'s own contract. `docs/reference/cli.md` regenerated (`npm run docs:generate`) to pick up the new flag.
+
+  Two new tests in `tests/review-command.test.js`: a dispatch that outlives a short `--timeout-ms` is killed (confirmed to fail without the fix — the flag was previously either silently ignored or rejected as unrecognized, so no transcript was ever produced to inspect), and `--timeout-ms 0` disables it entirely.
+
+### Fixed
+
+- **A real `hello-world-codex-loop` run escalated on `pre-review` over a genuine Starlette CVE, but `devteam next` reported an unrelated, stale "build" ruling as current — so `devteam fix-escalation` kept applying instructions about a completely different, already-resolved problem and never touched the real blocker.** `core/driver.js` injects an identical boilerplate `decision_needed` template on every convergence-exhausted escalation ("Add fix instructions to pipeline/context.md above devteam markers, then: devteam restart `<stage>` && devteam run"), and `devteam ruling`'s documented `--topic` auto-derivation echoes that same boilerplate into the ruling's own topic text. Since two convergence-exhausted escalations for completely different stages always shared this instructional filler, `devteam next`'s ruling-staleness check treated the token overlap as a real content match regardless of substance — the single most common escalation type in practice, effectively defeating staleness detection for it.
+
+  `instructions`, `above`, `devteam`, `markers`, `then`, and `restart` now join the existing weak-token exclusion list used by that match. 1 new test reproduces the exact real-world data end-to-end through the CLI (confirmed to fail without the fix). Verified against the real project: `devteam next` now correctly reports the stale ruling doesn't match and asks for a fresh one targeting the actual gate.
+
+### Fixed
+
+- **The safety stoplist false-triggered on a brief that explicitly excluded the flagged topic**, halting a `--track loop` run on a hello-world app with no auth at all because its own out-of-scope paragraph said "It does not include authentication..." — naming the word was enough to trip the keyword match regardless of the negation right in front of it. `findStoplistMatches` now scans the full sentence around each candidate match for a negation cue (`does not include`, `out of scope`, `excludes`, `without`, `never`, etc.) in either direction relative to the keyword; a genuinely negated mention no longer counts, while any non-negated mention — including a later, different sentence — still triggers exactly as before. The "err toward false positives" bias documented in the file is preserved for real ambiguity.
+
+- **The stoplist's remedy message told the user to run a command that doesn't exist.** `"Use /pipeline instead"` is a stale ghost-command reference — no `/pipeline` command exists anywhere in `devteam` (a prior sweep already replaced this exact class of leftover slash-command prose in `rules/`/`roles/`, but missed this file and two doc examples) — and is especially unhelpful in headless mode, where there's no chat surface to type a slash command into. Changed to the actual actionable instruction: `"Re-run with --track full instead."`
+
+  6 new tests in `tests/stoplist.test.js` (all confirmed to fail without the fix). Verified against the real project's brief text that previously false-positived — the stoplist now clears.
+
+- **All one-off model work now crosses the host-adapter invocation boundary.** Accessibility remediation, Principal rulings/escalation application, and the optional run-end Reflector previously contained core-owned `headlessCommand` parsing or model-process spawning paths. They now use `core/adapters/invoke-task.js`, which creates a narrowly scoped synthetic descriptor and calls the resolved adapter's existing `invoke()` transport. This gives those calls the same timeout, transcript, telemetry, HTTP/ACP support, and write-audit behavior as stage dispatches. Reflector output is an ephemeral allowlisted JSON file rather than captured process stdout, so HTTP-native and protocol adapters can participate without a CLI escape hatch. A regression test prevents those three core workflows from importing `node:child_process` or parsing a host command. Honest scope note: this restores the existing locked adapter boundary; it does not isolate the underlying in-place write audit or add a new adapter method.
+
+- Add opt-in `pipeline.workstream_isolation: git-worktree` for parallel build roles. Each role starts from the same dirty/untracked-aware snapshot, runs in a detached worktree, and reconciles only authorized paths; clean text overlap is three-way merged while unauthorized writes, unsafe symlinks, and unresolved conflicts fail visibly.
+- Clarify that feature artifact isolation (`pipeline.isolation`) and coding-agent checkout isolation are independent controls, and record the core-managed reconciliation contract in ADR-019.
+
+**Honest scope note:** worktree isolation currently applies only to multi-role headless stage-04 builds in Git repositories. It is a correctness/attribution boundary, not an OS sandbox, and does not isolate peer-review fan-out.
+
+### Added
+
+- **`devteam run` now materializes `pipeline/run-plan.json` before any model dispatch.** The versioned plan records track provenance, the ordered preflight stage-disposition snapshot and skip reasons, candidate role/host/model routes, track-aware workstream counts, ceremony estimates, and a SHA-256 execution fingerprint. `--resume` reuses the original plan only when stable track/config/routing controls still match; changed configuration now fails with `ERUNPLANDRIFT` instead of silently changing an in-progress run. Dynamic right-sizing and conditional decisions are marked for runtime reevaluation. Terminal preflight output links the plan and shows its fingerprint.
+
+### Changed
+
+- **Ordinary feature assessment now defaults to the four-slot `loop` track instead of the 18-slot `full` track.** Specialized hotfix, dependency, config-only, nano, and quick signals retain precedence; explicit `--track`, track records, custom stages, and the factory `default_track` fallback for description-less runs are unchanged. Security-triggered code work on `loop`, `nano`, or `quick` now promotes to `full`, because none of those tracks includes security-review. See ADR-018.
+
+- Raise the supported runtime floor to Node.js 22 after Node 20 reached end-of-life, test
+  Node 22 and 24, deduplicate CI checks, collect informational coverage after merges, and
+  cancel superseded runs.
+
+- **OpenAI-compatible explicit cache markers now survive real orchestrated dispatch.** `runStageHeadless()` always passes a pre-rendered prompt to adapters, but `hosts/openai-compat/invoke.js` previously emitted its `cache_control` content blocks only when that argument was absent. With `hosts.openai-compat.caching.enabled: true`, `invoke()` now recovers the four layers when their joined text exactly matches the pre-rendered prompt; a transformed prompt remains a plain string so cache recovery cannot discard orchestration content. The regression test exercises the same pre-rendered third argument used by `devteam run`, rather than the adapter-only null-prompt path.
+
+### Added
+
+- Add cross-run/project `devteam performance calibration`, privacy-bounded track-fit feedback, cache and knowledge-selection counters, explicit Phase 41 readiness gates, and `devteam log --timeline` over durable execution events.
+
+- **Bounded Project Knowledge Pack with evaluated learning.** Stage prompts now
+  combine detected repository conventions, reviewed project patterns, and
+  retrieved semantic history under one provenance-labeled knowledge block.
+  `devteam init`, first stage use, and `devteam standards discover` maintain a
+  fingerprinted `.devteam/knowledge/project.json` containing safe, compact stack
+  and verification facts. Promoted patterns carry an evaluation window; guidance
+  that reaches the configured recurrence threshold is quarantined from prompt
+  selection until explicitly demoted, revised, and re-promoted. Lifetime counters
+  and audit history remain intact. *Honest scope note:* non-recurrence is reported
+  as observation, not causal proof, and semantic-memory retrieval remains
+  headless-only and opt-in.
+
+---
+
 ## [0.10.0] — 2026-08-05
 
 ### Fixed
