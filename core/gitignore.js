@@ -32,6 +32,7 @@ pipeline/changes/*/pre-review-output.txt
 pipeline/changes/*/changed-files.txt
 .devteam/memory/
 .devteam/patterns/
+.devteam/knowledge/
 .devteam/evidence-project-id
 .devteam/corpus/
 .devteam/evals/

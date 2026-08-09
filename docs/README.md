@@ -28,6 +28,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [reference/README.md](reference/README.md) — generated reference index: CLI flags, host capabilities, stage table, prompt budget, environment variables
 - [memory.md](memory.md) — persistent project memory: embedder options and shared store
 - [pattern-learning.md](pattern-learning.md) — project-local `devteam patterns` loop for turning reviewed blockers, warnings, follow-ups, auto-retry failures, and positive examples into bounded coding-agent guidance
+- [project-knowledge.md](project-knowledge.md) — the bounded, provenance-bearing context pack that combines repository facts, reviewed patterns, and retrieved history for every coding agent
 - [observability.md](observability.md) — OpenTelemetry span schema and collector setup
 - [capacity-strategy.md](capacity-strategy.md) — latency-aware routing, remote capacity, prompt caching, and persistent-session policy
 - [evidence.md](evidence.md) — offline readiness, explicit resolution acceptance, and privacy-safe export

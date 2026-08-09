@@ -74,7 +74,7 @@ function toEntry(r) {
 }
 
 /**
- * Retrieve and budget "Prior Project Knowledge" entries for one stage
+ * Retrieve and budget attributed history entries for one stage's Project Knowledge Pack.
  * dispatch.
  *
  * @param {object} opts

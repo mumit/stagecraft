@@ -122,7 +122,7 @@ Manual `devteam memory ingest` remains the only way to *start* using memory in a
 
 ## Prompt injection (30.4)
 
-Once `.devteam/memory/` exists and `memory.inject` isn't `false` (both true by default once you've ingested), every **headless** stage dispatch (`devteam run`, `devteam stage --headless`) queries the store for the top `memory.inject_top_k` (default 3) chunks similar to the stage's feature/brief text, above `memory.inject_similarity_floor` (default `0` — any positive cosine alignment), and renders them into a bounded (≤1,200 bytes) `## Prior Project Knowledge` section with kind + source attribution per entry — same budget discipline as `Known Project Patterns` (`core/patterns.js` `selectForDescriptor()`).
+Once `.devteam/memory/` exists and `memory.inject` isn't `false` (both true by default once you've ingested), every **headless** stage dispatch (`devteam run`, `devteam stage --headless`) queries the store for the top `memory.inject_top_k` (default 3) chunks similar to the stage's feature/brief text, above `memory.inject_similarity_floor` (default `0` — any positive cosine alignment), and renders them into the retrieved-history subsection of the [Project Knowledge Pack](project-knowledge.md). Results are bounded to ≤1,200 bytes with kind + source attribution per entry.
 
 Stage 2 (design) additionally queries the **org-shared** store for `kind: adr`, making the Principal's `devteam architecture lookup` step automatic instead of a role-brief suggestion (`roles/principal.md` still documents the manual queries — for deeper investigation, or when injection is off/no store exists).
 

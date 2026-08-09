@@ -175,7 +175,7 @@ for (const host of LAYERED_HOSTS) {
       const rendSome = adapter.renderStagePromptLayers(withContext, ctx);
 
       assert.equal(rendNone.layers[2], "", `${host}: layer 3 must be empty with no learned context`);
-      assert.match(rendSome.layers[2], /Known Project Patterns/);
+      assert.match(rendSome.layers[2], /Project Knowledge Pack/);
       assert.match(rendSome.layers[2], /Document user-visible HTTP endpoints/);
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });

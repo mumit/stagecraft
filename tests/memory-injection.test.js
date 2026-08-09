@@ -208,7 +208,8 @@ describe("orchestrator: runStage renders priorKnowledge into every workstream's 
     const plan = runStage("build", { cwd, priorKnowledge: pk });
     assert.ok(plan.workstreams.length > 1, "build is a multi-role stage");
     for (const ws of plan.workstreams) {
-      assert.match(ws.prompt, /## Prior Project Knowledge/);
+      assert.match(ws.prompt, /## Project Knowledge Pack/);
+      assert.match(ws.prompt, /### Retrieved history/);
       assert.match(ws.prompt, /\[brief\] Prior notes about SMS opt-in\. \(source: pipeline\/brief\.md\)/);
     }
   });
