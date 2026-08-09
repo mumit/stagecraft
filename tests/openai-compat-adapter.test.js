@@ -86,6 +86,10 @@ describe("openai-compat tools", () => {
   const { buildTools, executeTool, executeBash } = require(toolsPath);
 
   describe("buildTools", () => {
+    it("offers no tools when a read-only coordinator disables them", () => {
+      assert.deepEqual(buildTools({ disableTools: true, toolBudget: ["Read"] }), []);
+    });
+
     it("returns all four tools when no toolBudget declared", () => {
       const tools = buildTools({ toolBudget: null });
       const names = tools.map((t) => t.function.name);
@@ -594,6 +598,34 @@ describe("openai-compat invoke() agentic loop", () => {
       }],
     };
   }
+
+  it("fails closed when a tool-disabled turn returns a tool call", async () => {
+    const cwd = makeProject(`
+routing:
+  default_host: openai-compat
+hosts:
+  openai-compat:
+    api_key_env: OPENAI_COMPAT_TEST_KEY
+    models:
+      default: test/model
+`);
+    process.env.OPENAI_COMPAT_TEST_KEY = "sk-stub";
+    fetchQueue.push(makeApiResponse(null, [{
+      id: "forbidden",
+      type: "function",
+      function: { name: "write_file", arguments: JSON.stringify({ path: "escaped.txt", content: "bad" }) },
+    }]));
+    const { invoke } = require(invokePath);
+    await assert.rejects(
+      () => invoke(
+        fixtureDescriptor({ disableTools: true, allowedWrites: [] }),
+        fixtureContext(cwd, { captureOutput: true }),
+        "read-only prompt",
+      ),
+      /forbidden tool call/,
+    );
+    assert.equal(fs.existsSync(path.join(cwd, "escaped.txt")), false);
+  });
 
   it("writes a gate file when model outputs it via write_file tool", async () => {
     const cwd = makeProject(`

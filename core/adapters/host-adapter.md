@@ -133,6 +133,7 @@ interface StageDescriptor {
   template: string;                      // "build-template.md"
   expectedGate: object;                  // JSON Schema for the gate file
   goalCondition: string | null;          // Convergence condition for goal-loop hosts; null if none
+  disableTools?: boolean;                // Offer/permit no tools; fail closed where the protocol supports it
 }
 
 interface PipelineContext {
@@ -140,12 +141,14 @@ interface PipelineContext {
   feature: string;                       // free-text title
   cwd: string;
   isolation: "in-place" | "isolated";
+  captureOutput?: boolean;               // Return bounded assistant text without enabling transcript logs
 }
 
 interface InvokeResult {
   exitCode: number;
   gatePath: string | null;
   durationMs: number;
+  output?: string;                       // Present only when captureOutput was requested and supported
 }
 
 interface StatusReport {
@@ -163,6 +166,15 @@ adapter must send it verbatim when present. Core one-off workflows use
 descriptor and calls this same method; they do not parse `headlessCommand` or
 spawn a model process. A headless adapter therefore must implement `invoke()`
 even when it also declares `headlessCommand`.
+
+`captureOutput` is an additive adapter boundary used by read-only conversational
+turns. A CLI adapter captures at most 256 KiB of parsed assistant stdout;
+structured Claude/Codex streams are reduced to assistant text before capture.
+HTTP-native OpenAI-compatible and ACP adapters return the equivalent assistant
+content. It does not imply tool denial: `disableTools` is the separate request.
+OpenAI-compatible hosts advertise no tools and reject a returned tool call; ACP
+rejects every permission request. Same-user CLI processes must still be treated
+as unsandboxed.
 
 ## Lifecycle: how a stage actually runs
 
