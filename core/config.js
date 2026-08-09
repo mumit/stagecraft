@@ -80,10 +80,8 @@ const DEFAULTS = {
   },
   deploy: null,
   patterns: {
-    // 30.2(c): `devteam patterns review` flags a promoted pattern as a
-    // demotion candidate once stats.recurrence_after_injection reaches this
-    // many blockers recurring after injection. Flagging only — demotion
-    // stays an explicit `devteam patterns demote <id>` operator action.
+    // Recurrence threshold for outcome quarantine. Prompt selection excludes
+    // a pattern at this delta since promotion; demotion stays explicit.
     demotion_recurrence_threshold: 3,
   },
   learning: {
@@ -97,7 +95,7 @@ const DEFAULTS = {
   memory: {
     // 30.4: retrieval into stage prompts + auto-ingest at pipeline-complete.
     // Both sides of the loop gate on this one flag — false turns off both
-    // the "## Prior Project Knowledge" prompt section and the run-end
+    // the retrieved-history subsection of the Project Knowledge Pack and the run-end
     // auto-ingest (core/driver.js). Retrieval additionally requires
     // .devteam/memory/ to already exist (core/memory/inject.js); a project
     // that has never run `devteam memory ingest` sees no behavior change.

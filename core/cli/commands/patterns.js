@@ -50,15 +50,15 @@ function renderCandidate(candidate) {
 function renderPromoted(pattern, threshold) {
   const stats = pattern.stats || {};
   const recurrence = stats.recurrence_after_injection || 0;
+  const evaluation = patterns.evaluationForPattern(pattern, threshold);
   const lines = [
     `${pattern.id}  [${pattern.tier} · ${pattern.domain}]`,
     `  injected=${stats.injected || 0} recurrence_after_injection=${recurrence} noise=${stats.noise_reports || 0}`,
+    `  evaluation=${evaluation.status} since current promotion (injected=${evaluation.injections}, recurred=${evaluation.recurrences})`,
     `  prompt: ${pattern.prompt_text}`,
   ];
-  // 30.2(c): flag — never auto-demote. `devteam patterns demote <id>` is the
-  // only thing that moves a pattern back to candidate.
-  if (recurrence >= threshold) {
-    lines.push(`  ⚠ demotion candidate: recurrence_after_injection=${recurrence} ≥ ${threshold} — review with \`devteam patterns demote ${pattern.id}\``);
+  if (evaluation.status === "quarantined") {
+    lines.push(`  ⚠ quarantined from prompt injection: recurrences since promotion=${evaluation.recurrences} ≥ ${threshold} — revise via \`devteam patterns demote ${pattern.id}\` then re-promote`);
   }
   return lines.join("\n");
 }
@@ -199,6 +199,7 @@ function run(positional, commandFlags) {
     console.log(`Injected:      ${result.injected}`);
     console.log(`Recurrences:   ${result.recurrence_after_injection}`);
     console.log(`Noise reports: ${result.noise_reports}`);
+    console.log(`Quarantined:   ${result.quarantined}`);
     return;
   }
 

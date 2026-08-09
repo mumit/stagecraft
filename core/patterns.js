@@ -542,6 +542,10 @@ function promote({ cwd, candidateId, text }) {
     record.prompt_text = promptText;
     record.promoted_at = new Date().toISOString();
     record.stats = record.stats || { injected: 0, recurrence_after_injection: 0, noise_reports: 0 };
+    record.evaluation_baseline = {
+      injected: record.stats.injected || 0,
+      recurrence_after_injection: record.stats.recurrence_after_injection || 0,
+    };
     const promoted = loadPromoted(cwd).filter((item) => item.id !== record.id);
     promoted.push(record);
     savePromoted(cwd, promoted.sort((a, b) => a.id.localeCompare(b.id)));
@@ -584,6 +588,10 @@ function promote({ cwd, candidateId, text }) {
       injected: 0,
       recurrence_after_injection: 0,
       noise_reports: 0,
+    },
+    evaluation_baseline: {
+      injected: 0,
+      recurrence_after_injection: 0,
     },
     promoted_at: now,
   };
@@ -662,16 +670,31 @@ function scorePattern(pattern, descriptor, ctx, detected) {
   return score;
 }
 
+function evaluationForPattern(pattern, recurrenceThreshold = 3) {
+  const stats = pattern.stats || {};
+  const baseline = pattern.evaluation_baseline || {};
+  const injections = Math.max(0, (stats.injected || 0) - (baseline.injected || 0));
+  const recurrences = Math.max(0, (stats.recurrence_after_injection || 0) - (baseline.recurrence_after_injection || 0));
+  let status = "untried";
+  if (recurrences >= recurrenceThreshold) status = "quarantined";
+  else if (injections > 0 && recurrences === 0) status = "no-recurrence-observed";
+  else if (injections > 0) status = "monitor";
+  return { status, injections, recurrences, recurrence_threshold: recurrenceThreshold };
+}
+
 function selectForDescriptor({ cwd, descriptor, ctx = {}, budget = DEFAULT_BUDGET }) {
   const promoted = loadPromoted(cwd).filter((item) => item.status === "promoted" && item.prompt_text);
   if (promoted.length === 0) return [];
+  const recurrenceThreshold = require("./config").loadConfig(cwd).patterns.demotion_recurrence_threshold;
   const detected = { language: detectLanguage(cwd), framework: detectFramework(cwd, detectLanguage(cwd)) };
   const buckets = { blocker: [], warning: [], nudge: [], positive: [] };
   for (const pattern of promoted) {
+    const evaluation = evaluationForPattern(pattern, recurrenceThreshold);
+    if (evaluation.status === "quarantined") continue;
     const score = scorePattern(pattern, descriptor, ctx, detected);
     if (score <= 0) continue;
     const tier = buckets[pattern.tier] ? pattern.tier : "warning";
-    buckets[tier].push({ ...pattern, _score: score });
+    buckets[tier].push({ ...pattern, _score: score, _evaluation: evaluation });
   }
   const selected = [];
   for (const tier of ["blocker", "warning", "nudge", "positive"]) {
@@ -686,7 +709,7 @@ function selectForDescriptor({ cwd, descriptor, ctx = {}, budget = DEFAULT_BUDGE
     const nextBytes = bytes + Buffer.byteLength(text, "utf8");
     if (nextBytes > budget.maxBytes && out.length > 0) continue;
     bytes = nextBytes;
-    out.push({ id: item.id, tier: item.tier, domain: item.domain, prompt_text: text });
+    out.push({ id: item.id, tier: item.tier, domain: item.domain, prompt_text: text, evaluation: item._evaluation });
   }
   return out;
 }
@@ -812,6 +835,7 @@ function stats({ cwd }) {
   // live on in demoted.json), so the aggregate sums include both stores —
   // only the promoted/demoted counts themselves are reported separately.
   const withHistory = [...promoted, ...demoted];
+  const recurrenceThreshold = require("./config").loadConfig(cwd).patterns.demotion_recurrence_threshold;
   return {
     schema_version: SCHEMA_VERSION,
     observations: observations.length,
@@ -822,6 +846,7 @@ function stats({ cwd }) {
     injected: statSum(withHistory, "injected"),
     recurrence_after_injection: statSum(withHistory, "recurrence_after_injection"),
     noise_reports: statSum(withHistory, "noise_reports"),
+    quarantined: promoted.filter((item) => evaluationForPattern(item, recurrenceThreshold).status === "quarantined").length,
   };
 }
 
@@ -846,6 +871,7 @@ module.exports = {
   retire,
   demote,
   recordInjection,
+  evaluationForPattern,
   selectForDescriptor,
   exportSkill,
   stats,

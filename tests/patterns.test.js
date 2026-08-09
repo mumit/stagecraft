@@ -205,7 +205,8 @@ describe("patterns: CLI and prompt rendering", () => {
     const descriptor = buildDescriptor(getStage("build"), "backend", { workstreamId: "stage-04.backend" });
     descriptor.knownPatterns = patterns.selectForDescriptor({ cwd, descriptor, ctx: { cwd, feature: "add HTTP endpoint" } });
     const prompt = generic.renderStagePrompt(descriptor, { cwd, track: "full", orchestrator: "test", feature: "add HTTP endpoint" });
-    assert.match(prompt, /Known Project Patterns/);
+    assert.match(prompt, /Project Knowledge Pack/);
+    assert.match(prompt, /Reviewed patterns and outcome evidence/);
     assert.match(prompt, /structured backend error logs/);
   });
 });
@@ -393,7 +394,7 @@ fs.writeFileSync(path.join(gatesDir, "stage-04.${role}.json"), JSON.stringify({
     assert.deepEqual(injectedEvents[0].pattern_ids, [promoted.id]);
   });
 
-  it("a seeded recurrence scenario flags a promoted pattern as a demotion candidate in `devteam patterns review`", () => {
+  it("a seeded recurrence scenario quarantines a promoted pattern until revised", () => {
     const cwd = track(makeTargetProject());
     const promoted = promoteBackendPattern(cwd, "Add structured backend error logs before the observability gate.");
 
@@ -413,14 +414,24 @@ fs.writeFileSync(path.join(gatesDir, "stage-04.${role}.json"), JSON.stringify({
 
     const review = runCLI(["patterns", "review"], { cwd });
     assert.equal(review.status, 0, review.stderr);
-    assert.match(review.stdout, /demotion candidate/);
+    assert.match(review.stdout, /quarantined from prompt injection/);
     assert.match(review.stdout, new RegExp(`devteam patterns demote ${promoted.id}`));
+
+    const descriptor = buildDescriptor(getStage("build"), "backend", { workstreamId: "stage-04.backend" });
+    const quarantined = patterns.selectForDescriptor({ cwd, descriptor, ctx: { cwd, feature: "add HTTP endpoint" } });
+    assert.equal(quarantined.length, 0, "recurrence-heavy guidance must stop consuming prompt budget before manual review");
 
     // Re-running collect() over the same (unchanged) gate files must not
     // double-count the recurrence.
     const second = patterns.collect({ cwd });
     assert.equal(second.recurrenceFlagged, 0);
     assert.equal(patterns.list({ cwd }).promoted[0].stats.recurrence_after_injection, 3);
+
+    patterns.demote({ cwd, patternId: promoted.id, operator: "alice", reason: "revise failed guidance" });
+    const revised = patterns.promote({ cwd, candidateId: promoted.id, text: "Emit structured error logs at every backend boundary before verification." });
+    assert.equal(revised.evaluation_baseline.recurrence_after_injection, 3);
+    const retried = patterns.selectForDescriptor({ cwd, descriptor, ctx: { cwd, feature: "add HTTP endpoint" } });
+    assert.equal(retried.length, 1, "a revised re-promotion starts a new evaluation window without erasing history");
   });
 
   it("demote then re-promote round-trips: pattern returns to candidate, stops being injected, and history survives re-promotion", () => {

@@ -124,6 +124,9 @@ function run(positional, _flags) {
     console.log(`  - exists  AGENTS.md`);
   }
 
+  const knowledge = require(path.join(__dirname, "..", "..", "knowledge-pack")).refreshProjectFacts(cwd);
+  console.log(`  ✓ discovered ${knowledge.facts.length} project knowledge fact(s)`);
+
   const installedAdapters = [];
   for (const hostName of hosts) {
     console.log(`\nInstalling host adapter: ${hostName}`);
