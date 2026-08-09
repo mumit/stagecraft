@@ -57,7 +57,7 @@ What else was on the table and why we didn't pick those.
 | [015](015-workstream-scheduling.md) | Bounded workstream scheduling: per-host concurrency, queue telemetry, and retry backoff reasons without stage DAG reordering | Accepted |
 | [016](016-assess-by-default.md) | Assess-by-default on `devteam run`: inline `assess()` inference at any confidence when no `--track`/`track.json`/`custom_stages`, persisted to `pipeline/track.json` — supersedes ADR-006 §1 | Accepted |
 | [017](017-dag-wave-execution.md) | Stage DAG waves: curated `dependsOn[]` metadata (not a mechanical readFirst mirror), wave formation bounded by `autonomy.max_parallel_stages`, chain stays track-order, per-member failure/stall/heartbeat handling | Accepted (scoped to two named regions); implemented 2026-08-05 as phase-32 item 32.6 (PR #401) |
-| [018](018-isolated-build-workstreams.md) | Core-managed Git-worktree isolation and deterministic reconciliation for parallel build roles | Accepted |
+| [019](019-isolated-build-workstreams.md) | Core-managed Git-worktree isolation and deterministic reconciliation for parallel build roles | Accepted |
 
 ### Deferred
 

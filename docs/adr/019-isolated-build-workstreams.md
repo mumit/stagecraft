@@ -1,4 +1,4 @@
-# ADR 018 — Core-managed isolation for parallel build workstreams
+# ADR 019 — Core-managed isolation for parallel build workstreams
 
 **Status:** Accepted
 **Date:** 2026-08-08

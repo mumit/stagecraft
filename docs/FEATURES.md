@@ -235,7 +235,7 @@ shared-file edits are three-way merged; unauthorized paths, unsafe symlinks,
 and unresolved overlap are refused and make the workstream gate fail. The
 default is `shared`; single-role and peer-review stages are unchanged. This is
 a correctness boundary, not a security sandbox—the agent retains the invoking
-user's OS permissions. See [ADR-018](adr/018-isolated-build-workstreams.md).
+user's OS permissions. See [ADR-019](adr/019-isolated-build-workstreams.md).
 
 ### Secret scanning — blocks credentials from reaching the repo
 

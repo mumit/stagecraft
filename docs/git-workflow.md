@@ -136,7 +136,7 @@ The default is `shared`: all four build roles edit one checkout. The opt-in mode
 Stagecraft removes its temporary worktrees after reconciliation; no per-role
 branches or manual merge commits are created. Use manual branches only for
 separate-machine workflows, which remain outside the local orchestrator's
-scope. See [ADR-018](adr/018-isolated-build-workstreams.md).
+scope. See [ADR-019](adr/019-isolated-build-workstreams.md).
 
 **What the final branch history looks like:**
 

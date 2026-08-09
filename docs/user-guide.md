@@ -1880,7 +1880,7 @@ Requirements and boundaries:
 
 Re-run `devteam init --force` after upgrading an existing project so the
 managed `.gitignore` block includes `.devteam/worktrees/`. See
-[ADR-018](adr/018-isolated-build-workstreams.md) for the decision and rejected
+[ADR-019](adr/019-isolated-build-workstreams.md) for the decision and rejected
 alternatives.
 
 ### `/goal` injection for convergent stages
