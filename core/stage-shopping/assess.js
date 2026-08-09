@@ -15,11 +15,11 @@
 //   3. config-only  — all files are config (non-code), or description says config-only
 //   4. nano         — trivial change keywords (typo, rename, wording)
 //   5. quick        — minor/small/simple fix keywords
-//   6. full         — default
+//   6. loop         — explicit iteration language, or the safe day-to-day default
 //
 // After the base track is chosen:
 //   - migration safety required + non-full → bumped to "full"
-//   - security review required + lighter than "quick" → bumped to "full"
+//   - security review required + a code track without security-review → "full"
 
 const { needsMigrationSafety } = require("../guards/migration-heuristic");
 const { analyze: analyzeSecurityHeuristic } = require("../guards/security-heuristic");
@@ -32,6 +32,7 @@ const DEP_UPDATE_PATTERN = /\b(dep(endency|endencies|s)?[\s-]+(update|upgrade|bu
 const CONFIG_ONLY_PATTERN = /\b(config(uration)?|env(ironment)?|feature[- ]?flag|toggle|setting)s?\s+(only|change|update)\b/i;
 const NANO_PATTERN = /\b(typo|typos?|spelling|trivial|cosmetic|comment|docs?[- ]?only|rename[- ]?only|wording)\b/i;
 const QUICK_PATTERN = /\b(quick|minor|small|simple)\s+(fix|change|update|patch)\b/i;
+const LOOP_PATTERN = /\b(loop|iterate|iteration|iterative)\b/i;
 
 const DEP_FILE_RE = /^(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.ya?ml|bun\.lockb|requirements\.txt|Pipfile(\.lock)?|pyproject\.toml|Cargo(\.lock|\.toml)|go\.(sum|mod)|composer\.lock|Gemfile(\.lock)?|\.npmrc|\.yarnrc(\.yml)?)$/i;
 const CONFIG_FILE_RE = /\.(ya?ml|toml|ini|cfg|conf|env|json)$|^\..*rc(\..*)?$|^Dockerfile(\.|$)/i;
@@ -62,7 +63,7 @@ function assess(description = "", files = [], opts = {}) {
     }
   }
 
-  let recommendedTrack = "full";
+  let recommendedTrack = "loop";
   let confidence = "low";
   const allDep = files.length > 0 && files.every(isDepFile);
   const allConfig = files.length > 0 && files.every(isConfigFile);
@@ -91,10 +92,14 @@ function assess(description = "", files = [], opts = {}) {
     recommendedTrack = "quick";
     confidence = "medium";
     reasons.unshift("description matches quick-change keywords (minor/small fix)");
+  } else if (LOOP_PATTERN.test(desc)) {
+    recommendedTrack = "loop";
+    confidence = "medium";
+    reasons.unshift("description explicitly requests an iteration loop");
   } else {
-    recommendedTrack = "full";
+    recommendedTrack = "loop";
     confidence = "low";
-    reasons.unshift("no specific track indicators found; defaulting to full");
+    reasons.unshift("no specialized track indicators found; defaulting to the day-to-day loop");
   }
 
   // Heuristic overrides: bump lighter tracks up when safety stages are needed.
@@ -104,13 +109,13 @@ function assess(description = "", files = [], opts = {}) {
     confidence = "high";
   }
 
-  // Security review is absent only from nano (1-reviewer minimal track). Bump nano to
-  // quick which has a 4-area panel. dep-update is designed for dep bumps (package.json
-  // always fires the security heuristic); peer-review within dep-update handles it.
-  // config-only already contains security-review in its stage list.
-  if (securityRequired && recommendedTrack === "nano") {
-    reasons.push(`track bumped from "nano" to "quick": security review required`);
-    recommendedTrack = "quick";
+  // loop, nano, and quick have no security-review stage. A larger peer-review
+  // panel is not a substitute for the security role, so all three promote to
+  // full. dep-update is deliberately specialized (package manifests routinely
+  // fire the heuristic); config-only and hotfix already include security-review.
+  if (securityRequired && ["loop", "nano", "quick"].includes(recommendedTrack)) {
+    reasons.push(`track bumped from "${recommendedTrack}" to "full": security review required`);
+    recommendedTrack = "full";
     confidence = "high";
   }
 
@@ -125,6 +130,7 @@ module.exports = {
   CONFIG_ONLY_PATTERN,
   NANO_PATTERN,
   QUICK_PATTERN,
+  LOOP_PATTERN,
   DEP_FILE_RE,
   CONFIG_FILE_RE,
 };

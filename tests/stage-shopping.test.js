@@ -22,6 +22,7 @@ const {
   CONFIG_ONLY_PATTERN,
   NANO_PATTERN,
   QUICK_PATTERN,
+  LOOP_PATTERN,
 } = require("../core/stage-shopping/assess");
 const { orderedStageNamesForTrack, trackLabel } = require("../core/pipeline/stages");
 const { loadConfig, clearConfigCache } = require("../core/config");
@@ -82,6 +83,12 @@ describe("assess() keyword patterns", () => {
     assert.ok(QUICK_PATTERN.test("simple update to config"));
     assert.ok(!QUICK_PATTERN.test("refactor the entire module"));
   });
+
+  test("loop pattern matches explicit iteration language", () => {
+    assert.ok(LOOP_PATTERN.test("iterate on the search UI"));
+    assert.ok(LOOP_PATTERN.test("run this through the loop"));
+    assert.ok(!LOOP_PATTERN.test("emergency production fix"));
+  });
 });
 
 // ─── 2. assess() base track selection ────────────────────────────────────────
@@ -129,15 +136,21 @@ describe("assess() base track selection", () => {
     assert.equal(r.recommendedTrack, "quick");
   });
 
-  test("no indicators → full track, low confidence", () => {
+  test("no specialized indicators → loop track, low confidence", () => {
     const r = assess("implement new user onboarding flow", [], { scanContent: false });
-    assert.equal(r.recommendedTrack, "full");
+    assert.equal(r.recommendedTrack, "loop");
     assert.equal(r.confidence, "low");
   });
 
-  test("empty description and empty files → full track", () => {
+  test("empty description and empty files → loop track", () => {
     const r = assess("", [], { scanContent: false });
-    assert.equal(r.recommendedTrack, "full");
+    assert.equal(r.recommendedTrack, "loop");
+  });
+
+  test("explicit iteration language → loop track, medium confidence", () => {
+    const r = assess("iterate on the onboarding flow", [], { scanContent: false });
+    assert.equal(r.recommendedTrack, "loop");
+    assert.equal(r.confidence, "medium");
   });
 
   test("priority: hotfix beats dep-update when both match", () => {
@@ -181,10 +194,17 @@ describe("assess() heuristic overrides", () => {
     assert.deepEqual(r.stages, expected);
   });
 
-  test("full track returns full stage list", () => {
+  test("default loop recommendation returns loop stage list", () => {
     const r = assess("add new feature", [], { scanContent: false });
-    const expected = orderedStageNamesForTrack("full");
+    const expected = orderedStageNamesForTrack("loop");
     assert.deepEqual(r.stages, expected);
+  });
+
+  test("security-required quick work promotes to full, not another track without security-review", () => {
+    const r = assess("quick fix for login", ["src/login/handler.js"], { scanContent: false });
+    assert.equal(r.securityRequired, true);
+    assert.equal(r.recommendedTrack, "full");
+    assert.ok(r.reasons.some((reason) => reason.includes("security review required")));
   });
 });
 
