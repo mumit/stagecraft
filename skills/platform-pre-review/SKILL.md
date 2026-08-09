@@ -61,10 +61,10 @@ peer review starts.
    flag in Stage 5 and that have clear, mechanical fixes:
 
    a. **Runtime engine constraint.** If any ADR specifies a minimum runtime
-      version (e.g., "Node.js LTS v20+"), verify `package.json` carries a
+      version (e.g., "Node.js LTS v22+"), verify `package.json` carries a
       matching `"engines"` field:
       ```json
-      { "engines": { "node": ">=20" } }
+      { "engines": { "node": ">=22" } }
       ```
       Missing or wrong `engines` when an ADR requires it → BLOCKER in the
       Stage 4a gate; the ADR is unenforceable without it.

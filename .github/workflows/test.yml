@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# A force-push or follow-up commit supersedes the older run for the same PR.
+# Main stays in its own group, so unrelated pull requests never cancel each other.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-smoke:
     name: windows smoke (node 22)
@@ -78,9 +84,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Node 18 reached EOL in April 2025; @huggingface/transformers ^4.x
-        # requires Node >=20. Test current LTS (20, 22) + latest (24).
-        node-version: ['20', '22', '24']
+        # Test the minimum supported Maintenance LTS and the Active LTS.
+        # Node 20 reached EOL in 2026 and is no longer a supported runtime.
+        node-version: ['22', '24']
 
     steps:
       - uses: actions/checkout@v5
@@ -95,6 +101,7 @@ jobs:
         run: npm ci
 
       - name: Run lint
+        if: matrix.node-version == '22'
         run: npm run lint
 
       # CI probe: create an untracked scratch file before npm test to verify that
@@ -114,8 +121,10 @@ jobs:
 
       # Coverage report — report-only, never fails the build.
       # Baseline is in .github/coverage-baseline.json (a diff, not a comment).
-      # No threshold is set yet; thresholds without history invite gaming.
+      # No threshold is set yet; thresholds without history invite gaming. Run
+      # this telemetry after merges so it does not double pull-request latency.
       - name: Coverage report (informational)
+        if: matrix.node-version == '22' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: coverage
         continue-on-error: true
         run: |
@@ -137,15 +146,16 @@ jobs:
           DEVTEAM_HEADLESS_COMMAND: cat
 
       - name: Upload coverage report
-        if: always()
+        if: always() && matrix.node-version == '22' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-node${{ matrix.node-version }}
+          name: coverage-report-node22
           path: coverage-report.txt
           if-no-files-found: ignore
           retention-days: 14
 
       - name: Run consistency checks
+        if: matrix.node-version == '22'
         run: npm run consistency
 
       - name: Verify devteam CLI loads
