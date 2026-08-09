@@ -25,7 +25,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { splitCommand } = require("./command-line");
 
 const RULING_PREFIX = "PRINCIPAL-RULING:";
 const CANNOT_DECIDE_PREFIX = "PRINCIPAL-CANNOT-DECIDE:";
@@ -486,11 +485,10 @@ function guardConvergenceGateResolution(gatePath, beforeGate) {
 // can't be loaded or doesn't support headless — callers convert to their own
 // exit.
 //
-// `allowedWrites` controls which file paths the host may target. Adapters with
-// an invoke() hook receive the pre-rendered prompt so they can use host-specific
-// prompt transport (for example Omnigent's --prompt argument) and audit writes
-// consistently. Plain headless adapters fall back to piping the prompt to stdin.
-// Callers should pass the tightest set that their agent actually needs:
+// `allowedWrites` controls which file paths the host may target. The
+// pre-rendered prompt goes through adapter.invoke() so host-specific transport
+// and write auditing stay in the adapter boundary. Callers should pass the
+// tightest set that their agent actually needs:
 //   - Principal ruling writer: ["pipeline/context.md"]
 //   - Escalation applicator: gates, code-review notes, runbook, and docs surfaces
 function dispatchToPrincipal(cwd, prompt, { label = "principal", allowedWrites = ["pipeline/context.md"] } = {}) {
@@ -508,47 +506,20 @@ function dispatchToPrincipal(cwd, prompt, { label = "principal", allowedWrites =
     throw new Error(`Principal host "${host}" does not support --headless (capabilities.headless is false).`);
   }
 
-  if (typeof adapter.invoke === "function") {
-    const descriptor = {
-      workstreamId: label,
-      stage: label,
-      role: "principal",
-      allowedWrites,
-    };
-    const ctx = { cwd, isolation: "in-place", log: true };
-    const mode = adapter.capabilities.httpNative ? "http-native" : "headless";
-    process.stderr.write(`[devteam] dispatching ${label} → ${host} (${mode})\n`);
-    return adapter.invoke(descriptor, ctx, prompt).then((result) => {
-      if (Array.isArray(result.writeViolations) && result.writeViolations.length > 0) {
-        for (const v of result.writeViolations) {
-          process.stderr.write(`[devteam] ⚠ ${label}: unauthorized write "${v}" (outside allowedWrites) — removing\n`);
-          try { fs.unlinkSync(path.join(cwd, v)); } catch { /* ignore */ }
-        }
-        return { exitCode: result.exitCode === 0 ? 1 : result.exitCode, host, writeViolations: result.writeViolations };
+  const { invokeAdapterTask } = require("./adapters/invoke-task");
+  const mode = adapter.capabilities.httpNative ? "http-native" : "headless";
+  process.stderr.write(`[devteam] dispatching ${label} → ${host} (${mode})\n`);
+  return invokeAdapterTask({
+    adapter, host, cwd, prompt, label, role: "principal", allowedWrites, tee: true,
+  }).then((result) => {
+    if (Array.isArray(result.writeViolations) && result.writeViolations.length > 0) {
+      for (const v of result.writeViolations) {
+        process.stderr.write(`[devteam] ⚠ ${label}: unauthorized write "${v}" (outside allowedWrites) — removing\n`);
+        try { fs.unlinkSync(path.join(cwd, v)); } catch { /* ignore */ }
       }
-      return { exitCode: result.exitCode, host };
-    });
-  }
-
-  const cmdString = process.env.DEVTEAM_HEADLESS_COMMAND || adapter.capabilities.headlessCommand;
-  if (!cmdString) throw new Error(`Host "${host}" declares no headlessCommand.`);
-
-  const { spawn } = require("node:child_process");
-  let bin, args;
-  try {
-    ({ bin, args } = splitCommand(cmdString, "headlessCommand"));
-  } catch (err) {
-    throw new Error(`Invalid headlessCommand "${cmdString}": ${err.message}`);
-  }
-  process.stderr.write(`[devteam] dispatching ${label} → ${host} (headless)\n`);
-  return new Promise((resolve) => {
-    const child = spawn(bin, args, { cwd, stdio: ["pipe", "inherit", "inherit"] });
-    child.on("error", (err) => { process.stderr.write(`[devteam] spawn error: ${err.message}\n`); resolve({ exitCode: 1, host }); });
-    child.on("close", (code) => resolve({ exitCode: code === null ? 1 : code, host }));
-    // Swallow EPIPE if the host exits before reading stdin (matches runHeadless).
-    child.stdin.on("error", () => { /* */ });
-    child.stdin.write(prompt);
-    child.stdin.end();
+      return { exitCode: result.exitCode === 0 ? 1 : result.exitCode, host, writeViolations: result.writeViolations };
+    }
+    return { exitCode: result.exitCode, host };
   });
 }
 

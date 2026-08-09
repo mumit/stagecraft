@@ -165,7 +165,8 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
 
   // C1: post-hoc write audit for adapters that declare enforces.allowed_writes = "post-hoc-audit".
   // Snapshot dirty state before spawn; diff after close to find unauthorized writes.
-  const shouldAudit = adapter.capabilities?.enforces?.allowed_writes === "post-hoc-audit";
+  const shouldAudit = adapter.capabilities?.enforces?.allowed_writes === "post-hoc-audit"
+    || ctx.forceWriteAudit === true;
   const beforeSnapshot = shouldAudit ? snapshotWritables(ctx.cwd) : null;
 
   // Phase-36 item 36.1's review mode makes ctx.processCwd (the subject) a

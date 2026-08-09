@@ -98,7 +98,7 @@ interface HostAdapter {
   // 3. INVOKE — optional, only if capabilities.headless = true.
   // Run the host non-interactively for a stage. Returns the exit code and
   // the gate JSON path the host wrote. user-driven mode skips this entirely.
-  invoke?(stage: StageDescriptor, ctx: PipelineContext): Promise<InvokeResult>;
+  invoke?(stage: StageDescriptor, ctx: PipelineContext, preRenderedPrompt?: string): Promise<InvokeResult>;
 
   // 4. STATUS — verify the install is healthy in a target project.
   // Called by `devteam doctor`. Returns missing/broken pieces.
@@ -155,6 +155,14 @@ interface StatusReport {
   notes: string[];
 }
 ```
+
+`preRenderedPrompt` is optional for external callers and required when the
+orchestrator has composed or reduced the exact prompt that must be sent. An
+adapter must send it verbatim when present. Core one-off workflows use
+`core/adapters/invoke-task.js`, which creates a narrowly scoped synthetic
+descriptor and calls this same method; they do not parse `headlessCommand` or
+spawn a model process. A headless adapter therefore must implement `invoke()`
+even when it also declares `headlessCommand`.
 
 ## Lifecycle: how a stage actually runs
 
