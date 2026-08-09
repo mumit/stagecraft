@@ -18,8 +18,7 @@
 
 const fs   = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
-const { splitCommand } = require("./command-line");
+const { invokeAdapterTask } = require("./adapters/invoke-task");
 
 function loadDeps() {
   const { loadConfig }   = require("./config");
@@ -75,7 +74,7 @@ function isStructuralFix(parsed) {
   );
 }
 
-// Build the targeted fix prompt sent to the frontend agent via stdin.
+// Build the targeted fix prompt sent through the frontend adapter.
 function buildA11yFixPrompt(blockers) {
   const parsed = blockers.map(parseBlocker).filter(Boolean);
   if (parsed.length === 0) return "";
@@ -192,51 +191,48 @@ async function fixA11yBlockers(cwd, blockers, opts = {}) {
     };
   }
 
-  const cmdString = process.env.DEVTEAM_HEADLESS_COMMAND
-    || (adapter.capabilities && adapter.capabilities.headlessCommand);
-  if (!cmdString) {
+  if (typeof adapter.invoke !== "function") {
     return {
       status:            "dispatch-failed",
       remainingBlockers: blockers,
       exitCode:          1,
-      reason:            `host "${hostName}" declares no headlessCommand`,
+      reason:            `headless host "${hostName}" does not implement adapter.invoke()`,
     };
   }
 
   const prompt = buildA11yFixPrompt(blockers);
-  let bin, args;
-  try {
-    ({ bin, args } = splitCommand(cmdString, "headlessCommand"));
-  } catch (err) {
-    return {
-      status:            "dispatch-failed",
-      remainingBlockers: blockers,
-      exitCode:          1,
-      reason:            `invalid headlessCommand "${cmdString}": ${err.message}`,
-    };
-  }
-
   process.stderr.write(`[devteam] dispatching frontend → ${hostName} (a11y fix, headless)\n`);
-
-  const exitCode = await new Promise((resolve) => {
-    const child = spawn(bin, args, { cwd, stdio: ["pipe", "inherit", "inherit"] });
-    child.on("error", (err) => {
-      process.stderr.write(`[devteam] a11y-fix spawn error: ${err.message}\n`);
-      resolve(1);
+  let dispatch;
+  try {
+    dispatch = await invokeAdapterTask({
+      adapter,
+      host: hostName,
+      cwd,
+      prompt,
+      label: "a11y-fix",
+      role: "frontend",
+      allowedWrites: ["src/frontend/index.html"],
+      toolBudget: ["Read", "Write"],
+      timeoutMs: opts.timeoutMs,
+      tee: true,
     });
-    child.on("close", (code) => resolve(code === null ? 1 : code));
-    // Swallow EPIPE — child may exit before reading full prompt.
-    child.stdin.on("error", () => {});
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
+  } catch (err) {
+    return { status: "dispatch-failed", remainingBlockers: blockers, exitCode: 1, reason: err.message };
+  }
+  const writeViolations = Array.isArray(dispatch.writeViolations) ? dispatch.writeViolations : [];
+  const exitCode = writeViolations.length > 0 && dispatch.exitCode === 0 ? 1 : dispatch.exitCode;
 
   if (exitCode !== 0) {
     process.stderr.write(
       `[devteam] a11y-fix agent exited ${exitCode} — ` +
       `src/frontend/index.html unchanged, gate not modified\n`,
     );
-    return { status: "dispatch-failed", remainingBlockers: blockers, exitCode };
+    return {
+      status: "dispatch-failed",
+      remainingBlockers: blockers,
+      exitCode: exitCode === null ? 1 : exitCode,
+      ...(writeViolations.length > 0 ? { reason: `unauthorized writes: ${writeViolations.join(", ")}` } : {}),
+    };
   }
 
   process.stderr.write("[devteam] a11y-fix complete — re-running accessibility audit to verify…\n");

@@ -239,23 +239,15 @@ describe("fixA11yBlockers — early exits", () => {
     assert.deepEqual(result.remainingBlockers, blockers);
   });
 
-  it("returns dispatch-failed when the adapter has no headlessCommand", async () => {
+  it("returns dispatch-failed when the headless adapter has no invoke implementation", async () => {
     const cwd = makeTmp();
-    const adapter = makeAdapter({ headlessCommand: undefined });
+    const adapter = makeAdapter();
     const blockers = [{ id: "A-1", description: "Remediation: Fix it." }];
-    // Must unset DEVTEAM_HEADLESS_COMMAND — if set it would override the missing
-    // headlessCommand and the dispatch would proceed instead of failing early.
-    const prev = process.env.DEVTEAM_HEADLESS_COMMAND;
-    delete process.env.DEVTEAM_HEADLESS_COMMAND;
-    try {
-      const { result } = await captureStderrAsync(() =>
-        fixA11yBlockers(cwd, blockers, { _adapter: adapter }),
-      );
-      assert.equal(result.status, "dispatch-failed");
-      assert.ok(result.reason.includes("headlessCommand"));
-    } finally {
-      if (prev !== undefined) process.env.DEVTEAM_HEADLESS_COMMAND = prev;
-    }
+    const { result } = await captureStderrAsync(() =>
+      fixA11yBlockers(cwd, blockers, { _adapter: adapter }),
+    );
+    assert.equal(result.status, "dispatch-failed");
+    assert.ok(result.reason.includes("adapter.invoke"));
   });
 });
 
@@ -266,22 +258,17 @@ describe("fixA11yBlockers — early exits", () => {
 describe("fixA11yBlockers — agent exits non-zero", () => {
   it("returns dispatch-failed with the agent's exit code when command exits 1", async () => {
     const cwd = makeTmp();
-    // Use DEVTEAM_HEADLESS_COMMAND=false: the `false` binary always exits 1.
-    const prev = process.env.DEVTEAM_HEADLESS_COMMAND;
-    process.env.DEVTEAM_HEADLESS_COMMAND = "false";
-    try {
-      const blockers = [{ id: "A-1", description: "Remediation: Add aria-label." }];
-      const adapter = makeAdapter(); // headless:true, headlessCommand:"true" (overridden by env)
-      const { result } = await captureStderrAsync(() =>
-        fixA11yBlockers(cwd, blockers, { _adapter: adapter }),
-      );
-      assert.equal(result.status, "dispatch-failed");
-      assert.equal(result.exitCode, 1);
-      assert.deepEqual(result.remainingBlockers, blockers);
-    } finally {
-      if (prev === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
-      else process.env.DEVTEAM_HEADLESS_COMMAND = prev;
-    }
+    const blockers = [{ id: "A-1", description: "Remediation: Add aria-label." }];
+    const adapter = {
+      ...makeAdapter(),
+      invoke: async () => ({ exitCode: 1, timedOut: false, writeViolations: [] }),
+    };
+    const { result } = await captureStderrAsync(() =>
+      fixA11yBlockers(cwd, blockers, { _adapter: adapter }),
+    );
+    assert.equal(result.status, "dispatch-failed");
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(result.remainingBlockers, blockers);
   });
 });
 
