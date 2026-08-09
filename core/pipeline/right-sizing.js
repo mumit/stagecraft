@@ -225,22 +225,25 @@ function deterministicSkipsForOrder(order, cwd, opts = {}) {
   return skips;
 }
 
-function expectedWorkstreamCount(order, track, { skipped = [], activeRoles = [] } = {}) {
-  const skipSet = new Set(skipped);
+function expectedRolesForStage(stage, track, { activeRoles = [], config } = {}) {
   const active = new Set(activeRoles);
+  const roles = rolesForStage(stage, track, config);
+  if (active.size === 0) return roles;
+  return roles.filter((role) =>
+    !WORKSTREAM_RULES.some((rule) => rule.role === role) ||
+    active.has(role) ||
+    (stage.alwaysDispatch || []).includes(role),
+  );
+}
+
+function expectedWorkstreamCount(order, track, { skipped = [], activeRoles = [], config } = {}) {
+  const skipSet = new Set(skipped);
   let count = 0;
   for (const name of order) {
     if (skipSet.has(name)) continue;
     const stage = STAGES[name];
     if (!stage) continue;
-    const roles = rolesForStage(stage, track);
-    if (active.size === 0) {
-      count += roles.length;
-      continue;
-    }
-    count += roles.filter((role) =>
-      !WORKSTREAM_RULES.some((rule) => rule.role === role) || active.has(role) || (stage.alwaysDispatch || []).includes(role),
-    ).length;
+    count += expectedRolesForStage(stage, track, { activeRoles, config }).length;
   }
   return count;
 }
@@ -249,6 +252,7 @@ module.exports = {
   candidateActiveRoles,
   deterministicSkipForStage,
   deterministicSkipsForOrder,
+  expectedRolesForStage,
   expectedWorkstreamCount,
   gitChangedFiles,
   highConfidenceTrack,

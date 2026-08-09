@@ -119,6 +119,9 @@ function run(positional, _flags) {
         const skipped = ev.stages_skipped_by_config ? `, ${ev.stages_skipped_by_config} skipped by config` : "";
         const conditional = ev.conditional_stages ? `, ${ev.conditional_stages} conditional` : "";
         process.stderr.write(`[devteam run] plan: ${ev.track} track, ${ev.stages_included}/${ev.stages_total} stages${skipped}${conditional}, ${ev.base_workstreams} base workstreams\n`);
+        if (ev.plan_path && ev.plan_fingerprint) {
+          process.stderr.write(`  Execution plan: ${ev.plan_path} (sha256:${ev.plan_fingerprint.slice(0, 12)}…)\n`);
+        }
         // 29.3: ceremony cost preview, printed at the top of pre-flight output
         // (right after the plan line) for every run, not just inferred tracks.
         if (ev.ceremony_preview) {
