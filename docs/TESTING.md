@@ -1,6 +1,6 @@
 # Testing
 
-**Current state:** **`npm test` runs the full suite in ~5s** — all offline, no external services. CI runs the full suite on Ubuntu with Node 20 / 22 / 24 and a native Windows portability smoke on Node 22. (Exact counts in `npm test` output; this doc avoids quoting specific numbers since they drift.)
+**Current state:** `npm test` runs the full suite offline with no external services. Wall-clock duration depends heavily on platform and available CPU; use the TAP summary from your own run rather than a checked-in timing claim. CI runs the full suite on Ubuntu with Node 20 / 22 / 24 and a native Windows portability smoke on Node 22. Exact counts remain in `npm test` output because they drift as coverage grows.
 
 ## Running the suite
 

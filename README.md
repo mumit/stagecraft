@@ -44,17 +44,16 @@ If you're evaluating Stagecraft, this is the fastest path to a working answer:
 1. **(5 min) Install the framework.** `git clone <this-repo> && cd stagecraft && npm install && npm link`. Verify with `devteam --help`.
 2. **(2 min) Initialize a throwaway target project.** `mkdir /tmp/scratch && cd /tmp/scratch && devteam init --host claude-code`. Then `devteam doctor` should be all green.
 3. **(3 min) Read [EXAMPLE.md](EXAMPLE.md).** One feature traced through all 18 stages with real CLI captures. Tells you what each stage actually does.
-4. **(15 min) Run one full pipeline yourself.** The simplest path: run each stage with `--headless` and let the orchestrator drive Claude Code directly.
+4. **(15 min) Run one bounded pipeline yourself.** Start with the four-dispatch `loop` path and let the autonomous driver sequence it:
    ```bash
-   devteam stage requirements --feature "a one-paragraph feature you understand" --headless
-   devteam next   # tells you the next command to run
+   devteam run --track loop --feature "a one-paragraph feature you understand"
    ```
-   Walk forward through design, build, peer-review, qa, sign-off. For deploy, pick a deploy adapter in `.devteam/config.yml` (`cloud-run`, `gizmos`, `kubernetes`, `terraform`, `docker-compose`, or `custom`) — or write the gate by hand to skip the deploy step: `echo '{"stage":"stage-08","status":"PASS","track":"full","timestamp":"'$(date -u +%FT%TZ)'","blockers":[],"warnings":[]}' > pipeline/gates/stage-08.json`.
+   Use `devteam status`/`devteam summary` and the files under `pipeline/` to follow the run. Move to `quick`, `hotfix`, or `full` only when the change is headed to deployment or its risk justifies additional controls; never hand-author a PASS gate to bypass a stage.
 5. **(5 min) Inspect the audit trail.** `ls pipeline/gates/` — every stage's outcome on disk. `cat pipeline/brief.md`, `pipeline/design-spec.md`, `pipeline/code-review/by-*.md`. The pipeline is reconstructable from these files alone.
 
 If after 30 minutes you can see how this would help your team, run a 2-week pilot ([adoption-guide.md](docs/adoption-guide.md) has the script). If you can't, it may not be the right tool for your team.
 
-Step 4 above deliberately walks the full 18-stage track so you see every kind of stage in one sitting. Day to day, most teams drive the lighter `loop` track instead — see [Which track?](#which-track).
+The full 18-stage trace remains available in [EXAMPLE.md](EXAMPLE.md). Day to day, start with the lighter `loop` path and add controls when the change warrants them — see [Which track?](#which-track).
 
 ## Documentation map
 
@@ -79,7 +78,7 @@ Evaluating further (long-form): [docs/presentation-notes.md](docs/presentation-n
 | Step | Doc | Purpose |
 |---|---|---|
 | 1 | [docs/user-guide.md](docs/user-guide.md) | Daily-use reference: running stages, multi-host setups, headless mode |
-| 2 | [docs/tracks.md](docs/tracks.md) | Which of the seven tracks to pick for a given change — and what each one costs |
+| 2 | [docs/tracks.md](docs/tracks.md) | Which of the ten tracks or task-specific modes fits a change — and what each one costs |
 | 3 | [docs/conventions.md](docs/conventions.md) | Pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments) |
 | 4 | [docs/runbooks/README.md](docs/runbooks/README.md) | Troubleshooting index: symptom → runbook section |
 | 5 | [docs/cost.md](docs/cost.md) | Cost tracking, pricing table, and budget workflow |
@@ -113,7 +112,7 @@ The vocabulary extends naturally: a *run* is one pipeline invocation, *dress reh
 A coordinated team of role-specific subagents running a structured software-development pipeline end-to-end:
 
 - **18-stage gated pipeline** — requirements (PM) → design (Principal) → build (specialist workstreams) → peer-review (Reviewer × 4) → QA → deploy → retrospective. Each stage writes a machine-readable gate; the next stage cannot start until the gate passes.
-- **7 tracks** — `loop`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `full`. `loop` is the day-to-day default for bounded iteration; `full` is the **audited** path chosen when stakes or compliance justify the ceremony. `devteam assess` infers the right track from description keywords and file heuristics, and prints a ceremony-cost estimate (`devteam assess --json`) before you commit to one.
+- **10 tracks** — build paths (`loop`, `quick`, `nano`, `config-only`, `dep-update`, `hotfix`, `full`, `refactor`) plus existing-code review modes (`review-only`, `review-pr`). `loop` is the recommended day-to-day path for bounded iteration; the factory fallback remains conservative `full`, and the current assessor does not infer `loop`, so select it explicitly. `devteam assess` infers one of the risk/change-type tracks from description keywords and file heuristics and prints a ceremony-cost estimate (`devteam assess --json`).
 - **Prototype packets** — `devteam prototype` gives exploratory work a pre-SDLC lane: intent, build prompt, feedback notes, and an explicit promotion handoff into a normal track when the idea is ready to harden.
 - **Docker runner** — `hosts/docker/` packages `devteam` into a non-root container for unattended headless runs against a mounted project, with conservative lock reporting and runtime-only credentials.
 - **Per-workstream gate JSON** — every stage writes a gate to `pipeline/gates/`. Validator enforces shape; orchestrator merges multi-role stage gates.
@@ -151,7 +150,7 @@ Then drive the pipeline. There are two ways to run a stage:
 
 The orchestrator drives the host runtime for you (`claude --print`, `codex exec --sandbox workspace-write`, `agy --print`, `gemini`, `omnigent run ...`, or any ACP agent command). One command per stage; model output is captured in `pipeline/logs/<workstreamId>.log` by default. Best for first runs, CI, and scripted use.
 
-This walkthrough runs `loop` — the day-to-day default track (4 dispatches: brief → build → verify → review, no design/red-team/deploy):
+This walkthrough runs `loop` — the recommended day-to-day track (4 dispatches: brief → build → verify → review, no design/red-team/deploy):
 
 ```bash
 devteam stage requirements --feature "Add SMS notification opt-in" --track loop --headless
@@ -215,7 +214,7 @@ For a complete walked-through example with the actual output you'll see at each 
 
 ## Which track?
 
-`loop` is the day-to-day default: 4 dispatches, no design/red-team/deploy. `full` is the **audited** path — every stage, including formal design and adversarial review — chosen when stakes or compliance justify the ceremony, not the default just because it feels safest. The remaining tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`) cover the shapes in between:
+`loop` is the recommended day-to-day path: 4 dispatches, no design/red-team/deploy. The factory fallback is still `full`, the **audited** path with every stage including formal design and adversarial review. The remaining build tracks (`nano`, `quick`, `config-only`, `dep-update`, `hotfix`, `refactor`) cover the shapes in between; `review-only` and the internal `review-pr` track cover code that already exists.
 
 | Change type | Track | Ceremony cost |
 |---|---|---|

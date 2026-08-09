@@ -8,7 +8,7 @@ your first pipeline.
 | 1 | [EXAMPLE.md](../EXAMPLE.md) | What does a run actually look like? One feature traced through all 18 stages with real CLI captures. |
 | 2 | [adoption-guide.md](adoption-guide.md) | Should my team adopt this? Pilot script, common objections, success criteria for a 2-week trial. |
 | 3 | [user-guide.md](user-guide.md) | How do I run it day to day? Stages, multi-host setups, headless mode. |
-| 4 | [tracks.md](tracks.md) | How much ceremony do I need for this change? Which of the seven tracks to pick, and what each costs. |
+| 4 | [tracks.md](tracks.md) | How much ceremony do I need for this change? Which of the ten tracks or modes to pick, and what each costs. |
 | 5 | [../ARCHITECTURE.md](../ARCHITECTURE.md) | Why is it built this way? The 12 locked design decisions. |
 
 Everything else — 100+ more files covering compliance, memory, observability, ADRs, runbooks,

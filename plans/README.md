@@ -4,9 +4,9 @@ Phase plans produced from the 2026-06-10 full-framework review and subsequent au
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
 written to be executed one item at a time.
 
-**Current state (2026-08-05):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, and 35 are
-complete, as is phase 36. Phase 32 is mostly complete with one open item (32.4, deferred).
-Phase 37 is in progress (37.6 done) and deliberately adds no new capability. Phases 21, 25,
+**Current state (2026-08-08):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, 35, 36,
+and 37 are complete. Phase 32 is mostly complete with one open item (32.4, deferred).
+Phase 37 deliberately added no new capability. Phases 21, 25,
 and 26 are proposed and not authorized for implementation. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
@@ -50,7 +50,7 @@ listed under [Evidence reviews](#evidence-reviews).
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | ✅ complete — 34.1 ACP adapter (PR #368) · 34.2 attestation export (PR #369) · 34.3 compliance mapping (PR #370) · 34.4 gemini-cli → plugin package |
 | 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | ✅ complete — 35.1 review-only track (PR #373) · 35.2 `devteam review-pr` (PR #375) · 35.3 stage-06d stamping (PR #376) · 35.4 findings report (PR #377) · 35.5 refactor track (PR #378) |
 | 36 | [phase-36-external-review-mode.md](phase-36-external-review-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | External review mode (ACP-first): two-root permissions with enforced read-only, framework paths across roots, review workspace, `devteam review <path>`, standalone `review-pr` | ✅ complete (2026-08-04) — all seven items 36.0–36.6; see [`acp-read-scope.md`](acp-read-scope.md) for the 36.0 spike findings |
-| 37 | [phase-37-interface-and-token-efficiency.md](phase-37-interface-and-token-efficiency.md) | [prompts](prompts/roadmap-2026-prompts.md) | Interface and token efficiency: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, ADR-017 decision | 📝 in progress (2026-08-05) — 37.6 ✅ done (ADR-017 Accepted); 37.1–37.5 not started — **adds no capability by design** |
+| 37 | [phase-37-interface-and-token-efficiency.md](phase-37-interface-and-token-efficiency.md) | [prompts](prompts/roadmap-2026-prompts.md) | Interface and token efficiency: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, ADR-017 decision | ✅ complete (2026-08-05) — 37.1–37.6 shipped; **adds no capability by design** |
 
 **Executing with Sonnet:** every work item has an exact paste-ready prompt. Phases 1–4
 and the documentation phase use [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md); phases
@@ -68,8 +68,6 @@ Everything below is either written-but-unbuilt or deliberately parked. Verified 
 | Work | Where | Why it is open |
 |---|---|---|
 | **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred: the item requires a host adapter that exposes worktree-isolated dispatch, and none does today. Its own precondition cannot be met, so it was not attempted. |
-| **Phase 36 — external review mode** | [phase-36](phase-36-external-review-mode.md) | Written 2026-08-04, not started. Seven items making review work without installing Stagecraft into the reviewed repo, built on ACP's negotiated session cwd. 36.0 is a report-only spike whose answer decides how 36.2 is built — run it first. |
-| **Phase 37 — interface & token efficiency** | [phase-37](phase-37-interface-and-token-efficiency.md) | Written 2026-08-04 from [experience-review-2026-08.md](experience-review-2026-08.md). Six items, no new capability: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, and a terminal decision on ADR-017. Item 37.6 (the ADR-017 decision) is done as of 2026-08-05, and 32.6 (the ADR-017 implementation it authorized) shipped the same day; the other five items are not started. |
 | **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Proposed ([#312](https://github.com/telus-labs/stagecraft/issues/312)). Partly overtaken by phases 28 and 32, which delivered telemetry, the run corpus, and cache-first prompts. Worth re-scoping rather than running as written. |
