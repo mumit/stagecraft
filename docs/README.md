@@ -62,6 +62,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [adr/017-dag-wave-execution.md](adr/017-dag-wave-execution.md) — accepted curated `dependsOn[]` metadata, wave formation bounded by `autonomy.max_parallel_stages`, and track-order gate-chain semantics
 - [adr/018-materialized-run-plan-and-loop-default.md](adr/018-materialized-run-plan-and-loop-default.md) — materialized pre-dispatch plan, plan-bound resume, and `loop` as the ordinary assessed fallback
 - [adr/019-isolated-build-workstreams.md](adr/019-isolated-build-workstreams.md) — core-managed Git worktrees and deterministic reconciliation for parallel build roles
+- [adr/020-execution-trust-profiles.md](adr/020-execution-trust-profiles.md) — honest trusted/contained/remote boundaries and fail-closed local containment
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration

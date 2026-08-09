@@ -17,6 +17,7 @@ If you've never used Stagecraft before, read EXAMPLE first. This page is a refer
 - [Prototype first, harden later](#prototype-first-harden-later)
 - [Running each stage](#running-each-stage)
 - [Multi-host setups](#multi-host-setups)
+- [Execution trust profiles](#execution-trust-profiles)
 - [Headless mode](#headless-mode)
 - [Docker runner](#docker-runner)
 - [The web UI](#the-web-ui)
@@ -1140,6 +1141,31 @@ Headless mode (`--headless`) works normally in multi-host setups. Each workstrea
 - **Spend visibility.** Two CLIs mean two billing accounts. Per-stage cost attribution across hosts requires correlating two dashboards.
 
 Default to single-host. Add a second host when you have a specific cost, diversity, or tool-fit reason that justifies the extra setup.
+
+## Execution trust profiles
+
+Normal runs use `trusted` execution: host CLIs run as your user and are **not**
+OS-sandboxed. Gate validation and write audit still apply. To opt into a disposable
+container per workstream, configure an image that already contains the routed host CLI:
+
+```yaml
+execution:
+  trust_profile: contained
+  contained:
+    provider: docker
+    image: your-agent-image:tag
+    network: none
+    env_allowlist: [MODEL_API_KEY]
+    cpus: 2
+    memory_mb: 4096
+    pids: 128
+```
+
+`network: none` is the default. Agents that require API egress need the explicit broader
+`bridge` choice. `devteam run --trust-profile contained` overrides the configured profile
+for one run, appears in `pipeline/run-plan.json`, and fails closed if Docker or the image
+policy is unavailable. Environment values and private image names are not written to the
+plan. See [ADR-020](adr/020-execution-trust-profiles.md).
 
 ## Headless mode
 

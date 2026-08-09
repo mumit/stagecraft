@@ -31,6 +31,7 @@ const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
 const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
 const { WorkstreamIsolation, shouldIsolateBuildWorkstreams } = require("./workstream-isolation");
+const { normalizeExecutionConfig, resolveTrustProfile } = require("./containment");
 const corpus = require("./corpus");
 const evalsCapture = require("./evals/capture");
 const { computePromptPackVersion } = require("./prompt-pack");
@@ -616,6 +617,8 @@ function runStage(stageName, opts = {}) {
   const cwd = opts.cwd || process.cwd();
   const config = opts.config || loadConfig(cwd);
   const isolation = opts.isolation || config.pipeline.isolation;
+  const trustProfile = resolveTrustProfile(config, opts.trustProfile);
+  const execution = config.execution || normalizeExecutionConfig();
   const feature = opts.feature || "";
   // G6: custom_stages in config overrides default_track when no explicit track is passed.
   const track = opts.track
@@ -655,6 +658,8 @@ function runStage(stageName, opts = {}) {
     // treats as "codeRoot === stateRoot, deny by default" for safety. Unset
     // on every non-review caller, so byte-identical to pre-36.5 behavior.
     noCodeRoot: opts.noCodeRoot === true,
+    trustProfile,
+    containment: execution.contained,
   };
 
   if (!isStageInTrack(stageName, ctx.track)) {
@@ -1033,7 +1038,7 @@ async function runStageHeadless(stageName, opts = {}) {
       : null;
     if (workstreamIsolation) {
       process.stderr.write(
-        `[devteam] isolating ${plan.workstreams.length} build workstreams in detached Git worktrees\n`,
+        `[devteam] isolating ${plan.workstreams.length} workstreams in detached Git worktrees (${plan.ctx.trustProfile})\n`,
       );
     }
 

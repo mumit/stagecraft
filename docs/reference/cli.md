@@ -37,6 +37,7 @@ Render stage prompt(s) for <name>, or drive the host CLI non-interactively with 
 | --cwd                            | string | Target project directory                                                    |
 | --headless                       | bool   | Drive host CLI non-interactively                                            |
 | --timeout-ms                     | number | Per-workstream wall-clock cap (default 600000)                              |
+| --trust-profile                  | string | Execution boundary: trusted or contained (fail-closed)                      |
 | --patch                          | bool   | Scope build agents to patch items from a prior gate                         |
 | --from                           | string | Stage to read patch items from (default: red-team)                          |
 | --skip-completed                 | bool   | Skip workstreams whose gate file already exists                             |
@@ -76,6 +77,7 @@ Bounded autonomous driver with optional TTY watch mode: loop next â†’ dispatch â
 | --max-iterations   | number | Iteration cap                                                                                        |
 | --budget-usd       | number | Cost cap in USD                                                                                      |
 | --timeout-ms       | number | Per-dispatch timeout (ms)                                                                            |
+| --trust-profile    | string | Execution boundary: trusted or contained (fail-closed)                                               |
 | --retry-delay-ms   | number | Backoff delay between transient retries (ms)                                                         |
 | --auto-rule        | list   | Auto-apply Principal rulings of these classes (comma-separated)                                      |
 | --allow-stage      | list   | Grant consequence-ceiling approval for this stage (repeatable, comma-separated)                      |

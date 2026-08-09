@@ -19,6 +19,7 @@ const { resolveRoute } = require("./config");
 const { pipelineRoot } = require("./paths");
 const { STAGES, rolesForStage } = require("./pipeline/stages");
 const { expectedRolesForStage } = require("./pipeline/right-sizing");
+const { publicTrustPlan, resolveTrustProfile } = require("./containment");
 
 const RUN_PLAN_SCHEMA = "stagecraft.run-plan/v1";
 
@@ -85,9 +86,12 @@ function buildRunPlan({
   assessInline = null,
   runId,
   generatedAt = new Date().toISOString(),
+  trustProfile = null,
 }) {
   const configSkipStages = new Set((config.pipeline && config.pipeline.skip_stages) || []);
   const trackLabel = Array.isArray(track) ? "custom" : track;
+  const resolvedTrustProfile = resolveTrustProfile(config, trustProfile);
+  const executionTrust = publicTrustPlan(config, resolvedTrustProfile);
 
   const stages = order.map((name, index) => {
     const stage = STAGES[name];
@@ -138,6 +142,7 @@ function buildRunPlan({
     stages,
     candidate_active_roles: candidateActiveRoles,
     ceremony_preview: ceremonyPreview,
+    execution_trust: executionTrust,
   };
   // Bind resume to stable execution controls, not observations that naturally
   // evolve as earlier stages write code. Candidate active roles, preflight
@@ -151,6 +156,7 @@ function buildRunPlan({
     track_confidence: trackConfidence,
     intent,
     change_id: changeId,
+    execution_trust: executionTrust,
     stages: stages.map((plannedStage) => {
       const {
         name,

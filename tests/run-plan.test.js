@@ -90,4 +90,22 @@ describe("materialized run plan (ADR-018)", () => {
     const onDisk = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"));
     assert.equal(onDisk.plan_fingerprint, original.plan_fingerprint);
   });
+
+  it("materializes the trust boundary and binds it to resume", () => {
+    const { config } = fixture();
+    const trusted = planFor(config);
+    assert.deepEqual(trusted.execution_trust, {
+      profile: "trusted", os_sandboxed: false, provider: null,
+    });
+    config.execution = require("../core/containment").normalizeExecutionConfig({
+      trust_profile: "contained",
+      contained: { image: "agent:test", env_allowlist: ["MODEL_KEY"] },
+    });
+    const contained = planFor(config);
+    assert.equal(contained.execution_trust.profile, "contained");
+    assert.equal(contained.execution_trust.network, "none");
+    assert.deepEqual(contained.execution_trust.environment_allowlist, ["MODEL_KEY"]);
+    assert.notEqual(contained.plan_fingerprint, trusted.plan_fingerprint);
+    assert.equal(JSON.stringify(contained).includes("agent:test"), false, "private image name omitted");
+  });
 });
