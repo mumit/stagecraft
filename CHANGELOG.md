@@ -46,6 +46,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ### Fixed
 
+- Add the canonical global `devteam --version` flag backed by `package.json`,
+  and keep help plus the generated CLI reference locked to that surface.
+
+- Authorize the exact runtime gate path when `active_roles` or a track collapses
+  a normally multi-role stage to one workstream, preventing the required gate
+  from being rejected by the post-hoc write audit.
+
+- Fall back to the project's canonical lint command when a build workstream's
+  declared directory targets do not exist, avoiding false verifier failures on
+  narrow repairs and repositories with nonstandard layouts.
+
 - **`devteam review`'s ACP review-mode execute allowlist denied nearly every realistic exploration command, so reviewing agents gave up before ever writing a review.** `hosts/acp/permissions.js`'s deny-by-default execute gate (phase-36 item 36.1) denied any command containing `&&`, `|`, `;`, or a redirect outright, regardless of what the command actually was. A real reviewing agent's natural exploration style — `cd <dir> && find . | head -50 && echo "---" && cat file 2>/dev/null` — had every piece of that refused, and three of four peer-review workstreams in a real `devteam review` run gave up and asked for permission instead of writing `by-<role>.md`, cascading into missing gates and a `structural-input` halt with 0 findings.
 
   This was explicitly anticipated in the original design comment: *"if [this] turns out to make real reviews impractical, the fix is the exec_allowlist extension point or a narrower parse, not silently loosening the default."* Implemented that narrower parse rather than weakening the security model: a command is now split (quote-aware — handles an operator glued directly onto a preceding quoted argument or redirect with no space, e.g. `echo "---";next`) on `&&`/`||`/`;`/`|`, and **each resulting piece is validated independently** against the same read-only allowlist — a chain or pipe of read-only commands is itself read-only, by construction. `cd`, `echo`, `sort`, `head`, and `tail` were added to the allowlist (zero security cost — none can write or execute arbitrary code). A real file redirect (`>`, `>>`, `<`) or backgrounding (`&`) still denies the **entire** command outright; only filesystem-inert stream redirects (`2>/dev/null`, `2>&1`) are recognized as safe and skipped. Command substitution (`` ` ``, `$(...)`) is still denied unconditionally, unparsed.

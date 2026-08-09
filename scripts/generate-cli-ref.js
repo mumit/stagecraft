@@ -2,9 +2,10 @@
 // generate-cli-ref.js
 //
 // Emits docs/reference/cli.md — a full CLI reference for `devteam`, generated
-// from the per-command flag schemas in core/cli/commands/.  Each section has a
-// synopsis, one-line description, and a flag table derived from the schema.
-// Commands appear in the same order as the bin/devteam registry.
+// from the global CLI surface and per-command flag schemas in
+// core/cli/commands/. Each command section has a synopsis, one-line
+// description, and a flag table derived from the schema. Commands appear in
+// the same order as the bin/devteam registry.
 //
 // Output is fenced with <!-- generated: do not hand-edit --> markers;
 // scripts/consistency.js verifies the committed file equals fresh output.
@@ -322,15 +323,21 @@ const CMD_COUNT = COMMANDS.length;
 function generateBlock() {
   return [
     FENCE_OPEN,
-    `<!-- To regenerate: npm run docs:generate (source: core/cli/commands/*.js) -->`,
+    `<!-- To regenerate: npm run docs:generate (source: bin/devteam + core/cli/commands/*.js) -->`,
     "",
     `# CLI Reference`,
     "",
     `Full \`devteam\` command reference. ${CMD_COUNT} commands.`,
-    `Derived from the per-command flag schemas in \`core/cli/commands/\`.`,
+    `Derived from the global CLI surface in \`bin/devteam\` and per-command flag schemas in \`core/cli/commands/\`.`,
     `Run \`npm run docs:generate\` to regenerate after adding or changing flags.`,
     "",
-    `All flags are optional unless marked otherwise. \`--help\` is available on every command.`,
+    `## Global options`,
+    "",
+    `| Invocation | Description |`,
+    `|---|---|`,
+    `| \`devteam --version\` | Print the Stagecraft version from \`package.json\` and exit. |`,
+    "",
+    `All command flags are optional unless marked otherwise. \`--help\` is available on every command.`,
     "",
     `---`,
     "",

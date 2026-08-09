@@ -584,7 +584,7 @@ Machine-derived docs stay in sync with the codebase by construction — a CI adv
 
 - **[`docs/reference/stages.md`](reference/stages.md)** — full stage table (ID, roles, conditionalOn, gate files, artifacts, grouped by phase). Source of truth: `core/pipeline/stages.js`.
 - **[`docs/reference/hosts.md`](reference/hosts.md)** — capability and enforcement matrix across all four adapters. Source of truth: `hosts/*/capabilities.json`.
-- **[`docs/reference/cli.md`](reference/cli.md)** — full CLI reference per command: synopsis, flag table (name, type, description), and registry order. Source of truth: the per-command flag schemas in `core/cli/commands/`.
+- **[`docs/reference/cli.md`](reference/cli.md)** — global options plus the full CLI reference per command: synopsis, flag table (name, type, description), and registry order. Sources of truth: `bin/devteam` and the per-command flag schemas in `core/cli/commands/`.
 
 **`npm run prompt:budget`** regenerates:
 

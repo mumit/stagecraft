@@ -7,7 +7,7 @@ doesn't match fresh generator output).
 
 | File | Source of truth | Generated? |
 |---|---|---|
-| [cli.md](cli.md) | `core/cli/commands/*.js` flag specs | Yes — `scripts/generate-cli-ref.js` |
+| [cli.md](cli.md) | `bin/devteam` global options + `core/cli/commands/*.js` flag specs | Yes — `scripts/generate-cli-ref.js` |
 | [hosts.md](hosts.md) | `hosts/*/capabilities.json` | Yes — `scripts/generate-hosts-ref.js` |
 | [stages.md](stages.md) | `core/pipeline/stages.js` | Yes — `scripts/generate-stages-ref.js` |
 | [prompt-budget.md](prompt-budget.md) | `core/pipeline/stages.js` + `rules/` + `roles/` byte counts | Yes — `scripts/prompt-budget.js` (advisory sync only, non-blocking) |

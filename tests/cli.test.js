@@ -1,6 +1,7 @@
 const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { makeTargetProject, seedGate, cleanup, runCLI, REPO_ROOT } = require("./_helpers");
 
@@ -9,6 +10,15 @@ function track(cwd) { _dirs.push(cwd); return cwd; }
 afterEach(() => { _dirs.forEach(cleanup); _dirs = []; });
 
 describe("cli: help + listing", () => {
+  it("--version prints the canonical package version outside a target project", () => {
+    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-version-")));
+    const { version } = require(path.join(REPO_ROOT, "package.json"));
+    const r = runCLI(["--version"], { cwd });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, `${version}\n`);
+    assert.equal(r.stderr, "");
+  });
+
   it("entrypoint lazy-loads command modules", () => {
     const entrypoint = fs.readFileSync(path.join(__dirname, "..", "bin", "devteam"), "utf8");
     assert.match(entrypoint, /COMMAND_MODULES/);

@@ -13,6 +13,7 @@
 //   help                              Show this usage.
 
 const path = require("node:path");
+const { version: CLI_VERSION } = require(path.join(__dirname, "..", "package.json"));
 
 const { parseFlags } = require(path.join(__dirname, "..", "core", "cli", "flags"));
 const { nearestMatch } = require(path.join(__dirname, "..", "core", "cli", "nearest-match"));
@@ -38,6 +39,11 @@ function loadCommand(commandName) {
 
 function main() {
   const [, , command, ...rest] = process.argv;
+
+  if (command === "--version") {
+    process.stdout.write(`${CLI_VERSION}\n`);
+    return;
+  }
 
   // Help aliases bypass the registry lookup, but still need flag parsing so
   // `devteam --help --all` (37.4) reaches the full reference.

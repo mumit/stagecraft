@@ -813,6 +813,17 @@ test("cli-ref: generator is importable without CLI side-effects", () => {
   assert.ok(Array.isArray(mod.COMMANDS), "COMMANDS must be exported as an array");
 });
 
+test("cli-ref: global version invocation remains documented", () => {
+  const gen = require(path.join(REPO_ROOT, "scripts", "generate-cli-ref.js"));
+  assert.match(gen.generateBlock(), /devteam --version/);
+});
+
+test("example freshness check binds to the labelled current stamp", () => {
+  const source = fs.readFileSync(path.join(REPO_ROOT, "scripts", "consistency.js"), "utf8");
+  assert.match(source, /\\\*\\\*Freshness:/);
+  assert.match(source, /captured\|verified/);
+});
+
 test("cli-ref: hand-edit to generated content would be caught", () => {
   // Prove that a hand-edit changes the content, which the consistency checker's
   // committed === fresh comparison would then fail (exit 1).
