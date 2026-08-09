@@ -17,6 +17,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 ## Operator — I run pipelines daily
 
 - [user-guide.md](user-guide.md) — daily-use reference: running stages, multi-host setups, headless mode
+- [conversational-coordinator.md](conversational-coordinator.md) — grounded read-only chat about pipeline state, cost, blockers, and next commands
 - [user-guide.md § Prototype first, harden later](user-guide.md#prototype-first-harden-later) — short prototype-mode tutorial using a token cost estimator example
 - [tracks.md](tracks.md) — which of the ten tracks or task-specific modes to pick for a given change, plus why prototype mode is a pre-SDLC workflow rather than a track
 - [conventions.md](conventions.md) — pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments)
@@ -28,6 +29,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [reference/README.md](reference/README.md) — generated reference index: CLI flags, host capabilities, stage table, prompt budget, environment variables
 - [memory.md](memory.md) — persistent project memory: embedder options and shared store
 - [pattern-learning.md](pattern-learning.md) — project-local `devteam patterns` loop for turning reviewed blockers, warnings, follow-ups, auto-retry failures, and positive examples into bounded coding-agent guidance
+- [project-knowledge.md](project-knowledge.md) — the bounded, provenance-bearing context pack that combines repository facts, reviewed patterns, and retrieved history for every coding agent
 - [observability.md](observability.md) — OpenTelemetry span schema and collector setup
 - [capacity-strategy.md](capacity-strategy.md) — latency-aware routing, remote capacity, prompt caching, and persistent-session policy
 - [evidence.md](evidence.md) — offline readiness, explicit resolution acceptance, and privacy-safe export
@@ -59,6 +61,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [adr/016-assess-by-default.md](adr/016-assess-by-default.md) — inline `assess()` inference on `devteam run` at any confidence, persisted to `pipeline/track.json`; supersedes ADR-006 §1
 - [adr/017-dag-wave-execution.md](adr/017-dag-wave-execution.md) — accepted curated `dependsOn[]` metadata, wave formation bounded by `autonomy.max_parallel_stages`, and track-order gate-chain semantics
 - [adr/018-materialized-run-plan-and-loop-default.md](adr/018-materialized-run-plan-and-loop-default.md) — materialized pre-dispatch plan, plan-bound resume, and `loop` as the ordinary assessed fallback
+- [adr/019-isolated-build-workstreams.md](adr/019-isolated-build-workstreams.md) — core-managed Git worktrees and deterministic reconciliation for parallel build roles
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration

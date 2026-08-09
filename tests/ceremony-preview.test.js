@@ -6,9 +6,8 @@
 // Coverage:
 //   1. Static estimates for two tracks (loop, quick) from a fixture project
 //      with no corpus history — unknown model, tokens shown, cost omitted.
-//   2. Static estimate resolves a known model from < MIN_EMPIRICAL_RUNS
-//      corpus records (per-(role,host) model lookup, independent of the
-//      empirical-basis threshold) and computes a real cost range.
+//   2. Static estimate resolves configured models first and falls back to
+//      recent corpus observations below the empirical-basis threshold.
 //   3. On-disk pipeline artifact sampling widens the token range once a
 //      prior stage's artifact exists.
 //   4. Empirical path: >= MIN_EMPIRICAL_RUNS runs of the same track in the
@@ -30,6 +29,7 @@ const {
   ceremonyPreview,
   computeStaticEstimate,
   computeEmpiricalEstimate,
+  assuranceOptions,
 } = require(path.join(REPO_ROOT, "core", "ceremony-preview"));
 const { loadConfig, clearConfigCache } = require(path.join(REPO_ROOT, "core", "config"));
 
@@ -104,6 +104,48 @@ describe("ceremony-preview: static basis, unknown model", () => {
 // ─── 2. Static estimate resolves a known model below the empirical threshold ───
 
 describe("ceremony-preview: static basis with a resolvable model", () => {
+  test("configured route models are priced before any corpus history exists", () => {
+    const cwd = makeCwd([
+      "routing:",
+      "  default_host: generic",
+      "  roles:",
+      "    pm: {host: generic, model: gpt-5-mini}",
+      "    backend: {host: generic, model: gpt-5-mini}",
+      "    qa: {host: generic, model: gpt-5-mini}",
+      "pipeline:",
+      "  default_track: loop",
+      "",
+    ].join("\n"));
+    const preview = ceremonyPreview(cwd, "loop", loadConfig(cwd));
+
+    assert.ok(preview.cost_usd, "configured priced models should produce a pre-run cost range");
+    assert.deepEqual(preview.unresolved_models, []);
+    assert.equal(preview.model_sources.configured, 4);
+    assert.equal(preview.model_sources.observed, 0);
+    assert.equal(preview.cost_scope, "input-only-floor");
+    assert.ok(preview.per_stage.every((stage) => stage.roles.every((role) => role.model_source === "configured")));
+  });
+
+  test("a configured model pin wins over conflicting historical telemetry", () => {
+    const cwd = makeCwd([
+      "routing:",
+      "  default_host: generic",
+      "  roles:",
+      "    pm: {host: generic, model: gpt-5-mini}",
+      "pipeline:",
+      "  default_track: loop",
+      "",
+    ].join("\n"));
+    writeCorpus(cwd, [
+      { ts: "2026-07-01T00:00:00Z", role: "pm", host: "generic", model_observed: "claude-opus-4-7" },
+    ]);
+    const preview = ceremonyPreview(cwd, "loop", loadConfig(cwd));
+    const pm = preview.per_stage.find((stage) => stage.stage === "stage-01").roles[0];
+
+    assert.equal(pm.model, "gpt-5-mini");
+    assert.equal(pm.model_source, "configured");
+  });
+
   test("a single corpus record for a (role, host) pair prices that dispatch without promoting to empirical", () => {
     const cwd = makeCwd("routing:\n  default_host: generic\npipeline:\n  default_track: loop\n");
     // Only 1 record — far below MIN_EMPIRICAL_RUNS — but it names a priced
@@ -119,6 +161,7 @@ describe("ceremony-preview: static basis with a resolvable model", () => {
     assert.equal(preview.estimate_basis, "static", "1 run must not cross the empirical threshold");
     assert.deepEqual(preview.unresolved_models, []);
     assert.ok(preview.cost_usd, "cost_usd must be populated once every dispatch's model is known");
+    assert.equal(preview.model_sources.observed, 4);
     assert.ok(preview.cost_usd.low > 0);
     assert.ok(preview.cost_usd.high >= preview.cost_usd.low);
   });
@@ -186,6 +229,7 @@ describe("ceremony-preview: empirical basis (phase-28 corpus)", () => {
     assert.equal(preview.dispatch_count.min, 2);
     assert.equal(preview.dispatch_count.max, 2);
     assert.ok(preview.cost_usd, "empirical cost must be populated when every dispatch in every run has a cost");
+    assert.equal(preview.cost_scope, "observed-total");
     assert.equal(preview.cost_usd.low, preview.cost_usd.high, "empirical estimate reports a single median, not a range");
 
     const sortedCosts = [...runCosts].sort((a, b) => a - b);
@@ -228,6 +272,7 @@ describe("devteam assess: ceremony_preview surfacing", () => {
     assert.ok(result.ceremony_preview, "ceremony_preview must be present in --json output");
     assert.equal(result.ceremony_preview.track, result.recommendedTrack);
     assert.match(result.ceremony_preview.estimate_basis, /^(static|empirical)$/);
+    assert.deepEqual(result.assurance_options.map((option) => option.track), ["loop", "quick", "full"]);
   });
 
   test("text output prints a labelled 'Ceremony estimate' line", () => {
@@ -235,5 +280,18 @@ describe("devteam assess: ceremony_preview surfacing", () => {
     const r = runCLI(["assess", "--cwd", cwd, "--description", "small fix to login button", "src/frontend/button.js"]);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Ceremony estimate \(static\): \d+ stage slot\(s\), \d+ dispatch\(es\), ~[\d,]+ tokens/);
+    assert.match(r.stdout, /Primary assurance options \(specialist tracks remain available\):/);
+  });
+});
+
+describe("ceremony-preview: primary assurance comparison", () => {
+  test("compares loop, quick, and full in increasing assurance order", () => {
+    const cwd = makeCwd();
+    const options = assuranceOptions(cwd, loadConfig(cwd), "quick");
+
+    assert.deepEqual(options.map((option) => option.track), ["loop", "quick", "full"]);
+    assert.deepEqual(options.map((option) => option.recommended), [false, true, false]);
+    assert.ok(options[0].stage_slots < options[1].stage_slots);
+    assert.ok(options[1].stage_slots < options[2].stage_slots);
   });
 });

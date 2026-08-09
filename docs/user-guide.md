@@ -13,6 +13,7 @@ If you've never used Stagecraft before, read EXAMPLE first. This page is a refer
 - [Your three moments of control](#your-three-moments-of-control)
 - [Install + first run](#install--first-run)
 - [Daily loop](#daily-loop)
+- [Conversational coordinator](#conversational-coordinator)
 - [Prototype first, harden later](#prototype-first-harden-later)
 - [Running each stage](#running-each-stage)
 - [Multi-host setups](#multi-host-setups)
@@ -148,6 +149,32 @@ A third command becomes relevant after any stage that produces deferred findings
 ```bash
 devteam advise          # "triage the noted_for_followup items"
 ```
+
+## Conversational coordinator
+
+Use `devteam chat` when the action object is correct but terse, or when you want
+to understand the tradeoff before approving a command:
+
+```bash
+devteam chat "Why is peer review blocked, and what is the cheapest safe recovery?"
+devteam chat                         # interactive TTY session
+devteam chat "What next?" --json     # one-shot integration output
+devteam chat "What will the host see?" --dry-run
+```
+
+Stagecraft builds a bounded snapshot locally from config, run state, stage
+summary, and `next()`. Only that snapshot, the current question, and at most
+eight recent in-memory turns are sent through the routed Principal host. The
+answer may recommend an exact command, but chat cannot execute it. Local
+interactive commands (`/status`, `/context`, `/next`, `/refresh`) do not call a
+model.
+
+No transcript is written. Secret-shaped snapshot strings are removed, model
+tools are disabled where the adapter exposes a tool boundary, and the host runs
+from a disposable directory rather than the project checkout. This is not an OS
+sandbox for CLI hosts: their process still has the invoking user's filesystem
+permissions. See [`docs/conversational-coordinator.md`](conversational-coordinator.md)
+for the exact trust boundary and host behavior.
 
 ## Prototype first, harden later
 
@@ -1024,7 +1051,7 @@ Passing `--headless` explicitly is also accepted and has the same effect. This a
 | Hooks (`PreToolUse`, `PostToolUse`, `Stop`) | ✗ |
 | Subagents | ✗ |
 | Slash commands | ✗ |
-| Worktrees | ✗ — stage-04 parallel workstreams run without git-worktree isolation |
+| Host-native worktrees | ✗ — but core-managed `pipeline.workstream_isolation: git-worktree` works for parallel headless stage-04 builds |
 | Goal loop | ✗ — replaced by a 40-iteration tool-call loop per dispatch |
 | Per-role model selection | ✓ via `hosts.openai-compat.models.<role>` in config |
 
@@ -1425,9 +1452,10 @@ The taxonomy is intentionally small:
 | `positive` | A practice that helped a clean first pass. | Reinforce sparingly so the prompt is not all warnings. |
 
 After promotion, Stagecraft selects only relevant patterns by stage, workstream,
-language, framework, and feature hints, then renders them in a bounded `Known
-Project Patterns` section. The section is advisory: stage instructions, allowed
-writes, gate schemas, and stoplists still win.
+language, framework, and feature hints, then renders them with detected conventions
+and retrieved memory in the bounded [Project Knowledge Pack](project-knowledge.md).
+The pack is advisory: stage instructions, allowed writes, gate schemas, and
+stoplists still win.
 
 Retire stale or noisy guidance:
 
@@ -1440,17 +1468,19 @@ increments on each real dispatch (headless run or the prompt printed for a human
 paste into a host — never a preview like `devteam reproduce`), and
 `stats.recurrence_after_injection` increments when the same blocker shows up again in
 a later dispatch of that stage despite the injected guidance. `devteam patterns
-review` flags a pattern as a demotion candidate once recurrence reaches
-`patterns.demotion_recurrence_threshold` in `.devteam/config.yml` (default `3`) — a
-flag only, never automatic. If a pattern keeps recurring, send it back to candidate
-rather than deleting its history outright:
+review` reports evaluation since the latest promotion. Once recurrence reaches
+`patterns.demotion_recurrence_threshold` in `.devteam/config.yml` (default `3`),
+Stagecraft quarantines that guidance from prompt selection immediately. It remains
+in the promoted audit store; no text or status is rewritten automatically. Send it
+back to candidate for revision rather than deleting its history outright:
 
 ```bash
 devteam patterns demote <pattern-id> --reason "recurring despite injection — needs a better prompt or a real gate"
 ```
 
 Demotion is reversible: `devteam patterns promote <pattern-id>` restores it, keeping
-the demotion audit trail (who, when, why, and the counters at the time).
+the demotion audit trail and lifetime counters while beginning a new evaluation
+window for the revised text.
 
 For the full reference, including storage shape, edge cases, auto-retry semantics,
 and graduation to deterministic gates, see [`docs/pattern-learning.md`](pattern-learning.md).
@@ -1854,6 +1884,41 @@ With `isolation: bounded`, every run's artifacts (gates, logs, context files) la
 The base `pipeline/context.md` still exists and should hold only permanent, project-wide facts (binding constraints, runtime conventions). Each change's `pipeline/changes/<slug>/context.md` starts from those static facts and accumulates only that feature's decisions.
 
 Default is `in-place` (global `pipeline/`). Zero impact on existing setups unless you explicitly set `isolation: bounded`. For projects that started `in-place` and want to switch: prune `pipeline/context.md` to just the permanent static layer first, then flip the flag. Existing gates in `pipeline/gates/` are left untouched.
+
+### Isolating parallel build workstreams
+
+`pipeline.isolation` above separates one feature's pipeline artifacts from
+another feature's artifacts; it does not separate coding agents. For parallel
+stage-04 builds, Git repositories can opt into a separate checkout per role:
+
+```yaml
+pipeline:
+  isolation: bounded                 # optional, independent artifact setting
+  workstream_isolation: git-worktree # coding workspace setting
+```
+
+The headless orchestrator snapshots the current repository state—including
+uncommitted and untracked work—and gives every planned build role the same
+baseline in `.devteam/worktrees/`. A role's results are reconciled into the
+operator checkout only when the path is in that role's `allowedWrites` list.
+If two roles edit separate parts of the same text file, Stagecraft performs a
+three-way merge. Overlapping text edits, binary/deletion overlap, unauthorized
+writes, and symlinks that escape the workspace are not copied; the role's gate
+is changed to FAIL when present.
+
+Requirements and boundaries:
+
+- Run from the Git repository root. Non-Git projects must use `shared`.
+- This applies only to multi-role build (stage-04) dispatches. Peer-review
+  workstreams intentionally exchange review files and remain shared.
+- `shared` is the default and preserves existing behavior.
+- Worktrees improve attribution and collision handling; they are not an OS
+  security sandbox. Use the Docker runner or another sandbox for untrusted code.
+
+Re-run `devteam init --force` after upgrading an existing project so the
+managed `.gitignore` block includes `.devteam/worktrees/`. See
+[ADR-019](adr/019-isolated-build-workstreams.md) for the decision and rejected
+alternatives.
 
 ### `/goal` injection for convergent stages
 

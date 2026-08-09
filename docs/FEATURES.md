@@ -217,6 +217,26 @@ pipeline:
 
 With `isolation: bounded`, artifacts (gates, logs, context files) land under `pipeline/changes/<changeId>/` instead of the global `pipeline/`. The `changeId` is derived by slugifying the `--feature` value. `devteam next` and `devteam summary` can distinguish in-flight features; `devteam validate` reads `DEVTEAM_CHANGE_ID` from the environment to validate gates in the bounded directory. Default is `in-place`, which has no impact on existing setups.
 
+### Isolated build workstreams — deterministic parallel coding
+
+Artifact isolation and coding-workspace isolation are separate. Opt in when the
+four parallel build roles should not observe or overwrite one another's
+in-progress changes:
+
+```yaml
+pipeline:
+  workstream_isolation: git-worktree
+```
+
+Every planned stage-04 role receives a detached Git worktree containing the
+same tracked, dirty, untracked, and operational-context baseline. After the
+role finishes, Stagecraft reconciles only its `allowedWrites`. Non-overlapping
+shared-file edits are three-way merged; unauthorized paths, unsafe symlinks,
+and unresolved overlap are refused and make the workstream gate fail. The
+default is `shared`; single-role and peer-review stages are unchanged. This is
+a correctness boundary, not a security sandbox—the agent retains the invoking
+user's OS permissions. See [ADR-019](adr/019-isolated-build-workstreams.md).
+
 ### Secret scanning — blocks credentials from reaching the repo
 
 Wired into claude-code's `PreToolUse Write|Edit` hook. Runs before every file write.
@@ -310,6 +330,15 @@ Per-project semantic memory under `.devteam/memory/`. Uses a local embedder (`Xe
 
 See [`docs/memory.md`](memory.md) for embedder options, the `.gitignore` note, and the opt-out marker.
 
+### Project Knowledge Pack — senior context without rediscovery
+
+Every stage prompt has one bounded, provenance-labeled learned-context block.
+It combines automatically discovered stack/convention/verification facts,
+operator-promoted project patterns with outcome evidence, and relevant semantic
+memory. `.devteam/knowledge/project.json` is generated at init or first use and
+refreshes when manifests, tooling configuration, or source-directory metadata
+change. See [`docs/project-knowledge.md`](project-knowledge.md).
+
 ### Org-shared lessons-learned — knowledge that travels across projects
 
 Lifts ADRs and lessons from any project into a shared store at `~/.stagecraft/memory/` (overridable via `STAGECRAFT_ORG_MEMORY_DIR`).
@@ -341,9 +370,10 @@ the next agent repeats the same mistake.
   reinforcing
 - Outcome feedback closes the loop: `stats.injected` counts real dispatches that
   included the pattern; `stats.recurrence_after_injection` counts blockers that
-  recurred anyway. `devteam patterns review` flags recurrence-heavy patterns as
-  demotion candidates (configurable threshold, default 3); `devteam patterns demote
-  <id>` is the explicit, reversible operator action — never automatic
+  recurred anyway. Guidance reaching the configurable recurrence threshold
+  (default 3) is quarantined from future prompt selection until an operator
+  demotes, revises, and re-promotes it. Demotion remains explicit and reversible;
+  re-promotion starts a new evaluation window without erasing lifetime history
 
 See [`docs/pattern-learning.md`](pattern-learning.md) for the value model, storage
 shape, taxonomy, safety boundaries, and promotion workflow.
@@ -353,6 +383,23 @@ shape, taxonomy, safety boundaries, and promotion workflow.
 ## Developer tools
 
 ### Core commands — the everyday loop
+
+**`devteam chat ["question"]`** — grounded conversational coordination without
+turning conversation into an execution backdoor.
+
+- Builds a deterministic, versioned snapshot from config, run state, stage
+  summary, and the pure `next()` action, with a suggested exact CLI command
+- Supports one-shot text/JSON, prompt-only `--dry-run`, and a TTY conversation;
+  `/status`, `/context`, `/next`, and `/refresh` are local and cost no model call
+- Keeps only eight bounded turns in memory and persists no transcript
+- Removes secret-shaped strings, does not expose the project path or raw gate
+  bodies, and invokes the routed host from a disposable directory
+- Disables OpenAI-compatible tools and denies all ACP permission requests;
+  CLI-host isolation is practical checkout separation, not an OS sandbox
+- Advisory only: it never executes a suggested `devteam` command or mutates the
+  pipeline
+
+Full boundary and examples: [`docs/conversational-coordinator.md`](conversational-coordinator.md).
 
 **`devteam prototype <start|build|note|promote>`** — pre-SDLC prototype mode
 for fast learning before a change deserves delivery gates.
@@ -393,16 +440,16 @@ into a non-root container for unattended local orchestration.
 - **`--confirm`:** writes `pipeline/track.json` with `source: "human"` — use after verifying the recommendation; silences the unconfirmed-track guard in `devteam run`
 - **`--apply`:** writes `pipeline.custom_stages` to `.devteam/config.yml` (project-wide setting) so `devteam next`/`devteam summary`/`devteam stage` use the custom track; orthogonal to `pipeline/track.json` behavior
 - `--json` emits structured output including recommended track, rationale, and which heuristics fired
-- **Ceremony cost preview (phase-29 item 29.3):** both text and `--json` output include a `ceremony_preview` — stage slots, dispatch count, token range, and cost range for the recommended track, computed by `core/ceremony-preview.js`. Estimates are `"static"` (framework overhead from `scripts/prompt-budget.js` + on-disk `pipeline/*` artifact sampling) unless `.devteam/corpus/dispatches.jsonl` has ≥5 completed runs of that exact track, in which case `estimate_basis: "empirical"` reports the median observed tokens/cost instead. Cost is never shown unless every dispatch's model is resolvable from corpus history — otherwise the estimate reports tokens only.
+- **Ceremony cost preview (phase-29 item 29.3):** both text and `--json` output include a `ceremony_preview` for the recommended track, and `assurance_options` compares the three primary choices (`loop`, `quick`, `full`) without removing specialist tracks. Static estimates combine framework overhead with on-disk artifact sampling, price explicit route model pins first, and use the latest observed model only for unpinned routes. Static dollars are an `input-only-floor`; after ≥5 completed runs of the exact track, `estimate_basis: "empirical"` reports median observed total tokens/cost. Unknown or unpriced models suppress the dollar figure rather than producing a partial total.
 
 `devteam run` also uses this engine at startup when no `--track` is passed, printing the same ceremony cost preview at the top of pre-flight output (before any dispatch) for every run, inferred or explicit `--track` alike.
 
 **`devteam standards discover [--cwd <dir>] [--json] [--dry-run] [--force]`** — static analysis of a project's conventions.
 
-- Scans the project file system and writes `docs/project-conventions.md` with seven detected properties: tech stack (JS/TS/Python/Go/Rust), module system (ESM/CJS/mixed), file layout (top-level dirs + source subdirs), naming style (kebab/PascalCase/camelCase/snake_case plurality), tooling (TypeScript/ESLint/Prettier/Biome/Husky/EditorConfig), test configuration (framework, co-location, pattern), and most-used imports (top 10 by frequency, skipping builtins)
+- Scans the project file system and writes `docs/project-conventions.md` with tech stack, module system, file layout, naming style, tooling, test configuration, common imports, and canonical verification commands
 - `--dry-run` prints without writing; `--json` emits the structured discovery result; `--force` overwrites an existing file
 - Pure static analysis — no external processes, no network, no AI. Reads manifests, source files, and config files only
-- Add `docs/project-conventions.md` to your AGENTS.md or readFirst lists to inject discovered conventions into agent prompts
+- Refreshes `.devteam/knowledge/project.json`; its bounded facts are injected automatically through the Project Knowledge Pack
 
 **`devteam commit [--all] [--dry-run] [--message <msg>] [--json]`** — stage exactly the right pipeline artifacts and commit. (Phase 12.2, ADR-010)
 

@@ -10,6 +10,7 @@ devteam stage requirements --feature "Add SMS notification opt-in"
 # or: devteam stage requirements --feature-file ./feature-brief.md
 # (model writes brief + gate; hooks validate)
 devteam next                           # → "▶️ run-stage design (stage-02)"
+devteam chat "why is that next?"       # grounded explanation; never executes it
 # … 16 more stages, then "🎉 pipeline-complete"
 ```
 
@@ -78,10 +79,11 @@ Evaluating further (long-form): [docs/presentation-notes.md](docs/presentation-n
 | Step | Doc | Purpose |
 |---|---|---|
 | 1 | [docs/user-guide.md](docs/user-guide.md) | Daily-use reference: running stages, multi-host setups, headless mode |
-| 2 | [docs/tracks.md](docs/tracks.md) | Which of the ten tracks or task-specific modes fits a change — and what each one costs |
-| 3 | [docs/conventions.md](docs/conventions.md) | Pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments) |
-| 4 | [docs/runbooks/README.md](docs/runbooks/README.md) | Troubleshooting index: symptom → runbook section |
-| 5 | [docs/cost.md](docs/cost.md) | Cost tracking, pricing table, and budget workflow |
+| 2 | [docs/conversational-coordinator.md](docs/conversational-coordinator.md) | Ask grounded questions about state, cost, blockers, and the safest next command |
+| 3 | [docs/tracks.md](docs/tracks.md) | Which of the ten tracks or task-specific modes fits a change — and what each one costs |
+| 4 | [docs/conventions.md](docs/conventions.md) | Pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments) |
+| 5 | [docs/runbooks/README.md](docs/runbooks/README.md) | Troubleshooting index: symptom → runbook section |
+| 6 | [docs/cost.md](docs/cost.md) | Cost tracking, pricing table, and budget workflow |
 
 Reference: [docs/faq.md](docs/faq.md) · [docs/git-workflow.md](docs/git-workflow.md) · [docs/ci.md](docs/ci.md) · [hosts/docker/README.md](hosts/docker/README.md) · [docs/omnigent-runtime.md](docs/omnigent-runtime.md) · [docs/memory.md](docs/memory.md) · [docs/observability.md](docs/observability.md) · [docs/reproducibility.md](docs/reproducibility.md) · [docs/runbooks/escalation.md](docs/runbooks/escalation.md) · [docs/runbooks/fix-and-retry.md](docs/runbooks/fix-and-retry.md) · [docs/runbooks/open-followups.md](docs/runbooks/open-followups.md) · [docs/runbooks/deploy-failure.md](docs/runbooks/deploy-failure.md) · [docs/runbooks/autonomous-run.md](docs/runbooks/autonomous-run.md) · [docs/runbook-template.md](docs/runbook-template.md)
 
@@ -226,7 +228,7 @@ For a complete walked-through example with the actual output you'll see at each 
 | Urgent production incident | `hotfix` | Moderate — pre-review and peer-review mandatory |
 | Complex/cross-cutting, regulated or high-stakes | `full` | Heaviest — all 18 stages, audited |
 
-These are relative sizings, not bills — run `devteam assess --json` for the actual stage-slot count, dispatch range, token estimate, and cost range against your project's routed models (static estimate, or an empirical median once the run corpus has ≥5 comparable runs). The `full` track's gate trail can be exported as a signed, in-toto-shaped attestation bundle with `devteam evidence export --attestation` (see [docs/compliance.md](docs/compliance.md)). Full decision tree and the generated stage-by-track matrix: [docs/tracks.md](docs/tracks.md).
+These are relative sizings, not bills — run `devteam assess --json` to compare the three primary assurance choices (`loop`, `quick`, `full`) and see specialist recommendations. Static previews price configured models and report an input-cost floor; after ≥5 comparable runs, they switch to an empirical median of observed total cost. The `full` track's gate trail can be exported as a signed, in-toto-shaped attestation bundle with `devteam evidence export --attestation` (see [docs/compliance.md](docs/compliance.md)). Full decision tree and the generated stage-by-track matrix: [docs/tracks.md](docs/tracks.md).
 
 ## What `devteam init` installs
 
@@ -250,6 +252,7 @@ For multi-host (`--host claude-code,codex` or `--host claude-code,omnigent`): bo
 
 | Command | What it does |
 |---|---|
+| `devteam chat ["question"] [--host <name>] [--model <name>] [--feature "..."] [--dry-run] [--json]` | **Grounded, read-only coordinator.** Explains current run state, stage status, blockers, recorded cost, and the safest exact next command. No question opens a TTY conversation. Chat never runs its recommendation or persists a transcript. See [docs/conversational-coordinator.md](docs/conversational-coordinator.md). |
 | `devteam init --host <name>[,<name>...] [--profile dogfood]` | Install host adapter(s) into the current project; write `.devteam/config.yml`; write (or update) the managed `.gitignore` block of volatile Stagecraft files. Add `--profile dogfood` to also install the four dogfooding safeguards (supplemental gitignore block, pre-commit infrastructure guard, `.git/info/exclude` entry, and `profile: dogfood` config marker). |
 | `devteam stage <name> [--feature "..." \| --feature-file <path>] [--headless]` | Render (and optionally execute) a stage prompt; `--feature-file` reads a UTF-8 feature brief from disk; `--headless` drives the host CLI automatically |
 | `devteam next [--json] [--skip-advise]` | Report the next action the pipeline needs (run-stage, continue-stage, merge, fix-and-retry, resolve-escalation, pipeline-complete). Non-pass actions carry a `failure_class` (code-defect / state-corruption / external-blocked / judgment-gate / convergence-exhausted) telling you how to respond, and a `fix-and-retry` carries structured `clear_gates` (repo-relative gate paths to clear before re-running) the autonomous driver consumes directly; `--json` adds a `schema_version`. Emits a ⚠ advisory notice when unresolved follow-up items may block downstream stages. |

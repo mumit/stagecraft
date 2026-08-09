@@ -30,6 +30,7 @@ const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require(
 const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
 const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
+const { WorkstreamIsolation, shouldIsolateBuildWorkstreams } = require("./workstream-isolation");
 const corpus = require("./corpus");
 const evalsCapture = require("./evals/capture");
 const { computePromptPackVersion } = require("./prompt-pack");
@@ -53,6 +54,22 @@ function patchGateForWriteViolations(gatePath, violations) {
   } catch {
     // Gate unreadable; violations already logged by headless.js
   }
+}
+
+function patchGateForIsolationFindings(gatePath, { violations = [], conflicts = [] } = {}) {
+  if (!fs.existsSync(gatePath)) return;
+  try {
+    const gate = JSON.parse(fs.readFileSync(gatePath, "utf8"));
+    const messages = [
+      ...violations.map((p) => `[workstream-isolation] unauthorized write refused: ${p}`),
+      ...conflicts.map((p) => `[workstream-isolation] reconciliation conflict: ${p}`),
+    ];
+    const existing = new Set(Array.isArray(gate.blockers) ? gate.blockers : []);
+    for (const message of messages) existing.add(message);
+    gate.blockers = [...existing];
+    if (messages.length > 0 && (gate.status === "PASS" || gate.status === "WARN")) gate.status = "FAIL";
+    fs.writeFileSync(gatePath, JSON.stringify(gate, null, 2) + "\n", "utf8");
+  } catch { /* malformed gates are handled by the normal validator */ }
 }
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -485,6 +502,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
     // null on a workstream's first-ever dispatch — nothing to diff against.
     contextDelta: opts.contextDelta || null,
     knownPatterns: Array.isArray(opts.knownPatterns) ? opts.knownPatterns : [],
+    projectFacts: Array.isArray(opts.projectFacts) ? opts.projectFacts : [],
     // 30.4: pre-fetched by runStageHeadless() (embedding is async; this
     // function is not) — see core/memory/inject.js's module header.
     priorKnowledge: Array.isArray(opts.priorKnowledge) ? opts.priorKnowledge : [],
@@ -685,6 +703,9 @@ function runStage(stageName, opts = {}) {
     "devteam.feature": ctx.feature || undefined,
   }, () => {
     const contextManifest = collectChangedFileManifest(ctx.cwd);
+    const projectFacts = Array.isArray(opts.projectFacts)
+      ? opts.projectFacts
+      : require("./knowledge-pack").loadCurrentProjectFacts(ctx.cwd);
     const dispatches = effectivePlan.map((entry) => withSpan("pipeline.workstream", {
       "devteam.stage": stageDef.stage,
       "devteam.workstream.role": entry.role,
@@ -731,7 +752,7 @@ function runStage(stageName, opts = {}) {
       // (ctx.processCwd, 36.1's codeRoot) — see resolveReadFirstItem() above.
       // Unset on every non-review path today, matching ctx.processCwd's own
       // "not set by any orchestrator path yet" state (hosts/acp/adapter.js).
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, reviewMode: config.review && config.review.mode });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, projectFacts, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature
@@ -780,7 +801,7 @@ function memoryQueryText(cwd, changeId, feature) {
   return parts.join("\n\n");
 }
 
-// 30.4: pre-fetch "## Prior Project Knowledge" before the synchronous
+// 30.4: pre-fetch retrieved history for the Project Knowledge Pack before the synchronous
 // runStage()/buildDescriptor() pipeline runs — see core/memory/inject.js's
 // module header for why this can't live inside buildDescriptor() itself.
 // A no-op (no extra requires, no embedder load) when opts.priorKnowledge
@@ -833,6 +854,10 @@ function dispatchWavesFor(plan, config) {
 
 async function runStageHeadless(stageName, opts = {}) {
   opts = await resolvePriorKnowledgeOpts(stageName, opts);
+  if (opts.projectFacts === undefined) {
+    const cwd = opts.cwd || process.cwd();
+    opts = { ...opts, projectFacts: require("./knowledge-pack").loadCurrentProjectFacts(cwd, { persist: true }) };
+  }
   const plan = runStage(stageName, opts);
   const config = opts.config || loadConfig(opts.cwd || process.cwd());
   const onWorkstreamEvent = typeof opts.onWorkstreamEvent === "function" ? opts.onWorkstreamEvent : null;
@@ -896,7 +921,7 @@ async function runStageHeadless(stageName, opts = {}) {
       process.stderr.write(`[devteam] experimental: dispatching ${plan.workstreams.length} workstreams → omnigent director (headless)\n`);
       // 30.2(a): director mode still dispatches every workstream's rendered
       // prompt (bundled into one call) — record each workstream's own
-      // Known Project Patterns as injected.
+      // Reviewed pattern entries in the Project Knowledge Pack count as injected.
       for (const ws of plan.workstreams) {
         require("./patterns").recordInjection({
           cwd: plan.ctx.cwd,
@@ -999,6 +1024,19 @@ async function runStageHeadless(stageName, opts = {}) {
     // is a no-op there (gate absent → archiveGateIfFail returns null). Best-effort.
     try { archiveGateIfFail(gatesDir, plan.stage); } catch { /* never block dispatch */ }
 
+    const workstreamIsolation = shouldIsolateBuildWorkstreams(config, plan)
+      ? new WorkstreamIsolation({
+          cwd: plan.ctx.cwd,
+          stage: plan.stage,
+          workstreams: plan.workstreams,
+        }).prepareAll()
+      : null;
+    if (workstreamIsolation) {
+      process.stderr.write(
+        `[devteam] isolating ${plan.workstreams.length} build workstreams in detached Git worktrees\n`,
+      );
+    }
+
     const limitForHost = (host) => hostConcurrencyLimit(config, host);
     // --workstream filtering is applied in runStage (before rendering), so
     // plan.workstreams already contains only the requested workstreams here.
@@ -1025,18 +1063,28 @@ async function runStageHeadless(stageName, opts = {}) {
       },
     };
     const dispatchWorker = async (ws, _index, queue) => {
-      const wsGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
-      const expectedLogPath = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
+      const rootGatePathExpected = path.join(gatesDir, `${ws.descriptor.workstreamId}.json`);
+      const rootLogPathExpected = process.env.DEVTEAM_NO_LOG === "1" || plan.ctx.log === false
         ? null
         : path.join(getLogsDir(plan.ctx.cwd, plan.ctx.changeId), `${ws.descriptor.workstreamId}.log`);
+      const invocationCtx = workstreamIsolation
+        ? workstreamIsolation.contextFor(ws, plan.ctx)
+        : plan.ctx;
+      const wsGatePathExpected = workstreamIsolation
+        ? workstreamIsolation.workspacePath(ws, rootGatePathExpected)
+        : rootGatePathExpected;
+      const expectedLogPath = workstreamIsolation && rootLogPathExpected
+        ? workstreamIsolation.workspacePath(ws, rootLogPathExpected)
+        : rootLogPathExpected;
       if (opts.skipCompleted) {
-        if (fs.existsSync(wsGatePathExpected)) {
+        if (fs.existsSync(rootGatePathExpected)) {
           process.stderr.write(`[devteam] --skip-completed: ${ws.role} already has a gate, skipping\n`);
           const skipped = {
             role: ws.role, host: ws.host, descriptor: ws.descriptor, skipped: true,
-            exitCode: 0, gatePath: wsGatePathExpected, logPath: expectedLogPath, durationMs: 0,
+            exitCode: 0, gatePath: rootGatePathExpected, logPath: rootLogPathExpected, durationMs: 0,
             queueMs: queue.queueMs,
           };
+          if (workstreamIsolation) workstreamIsolation.cleanup(ws);
           emitWorkstreamEvent({
             type: "workstream-finished",
             stage: plan.stage,
@@ -1046,8 +1094,8 @@ async function runStageHeadless(stageName, opts = {}) {
             workstream_id: ws.descriptor.workstreamId,
             skipped: true,
             exit_code: 0,
-            gate_path: wsGatePathExpected,
-            log_path: expectedLogPath,
+            gate_path: rootGatePathExpected,
+            log_path: rootLogPathExpected,
             duration_ms: 0,
             queue_ms: queue.queueMs,
             queue_limit: queue.queueLimit,
@@ -1058,7 +1106,7 @@ async function runStageHeadless(stageName, opts = {}) {
       const queueSuffix = queue.queueMs > 0 ? ` after ${queue.queueMs}ms queue` : "";
       process.stderr.write(`[devteam] dispatching ${ws.role} → ${ws.host} (headless)${queueSuffix}\n`);
       // 30.2(a): this is a real dispatch (past --skip-completed), so any
-      // Known Project Patterns rendered into ws.descriptor count as injected.
+      // Reviewed pattern entries rendered into the pack count as injected.
       require("./patterns").recordInjection({
         cwd: plan.ctx.cwd,
         pipelineRoot: pipelineRoot(plan.ctx.cwd, plan.ctx.changeId),
@@ -1124,8 +1172,8 @@ async function runStageHeadless(stageName, opts = {}) {
         role: ws.role,
         host: ws.host,
         workstream_id: ws.descriptor.workstreamId,
-        gate_path: wsGatePathExpected,
-        log_path: expectedLogPath,
+        gate_path: rootGatePathExpected,
+        log_path: rootLogPathExpected,
         queue_ms: queue.queueMs,
         queue_limit: queue.queueLimit,
         prompt_bytes: telemetry.promptBytes,
@@ -1142,7 +1190,7 @@ async function runStageHeadless(stageName, opts = {}) {
         }, async (span) => {
           // E7: prepend /goal directive for hosts that support a goal loop
           // and stages that declare a convergence condition.
-          const out = await ws.adapter.invoke(ws.descriptor, plan.ctx, invocationPrompt);
+          const out = await ws.adapter.invoke(ws.descriptor, invocationCtx, invocationPrompt);
           if (span) span.setAttributes({
             "devteam.invoke.exit_code": out.exitCode,
             "devteam.invoke.duration_ms": out.durationMs,
@@ -1151,6 +1199,17 @@ async function runStageHeadless(stageName, opts = {}) {
           return out;
         });
       } catch (err) {
+        if (workstreamIsolation) {
+          try {
+            workstreamIsolation.reconcile(ws, {
+              gatePath: wsGatePathExpected,
+              logPath: expectedLogPath,
+              patchGate: patchGateForIsolationFindings,
+            });
+          } finally {
+            workstreamIsolation.cleanup(ws);
+          }
+        }
         emitWorkstreamEvent({
           type: "workstream-finished",
           stage: plan.stage,
@@ -1160,7 +1219,7 @@ async function runStageHeadless(stageName, opts = {}) {
           workstream_id: ws.descriptor.workstreamId,
           exit_code: null,
           gate_path: null,
-          log_path: expectedLogPath,
+          log_path: rootLogPathExpected,
           duration_ms: null,
           queue_ms: queue.queueMs,
           queue_limit: queue.queueLimit,
@@ -1181,7 +1240,7 @@ async function runStageHeadless(stageName, opts = {}) {
       // touched it. Suppress those by treating any path covered by a sibling
       // workstream's allowedWrites as permitted for audit purposes.
       if (r.writeViolations && r.writeViolations.length > 0) {
-        const siblingAllowedWrites = plan.workstreams
+        const siblingAllowedWrites = workstreamIsolation ? [] : plan.workstreams
           .filter((s) => s !== ws)
           .flatMap((s) => s.descriptor?.allowedWrites || []);
         const realViolations = siblingAllowedWrites.length > 0
@@ -1262,7 +1321,7 @@ async function runStageHeadless(stageName, opts = {}) {
           const wsGateWasWrittenThisRun = wsPostMtime !== null && (preInvokeMtime === null || wsPostMtime > preInvokeMtime);
           if (wsGateWasWrittenThisRun) {
             try {
-              const stampResult = await stampWorkstream(plan.ctx.cwd, plan.stage, wsGatePath, {
+              const stampResult = await stampWorkstream(invocationCtx.cwd, plan.stage, wsGatePath, {
                 role: ws.role,
                 allowedWrites: ws.descriptor.allowedWrites,
               });
@@ -1279,6 +1338,38 @@ async function runStageHeadless(stageName, opts = {}) {
           }
         }
       }
+      if (workstreamIsolation) {
+        const reconciliation = workstreamIsolation.reconcile(ws, {
+          gatePath: r.gatePath || wsGatePathExpected,
+          logPath: r.logPath || expectedLogPath,
+          patchGate: patchGateForIsolationFindings,
+        });
+        workstreamIsolation.cleanup(ws);
+        if (reconciliation.violations.length > 0) {
+          for (const violation of reconciliation.violations) {
+            process.stderr.write(
+              `[devteam] ⛔ isolated write-audit: unauthorized write "${violation}" (${ws.descriptor.workstreamId})\n`,
+            );
+          }
+        }
+        if (reconciliation.conflicts.length > 0) {
+          for (const conflict of reconciliation.conflicts) {
+            process.stderr.write(
+              `[devteam] ⛔ isolated reconciliation conflict: "${conflict}" (${ws.descriptor.workstreamId})\n`,
+            );
+          }
+        }
+        r = {
+          ...r,
+          gatePath: reconciliation.gatePath,
+          logPath: reconciliation.logPath,
+          writeViolations: [
+            ...(Array.isArray(r.writeViolations) ? r.writeViolations : []),
+            ...reconciliation.violations,
+          ],
+          isolationConflicts: reconciliation.conflicts,
+        };
+      }
       const result = { role: ws.role, host: ws.host, descriptor: ws.descriptor, queueMs: queue.queueMs, promptHash, ...r, ...telemetry };
       emitWorkstreamEvent({
         type: "workstream-finished",
@@ -1290,7 +1381,7 @@ async function runStageHeadless(stageName, opts = {}) {
         exit_code: r.exitCode ?? null,
         timed_out: Boolean(r.timedOut),
         gate_path: r.gatePath || null,
-        log_path: r.logPath || expectedLogPath,
+        log_path: r.logPath || rootLogPathExpected,
         duration_ms: r.durationMs ?? null,
         queue_ms: queue.queueMs,
         queue_limit: queue.queueLimit,
@@ -1309,36 +1400,40 @@ async function runStageHeadless(stageName, opts = {}) {
     // the one mapByHostConcurrency call this replaced.
     const waves = dispatchWavesFor(plan, config);
     let results = [];
-    for (const wave of waves) {
-      const waveResults = await mapByHostConcurrency(wave, dispatchOptions, dispatchWorker);
-      // Matrix-shaped peer-review gates (approvals derived from sibling
-      // workstreams' by-*.md review files — see headless.js's "Derive
-      // peer-review gates" rescan) can materialize on disk *after* the
-      // workstream they belong to has already exited. That rescan runs
-      // per-workstream at that workstream's own close, scoped to whatever
-      // review files exist at that instant; a role that finishes first sees
-      // none of its later-finishing peers' review files yet and closes with
-      // gatePath: null — even though a peer's own rescan minutes later
-      // derives and writes that exact gate as a side effect. By the time
-      // the whole wave has settled (every sibling dispatchWorker call above
-      // has returned), any gate that was ever going to appear from files
-      // already on disk has had its chance to. Re-check once more here,
-      // before these results reach normalizeDispatchResults()'s wroteGate
-      // check in core/driver-dispatch.js — without this, a stage that fully
-      // passed halts anyway with "produced no gate" (a costly, blocking
-      // false positive). Scoped tightly to dispatches that actually exited
-      // cleanly, so a genuine no-gate failure still halts as before.
-      for (const result of waveResults) {
-        if (result.gatePath || result.stubGate || result.skipped) continue;
-        if (result.exitCode !== 0 || result.timedOut) continue;
-        const lateGatePath = path.join(gatesDir, `${result.descriptor.workstreamId}.json`);
-        let lateGate = null;
-        try { lateGate = JSON.parse(fs.readFileSync(lateGatePath, "utf8")); } catch { /* not written (yet), or unreadable */ }
-        if (lateGate && lateGate._stub !== true) {
-          result.gatePath = lateGatePath;
+    try {
+      for (const wave of waves) {
+        const waveResults = await mapByHostConcurrency(wave, dispatchOptions, dispatchWorker);
+        // Matrix-shaped peer-review gates (approvals derived from sibling
+        // workstreams' by-*.md review files — see headless.js's "Derive
+        // peer-review gates" rescan) can materialize on disk *after* the
+        // workstream they belong to has already exited. That rescan runs
+        // per-workstream at that workstream's own close, scoped to whatever
+        // review files exist at that instant; a role that finishes first sees
+        // none of its later-finishing peers' review files yet and closes with
+        // gatePath: null — even though a peer's own rescan minutes later
+        // derives and writes that exact gate as a side effect. By the time
+        // the whole wave has settled (every sibling dispatchWorker call above
+        // has returned), any gate that was ever going to appear from files
+        // already on disk has had its chance to. Re-check once more here,
+        // before these results reach normalizeDispatchResults()'s wroteGate
+        // check in core/driver-dispatch.js — without this, a stage that fully
+        // passed halts anyway with "produced no gate" (a costly, blocking
+        // false positive). Scoped tightly to dispatches that actually exited
+        // cleanly, so a genuine no-gate failure still halts as before.
+        for (const result of waveResults) {
+          if (result.gatePath || result.stubGate || result.skipped) continue;
+          if (result.exitCode !== 0 || result.timedOut) continue;
+          const lateGatePath = path.join(gatesDir, `${result.descriptor.workstreamId}.json`);
+          let lateGate = null;
+          try { lateGate = JSON.parse(fs.readFileSync(lateGatePath, "utf8")); } catch { /* not written (yet), or unreadable */ }
+          if (lateGate && lateGate._stub !== true) {
+            result.gatePath = lateGatePath;
+          }
         }
+        results = results.concat(waveResults);
       }
-      results = results.concat(waveResults);
+    } finally {
+      if (workstreamIsolation) workstreamIsolation.cleanupAll();
     }
 
     // Orchestrator-stamped verification. For stages where the gate

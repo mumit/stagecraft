@@ -99,7 +99,7 @@ describe("render-helpers: renderContextDelta", () => {
   });
 });
 
-describe("render-helpers: renderKnownPatterns", () => {
+describe("render-helpers: project knowledge", () => {
   it("omits the section when no promoted patterns are selected", () => {
     const lines = ["before"];
     renderKnownPatterns(lines, { knownPatterns: [] });
@@ -120,6 +120,27 @@ describe("render-helpers: renderKnownPatterns", () => {
     assert.match(out, /advisory prevention guidance/);
     assert.match(out, /Document user-visible HTTP endpoints/);
     assert.match(out, /\[warning\]/);
+  });
+
+  it("renders conventions, reviewed patterns, and retrieved history as one provenance-labeled pack", () => {
+    const { renderProjectKnowledgePack } = require(path.join(REPO_ROOT, "core", "adapters", "render-helpers"));
+    const lines = [];
+    renderProjectKnowledgePack(lines, {
+      projectFacts: [{ text: "Verify with — `npm test`.", source: "static-discovery" }],
+      knownPatterns: [{
+        id: "tests-edge-cases",
+        tier: "blocker",
+        prompt_text: "Cover boundary cases.",
+        evaluation: { status: "no-recurrence-observed", injections: 4, recurrences: 0 },
+      }],
+      priorKnowledge: [{ kind: "adr", source: "docs/adr/001.md", text: "Keep adapters host-neutral." }],
+    });
+    const out = lines.join("\n");
+    assert.match(out, /## Project Knowledge Pack/);
+    assert.match(out, /### Detected conventions/);
+    assert.match(out, /### Reviewed patterns and outcome evidence/);
+    assert.match(out, /injected=4; recurred=0/);
+    assert.match(out, /### Retrieved history/);
   });
 });
 

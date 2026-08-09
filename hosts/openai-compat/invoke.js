@@ -190,6 +190,7 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
   let observedCachedTokens = 0;
   let sawUsage = false;
   let observedModel = null;
+  let capturedOutput = "";
 
   while (iterations < MAX_TOOL_ITERATIONS) {
     iterations++;
@@ -217,6 +218,9 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
 
     // Stream assistant text to stdout in verbose mode only.
     if (assistantMsg.content) {
+      if (ctx.captureOutput === true && capturedOutput.length < 256 * 1024) {
+        capturedOutput += assistantMsg.content.slice(0, 256 * 1024 - capturedOutput.length);
+      }
       if (verbose) {
         process.stdout.write(assistantMsg.content);
         if (!assistantMsg.content.endsWith("\n")) process.stdout.write("\n");
@@ -225,6 +229,14 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
 
     const finishReason = choice.finish_reason;
     const toolCalls = assistantMsg.tool_calls;
+
+    // The conversational coordinator intentionally advertises zero tools.
+    // Fail closed if an endpoint nevertheless returns a tool call (whether
+    // through a provider quirk or a prompt-injection attempt); do not pass it
+    // to executeTool merely because the response shape happens to contain it.
+    if (descriptor.disableTools === true && Array.isArray(toolCalls) && toolCalls.length > 0) {
+      throw new Error("openai-compat: read-only invocation returned a forbidden tool call");
+    }
 
     if (!toolCalls || toolCalls.length === 0 || finishReason === "stop") {
       // Model is done.
@@ -361,6 +373,7 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     durationMs: Date.now() - start,
     timedOut: false,
     writeViolations: violations,
+    ...(ctx.captureOutput === true ? { output: capturedOutput } : {}),
     usage,
     telemetry: usage ? "observed" : "unavailable",
   };

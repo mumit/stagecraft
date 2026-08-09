@@ -28,6 +28,10 @@ const DEFAULTS = {
   pipeline: {
     default_track: "full",
     isolation: "in-place",
+    // Parallel stage-04 roles share the operator checkout by default.
+    // "git-worktree" gives each role a detached workspace and reconciles
+    // only role-authorized writes after the dispatch completes.
+    workstream_isolation: "shared",
     skip_stages: [],
     force_stages: [],
     right_sizing: true,
@@ -80,10 +84,8 @@ const DEFAULTS = {
   },
   deploy: null,
   patterns: {
-    // 30.2(c): `devteam patterns review` flags a promoted pattern as a
-    // demotion candidate once stats.recurrence_after_injection reaches this
-    // many blockers recurring after injection. Flagging only — demotion
-    // stays an explicit `devteam patterns demote <id>` operator action.
+    // Recurrence threshold for outcome quarantine. Prompt selection excludes
+    // a pattern at this delta since promotion; demotion stays explicit.
     demotion_recurrence_threshold: 3,
   },
   learning: {
@@ -97,7 +99,7 @@ const DEFAULTS = {
   memory: {
     // 30.4: retrieval into stage prompts + auto-ingest at pipeline-complete.
     // Both sides of the loop gate on this one flag — false turns off both
-    // the "## Prior Project Knowledge" prompt section and the run-end
+    // the retrieved-history subsection of the Project Knowledge Pack and the run-end
     // auto-ingest (core/driver.js). Retrieval additionally requires
     // .devteam/memory/ to already exist (core/memory/inject.js); a project
     // that has never run `devteam memory ingest` sees no behavior change.
@@ -179,6 +181,9 @@ function loadConfig(cwd = process.cwd()) {
       pipeline: {
         default_track: parsed.pipeline?.default_track ?? DEFAULTS.pipeline.default_track,
         isolation: parsed.pipeline?.isolation ?? DEFAULTS.pipeline.isolation,
+        workstream_isolation: parsed.pipeline?.workstream_isolation === "git-worktree"
+          ? "git-worktree"
+          : DEFAULTS.pipeline.workstream_isolation,
         isolation_acknowledge_partial: parsed.pipeline?.isolation_acknowledge_partial === true,
         skip_stages: Array.isArray(parsed.pipeline?.skip_stages) ? parsed.pipeline.skip_stages : [],
         force_stages: Array.isArray(parsed.pipeline?.force_stages) ? parsed.pipeline.force_stages : [],
@@ -502,6 +507,7 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("pipeline:");
   lines.push("  default_track: full");
   lines.push("  isolation: in-place");
+  lines.push("  workstream_isolation: shared  # opt in: git-worktree (parallel build roles only)");
   lines.push("  # require_signed_gates: false  # requires DEVTEAM_SIGNING_SECRET when true");
   lines.push("  # skip_stages: []     # stage names to skip, e.g. [red-team]");
   lines.push("  # force_stages: []    # stage names to run even when skip/conditional rules would skip them");

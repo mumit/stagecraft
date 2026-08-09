@@ -113,6 +113,7 @@ function buildBashTool() {
 // toolBudget: Read → read_file + list_files; Write → write_file; Bash → bash.
 // Glob is treated as an alias for list_files (already included via Read).
 function buildTools(descriptor) {
+  if (descriptor.disableTools === true) return [];
   const BASH = buildBashTool();
   const budget = descriptor.toolBudget;
   if (!budget || budget.length === 0) {

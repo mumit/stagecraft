@@ -62,6 +62,9 @@ pipeline/gates/archive/
 pipeline/gates/replay/
 pipeline/dispatches/
 pipeline/memory/
+pipeline/lint-output.txt
+pipeline/pre-review-output.txt
+pipeline/changed-files.txt
 pipeline/changes/*/run.lock
 pipeline/changes/*/run-state.json
 pipeline/changes/*/run-log.jsonl
@@ -70,7 +73,16 @@ pipeline/changes/*/gates/archive/
 pipeline/changes/*/gates/replay/
 pipeline/changes/*/dispatches/
 pipeline/changes/*/memory/
+pipeline/changes/*/lint-output.txt
+pipeline/changes/*/pre-review-output.txt
+pipeline/changes/*/changed-files.txt
 .devteam/memory/
+.devteam/patterns/
+.devteam/knowledge/
+.devteam/worktrees/
+.devteam/evidence-project-id
+.devteam/corpus/
+.devteam/evals/
 # END stagecraft
 ```
 

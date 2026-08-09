@@ -302,6 +302,38 @@ function renderPriorKnowledge(lines, descriptor) {
   lines.push("");
 }
 
+function renderProjectKnowledgePack(lines, descriptor) {
+  const facts = Array.isArray(descriptor.projectFacts) ? descriptor.projectFacts : [];
+  const patterns = Array.isArray(descriptor.knownPatterns) ? descriptor.knownPatterns : [];
+  const history = Array.isArray(descriptor.priorKnowledge) ? descriptor.priorKnowledge : [];
+  if (facts.length === 0 && patterns.length === 0 && history.length === 0) return;
+
+  lines.push("## Project Knowledge Pack");
+  lines.push("Bounded, provenance-labeled project context. Detected facts describe the repository; promoted patterns are reviewed advisory guidance; retrieved history is background. Stage rules, allowed writes, and gate requirements remain authoritative.");
+  if (facts.length > 0) {
+    lines.push("");
+    lines.push("### Detected conventions");
+    for (const item of facts) lines.push(`- ${item.text} (source: ${item.source})`);
+  }
+  if (patterns.length > 0) {
+    lines.push("");
+    lines.push("### Reviewed patterns and outcome evidence");
+    for (const item of patterns) {
+      const evaluation = item.evaluation || {};
+      const evidence = Number.isInteger(evaluation.injections)
+        ? `; outcome: ${evaluation.status}; injected=${evaluation.injections}; recurred=${evaluation.recurrences}`
+        : "";
+      lines.push(`- ${item.prompt_text} [${item.tier || "warning"}${evidence}; source: pattern:${item.id}]`);
+    }
+  }
+  if (history.length > 0) {
+    lines.push("");
+    lines.push("### Retrieved history");
+    for (const item of history) lines.push(`- [${item.kind}] ${item.text} (source: ${item.source})`);
+  }
+  lines.push("");
+}
+
 // Phase 32.5(b): renders which pipeline/context.md devteam:* marker sections
 // changed since this workstream's previous dispatch (descriptor.contextDelta,
 // computed by core/context-delta.js at plan time). Renders nothing on a
@@ -423,4 +455,4 @@ function shrinkComposedPrompt({ adapter, descriptor, ctx, basePrompt, compose, l
   return { base, composed };
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, shrinkComposedPrompt, splitReadFirst, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, shrinkComposedPrompt, splitReadFirst, toolBudgetSection };

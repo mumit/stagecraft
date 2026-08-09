@@ -60,7 +60,7 @@ Capability semantics:
 | `hooks`          | Auto-advance pipeline when a gate file is written                     | Orchestrator polls the gate file |
 | `subagents`      | Fan out workstreams (Backend / Frontend / Platform) in parallel       | Sequential stage execution      |
 | `slashCommands`  | Install `/devteam:*` slash commands                                   | User invokes `devteam` from terminal |
-| `worktrees`      | Honor `isolation: isolated` mode                                      | All work in-place               |
+| `worktrees`      | Host exposes a native worktree/workspace primitive for adapter-specific flows | Core-managed `pipeline.workstream_isolation: git-worktree` remains available for parallel headless builds; otherwise shared checkout |
 | `headless`       | Adapter can drive the host non-interactively (`cli-driven` mode)      | `user-driven` only              |
 | `enforces.<rule>`| Where the host enforces a core rule. Values: `tool-call-time` (blocked at write — hooks), `post-hoc-audit` (orchestrator write-audit diffs git state before/after invoke; unauthorized writes flip the gate to FAIL, while narrow runtime caches such as Python `__pycache__/*.pyc` are ignored), `prompt-only` (advisory only; no automated enforcement). | See `core/guards/write-audit.js`. |
 | `enforces.shell` | `true` if the agent can execute command-line tools (for example through a bash tool or direct-command executor). Required by pre-review, qa, verification-beyond-tests, deploy. | Orchestrator refuses dispatch with a named error. |
@@ -109,7 +109,7 @@ interface HostAdapter {
 }
 
 interface InstallOpts {
-  isolation: "in-place" | "isolated";    // default "in-place"
+  isolation: "in-place" | "bounded";     // pipeline artifact placement; default "in-place"
   force: boolean;                        // overwrite existing files
   roles: string[];                       // which roles/*.md to render (default: all)
 }
@@ -133,6 +133,7 @@ interface StageDescriptor {
   template: string;                      // "build-template.md"
   expectedGate: object;                  // JSON Schema for the gate file
   goalCondition: string | null;          // Convergence condition for goal-loop hosts; null if none
+  disableTools?: boolean;                // Offer/permit no tools; fail closed where the protocol supports it
 }
 
 interface PipelineContext {
@@ -140,12 +141,14 @@ interface PipelineContext {
   feature: string;                       // free-text title
   cwd: string;
   isolation: "in-place" | "isolated";
+  captureOutput?: boolean;               // Return bounded assistant text without enabling transcript logs
 }
 
 interface InvokeResult {
   exitCode: number;
   gatePath: string | null;
   durationMs: number;
+  output?: string;                       // Present only when captureOutput was requested and supported
 }
 
 interface StatusReport {
@@ -163,6 +166,15 @@ adapter must send it verbatim when present. Core one-off workflows use
 descriptor and calls this same method; they do not parse `headlessCommand` or
 spawn a model process. A headless adapter therefore must implement `invoke()`
 even when it also declares `headlessCommand`.
+
+`captureOutput` is an additive adapter boundary used by read-only conversational
+turns. A CLI adapter captures at most 256 KiB of parsed assistant stdout;
+structured Claude/Codex streams are reduced to assistant text before capture.
+HTTP-native OpenAI-compatible and ACP adapters return the equivalent assistant
+content. It does not imply tool denial: `disableTools` is the separate request.
+OpenAI-compatible hosts advertise no tools and reject a returned tool call; ACP
+rejects every permission request. Same-user CLI processes must still be treated
+as unsandboxed.
 
 ## Lifecycle: how a stage actually runs
 

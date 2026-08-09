@@ -45,10 +45,11 @@ devteam run
 | Host adapters | `hosts/*/adapter.js`, `core/adapters/` | Install host surfaces, render prompts, invoke host CLIs, enforce declared capabilities |
 | Escalation | `core/escalation.js` | Principal ruling and deterministic ruling-application flow |
 | Memory | `core/memory/` | Chunk, embed, store, query, and promote project/org records |
+| Knowledge pack | `core/knowledge-pack.js`, `core/adapters/render-helpers.js` | Maintain bounded repository facts and render them with reviewed patterns and retrieved history |
 | Specification | `core/spec/` | Gherkin generation and AC/spec/test drift analysis |
 | Learning/analytics | `core/advise.js`, `scripts/dashboard.js`, `scripts/performance.js`, `scripts/routing-suggest.js` | Aggregate gates into advice, cost, pass-rate, and routing evidence |
 | UI/logging | `core/ui/`, `core/log/journal.js` | Loopback dashboard, SSE updates, and chronological pipeline journal |
-| Standards discovery | `core/standards/discover.js`, `core/stage-shopping/assess.js` | Infer project conventions and pipeline track |
+| Standards discovery | `core/standards/discover.js`, `core/stage-shopping/assess.js` | Infer project conventions, verification commands, and pipeline track |
 | Deployment guidance | `core/deploy/*.md` | Host-neutral procedures consumed by the platform role |
 
 ## Dependency graph
@@ -134,7 +135,7 @@ an architectural dependency.
 Primary project config is `.devteam/config.yml`:
 
 - `routing.default_host`, `routing.roles`, `routing.stages`, `review_fanout`
-- `pipeline.default_track`, `isolation`, `skip_stages`, `verify`, `custom_stages`
+- `pipeline.default_track`, artifact `isolation`, `workstream_isolation`, `skip_stages`, `verify`, `custom_stages`
 - `autonomy.max_retries`, `require_confirmed_track`, and driver options
 - `deploy.adapter` plus adapter-specific values
 
