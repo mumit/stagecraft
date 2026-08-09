@@ -217,6 +217,26 @@ pipeline:
 
 With `isolation: bounded`, artifacts (gates, logs, context files) land under `pipeline/changes/<changeId>/` instead of the global `pipeline/`. The `changeId` is derived by slugifying the `--feature` value. `devteam next` and `devteam summary` can distinguish in-flight features; `devteam validate` reads `DEVTEAM_CHANGE_ID` from the environment to validate gates in the bounded directory. Default is `in-place`, which has no impact on existing setups.
 
+### Isolated build workstreams — deterministic parallel coding
+
+Artifact isolation and coding-workspace isolation are separate. Opt in when the
+four parallel build roles should not observe or overwrite one another's
+in-progress changes:
+
+```yaml
+pipeline:
+  workstream_isolation: git-worktree
+```
+
+Every planned stage-04 role receives a detached Git worktree containing the
+same tracked, dirty, untracked, and operational-context baseline. After the
+role finishes, Stagecraft reconciles only its `allowedWrites`. Non-overlapping
+shared-file edits are three-way merged; unauthorized paths, unsafe symlinks,
+and unresolved overlap are refused and make the workstream gate fail. The
+default is `shared`; single-role and peer-review stages are unchanged. This is
+a correctness boundary, not a security sandbox—the agent retains the invoking
+user's OS permissions. See [ADR-019](adr/019-isolated-build-workstreams.md).
+
 ### Secret scanning — blocks credentials from reaching the repo
 
 Wired into claude-code's `PreToolUse Write|Edit` hook. Runs before every file write.
