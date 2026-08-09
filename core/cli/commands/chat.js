@@ -10,7 +10,14 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const {
   coordinatorTurn,
   projectSnapshot,
+  refinementTurn,
 } = require(path.join(__dirname, "..", "..", "coordinator"));
+const {
+  applyProposal,
+  listProposals,
+  loadProposal,
+  rejectProposal,
+} = require(path.join(__dirname, "..", "..", "artifact-proposals"));
 
 const name = "chat";
 
@@ -22,6 +29,11 @@ const flags = {
   "timeout-ms": { type: "number", description: "Per-turn host timeout in milliseconds" },
   json:         { type: "boolean", description: "JSON output for a one-shot question" },
   "dry-run":    { type: "boolean", description: "Print the grounded prompt without calling a host" },
+  refine:        { type: "string", description: "Propose a requirements or design artifact refinement" },
+  proposal:      { type: "string", description: "Inspect, apply, or reject a proposal id" },
+  apply:         { type: "boolean", description: "Explicitly apply --proposal after rechecking hash/invalidation" },
+  reject:        { type: "boolean", description: "Reject --proposal without changing the artifact" },
+  "list-proposals": { type: "boolean", description: "List local artifact proposals and status" },
   help:         { type: "boolean", description: "Show this help" },
 };
 
@@ -153,7 +165,51 @@ async function runAsync(positional, _flags) {
   const cwd = _flags.cwd || process.cwd();
   const { requireProjectContext } = require(path.join(__dirname, "..", "project-guard"));
   requireProjectContext(cwd, _flags, "chat");
+  const { loadConfig, changeIdFromFeature } = require(path.join(__dirname, "..", "..", "config"));
+  const config = loadConfig(cwd);
+  const changeId = config.pipeline.isolation === "bounded" ? changeIdFromFeature(_flags.feature || "") : null;
+  const proposalModes = [_flags.apply, _flags.reject].filter(Boolean).length;
+  if (proposalModes > 1) throw new Error("--apply and --reject are mutually exclusive");
+  if ((_flags.apply || _flags.reject) && !_flags.proposal) throw new Error("--apply/--reject requires --proposal <id>");
+  if (_flags.listProposals) {
+    const proposals = listProposals(cwd, changeId);
+    if (_flags.json) process.stdout.write(`${JSON.stringify(proposals, null, 2)}\n`);
+    else if (proposals.length === 0) process.stdout.write("No artifact proposals.\n");
+    else proposals.forEach((proposal) => process.stdout.write(`${proposal.id}  ${proposal.status.padEnd(8)}  ${proposal.kind}  ${proposal.artifact}\n`));
+    return;
+  }
+  if (_flags.proposal) {
+    const proposal = _flags.apply ? applyProposal(cwd, changeId, _flags.proposal)
+      : _flags.reject ? rejectProposal(cwd, changeId, _flags.proposal)
+      : loadProposal(cwd, changeId, _flags.proposal).proposal;
+    if (_flags.json) process.stdout.write(`${JSON.stringify(proposal, null, 2)}\n`);
+    else {
+      process.stdout.write(`proposal ${proposal.id}: ${proposal.status} (${proposal.kind})\n`);
+      process.stdout.write(`artifact: ${proposal.artifact}\n`);
+      process.stdout.write(`affected gates: ${proposal.affected_gates.length ? proposal.affected_gates.join(", ") : "none"}\n\n`);
+      process.stdout.write(proposal.diff);
+    }
+    return;
+  }
   const question = positional.join(" ").trim();
+  if (_flags.refine) {
+    if (!question) throw new Error("--refine requires a one-shot instruction");
+    const result = await refinementTurn({
+      cwd, kind: _flags.refine, instruction: question, feature: _flags.feature,
+      host: _flags.host, model: _flags.model, timeoutMs: _flags.timeoutMs,
+      dryRun: _flags.dryRun === true,
+    });
+    if (_flags.dryRun) process.stdout.write(_flags.json ? `${JSON.stringify({ prompt: result.prompt }, null, 2)}\n` : `${result.prompt}\n`);
+    else if (_flags.json) process.stdout.write(`${JSON.stringify(result.proposal, null, 2)}\n`);
+    else {
+      process.stdout.write(`Created proposal ${result.proposal.id} for ${result.proposal.artifact}.\n`);
+      process.stdout.write(`Affected gates: ${result.proposal.affected_gates.length ? result.proposal.affected_gates.join(", ") : "none"}.\n`);
+      process.stdout.write(`Inspect: devteam chat --proposal ${result.proposal.id}\n`);
+      process.stdout.write(`Apply:   devteam chat --proposal ${result.proposal.id} --apply\n`);
+      process.stdout.write(`Reject:  devteam chat --proposal ${result.proposal.id} --reject\n`);
+    }
+    return;
+  }
   if (question) return runOneShot(cwd, question, _flags);
   return runInteractive(cwd, _flags);
 }

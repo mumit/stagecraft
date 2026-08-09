@@ -15,15 +15,20 @@ All flags are optional unless marked otherwise. `--help` is available on every c
 
 Grounded, read-only conversation about current pipeline state and the safest next command. No question opens a TTY session; chat never executes its recommendation.
 
-| Flag         | Type   | Description                                           |
-| ------------ | ------ | ----------------------------------------------------- |
-| --cwd        | string | Target project directory                              |
-| --feature    | string | Feature description for bounded isolation lookup      |
-| --host       | string | Headless host override (supports acp:<agent-command>) |
-| --model      | string | Model override for this conversation                  |
-| --timeout-ms | number | Per-turn host timeout in milliseconds                 |
-| --json       | bool   | JSON output for a one-shot question                   |
-| --dry-run    | bool   | Print the grounded prompt without calling a host      |
+| Flag             | Type   | Description                                                    |
+| ---------------- | ------ | -------------------------------------------------------------- |
+| --cwd            | string | Target project directory                                       |
+| --feature        | string | Feature description for bounded isolation lookup               |
+| --host           | string | Headless host override (supports acp:<agent-command>)          |
+| --model          | string | Model override for this conversation                           |
+| --timeout-ms     | number | Per-turn host timeout in milliseconds                          |
+| --json           | bool   | JSON output for a one-shot question                            |
+| --dry-run        | bool   | Print the grounded prompt without calling a host               |
+| --refine         | string | Propose a requirements or design artifact refinement           |
+| --proposal       | string | Inspect, apply, or reject a proposal id                        |
+| --apply          | bool   | Explicitly apply --proposal after rechecking hash/invalidation |
+| --reject         | bool   | Reject --proposal without changing the artifact                |
+| --list-proposals | bool   | List local artifact proposals and status                       |
 
 ### `devteam stage <name> [options]`
 
