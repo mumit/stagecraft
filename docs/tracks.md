@@ -33,12 +33,13 @@ Or override per-invocation: `devteam stage build --track quick`.
 |---|---|---|---|
 | Small bounded iteration, no deploy needed yet — **the day-to-day default** | `loop` | Lightest — 4 dispatches | Minimal brief → single-workstream build → qa → scoped peer-review (1 reviewer, 1 approval); no design, no red-team, no sign-off/deploy. See [§ The `loop` track](#the-loop-track) |
 | Mechanical change with obvious scope (rename a function, bump padding) | `nano` | Minimal | Build + scoped peer-review (1 reviewer, 1 approval) + qa |
-| Bounded feature or fix with clear requirements and no cross-cutting design concerns | `quick` | Light | Skips design, clarification, pre-review, and red-team; PM brief is still required. Good default for most new features that don't touch the stoplist |
+| Bounded feature or fix that is moving toward sign-off/deploy but has no cross-cutting design concerns | `quick` | Light | Skips design, clarification, pre-review, and red-team; PM brief is still required. Prefer `loop` while iterating; choose `quick` when the same bounded change needs delivery stages |
 | Tweaking config/feature-flag values, no code | `config-only` | Light, conditional security review | Build + pre-review + (security if triggered) + qa + sign-off + deploy |
 | Dependency bump or library upgrade | `dep-update` | Light | Build + peer-review + qa + sign-off + deploy |
 | Urgent production incident | `hotfix` | Moderate — pre-review and peer-review are mandatory | Build + pre-review + (security if triggered) + peer-review + qa + sign-off + deploy + retro |
-| Complex feature, cross-cutting architecture change, or anything needing formal design or adversarial review — the **audited** path for regulated/high-stakes changes | `full` | Heaviest — all 18 stages | Full rigor: requirements → design → build → review → red-team → tests → sign-off → deploy → retro. Choose it when stakes justify the ceremony (Phase 34 — roadmap, not yet built — extends this trail into exportable, regulator-shaped attestations) |
+| Complex feature, cross-cutting architecture change, or anything needing formal design or adversarial review — the **audited** path for regulated/high-stakes changes | `full` | Heaviest — all 18 stages | Full rigor: requirements → design → build → review → red-team → tests → sign-off → deploy → retro. The resulting gate chain can be exported as an in-toto-shaped attestation with `devteam evidence export --attestation` |
 | Reviewing code that already exists — a brownfield repo, an inherited module, a subtree you didn't build with Stagecraft | `review-only` | Light — 3 dispatches, no build | Security-review + red-team + peer-review only; no requirements/design/build/sign-off/deploy. Works on a repo with zero `pipeline/` history. Narrow it with `--scope <path>` (repeatable). See [§ The `review-only` track](#the-review-only-track) |
+| Behavior-preserving structural change | `refactor` | Minimal | Build + peer-review + QA with characterization and mutation checks focused on preserving behavior rather than adding acceptance criteria |
 
 These are relative sizings, not bills. Run `devteam assess --json` (or watch `devteam run`'s pre-flight output) for stage slots, dispatches, and token estimates. A static preview prices explicit routing model pins immediately, falling back to the latest observed model for an unpinned `(role, host)` route. Its dollars are labeled `input-only-floor` because output length is unknowable before execution. Once the run corpus has ≥5 comparable runs for a track, the estimate switches to an empirical median (`observed-total`) and says so. See [`core/ceremony-preview.js`](../core/ceremony-preview.js) (phase-29.3).
 
@@ -81,7 +82,7 @@ refactor                      ✓                   ✓   ✓
 
 ## The `loop` track
 
-`loop` is the day-to-day default — reach for it before `quick` unless the
+`loop` is the recommended day-to-day path — reach for it before `quick` unless the
 change needs a design stage or is heading to deploy. It's the 4-slot
 minimal-ceremony track: brief → build → verify → review
 (`requirements` → `build` → `qa` → `peer-review`). Note the order — `qa`
@@ -235,9 +236,9 @@ This is an escape hatch, not a block.
 
 ## Choosing a track
 
-`devteam assess` automates this decision: given a change description and a file list it returns a `recommendedTrack`, a `confidence` level (`high | medium | low`), and the reasons. Running `devteam assess` (no flags) writes the result to `pipeline/track.json` so `devteam run` picks it up automatically. Use `devteam assess --confirm` to set `source:"human"` (operator-confirmed). See [Track record (`pipeline/track.json`)](#track-record-pipelinetrackjson) and [`ADR-006`](adr/006-track-inference-under-autonomy.md).
+`devteam assess` automates this decision: given a change description and a file list it returns a `recommendedTrack`, a `confidence` level (`high | medium | low`), and the reasons. Specialized signals choose `hotfix`, `dep-update`, `config-only`, `nano`, or `quick`; otherwise the day-to-day fallback is `loop`. Security-triggered code work cannot remain on `loop`, `nano`, or `quick` because none contains security-review, so it promotes to `full`. Running `devteam assess` (no flags) writes the result to `pipeline/track.json` so `devteam run` picks it up automatically. Use `devteam assess --confirm` to set `source:"human"` (operator-confirmed). See [Track record (`pipeline/track.json`)](#track-record-pipelinetrackjson), [`ADR-006`](adr/006-track-inference-under-autonomy.md), and [`ADR-018`](adr/018-materialized-run-plan-and-loop-default.md).
 
-**You don't have to run `devteam assess` yourself first.** If `devteam run` starts with no `--track`, no `pipeline/track.json`, and no `pipeline.custom_stages`, it runs the same `assess()` heuristics inline — at any confidence level, not just "high" — prints the recommendation and reasons before dispatching anything, and writes `pipeline/track.json` itself (`source:"inferred"`) so the decision is still a file you can read, diff, or override with `--track`. This requires a `--feature`/description to assess; a bare `devteam run` with nothing to go on still falls through to `pipeline.default_track`. See [ADR-016](adr/016-assess-by-default.md) (supersedes ADR-006 §1).
+**You don't have to run `devteam assess` yourself first.** If `devteam run` starts with no `--track`, no `pipeline/track.json`, and no `pipeline.custom_stages`, it runs the same `assess()` heuristics inline — at any confidence level, not just "high" — prints the recommendation and reasons before dispatching anything, and writes `pipeline/track.json` itself (`source:"inferred"`) so the decision is still a file you can read, diff, or override with `--track`. Generic feature descriptions now resolve to `loop` rather than paying full ceremony by default. This requires a `--feature`/description to assess; a bare `devteam run` with nothing to go on still falls through to `pipeline.default_track` (the factory configuration remains `full`). Before dispatch, the resolved decision is expanded into `pipeline/run-plan.json`, including stage dispositions and candidate role/host/model routes. See [ADR-016](adr/016-assess-by-default.md) and [ADR-018](adr/018-materialized-run-plan-and-loop-default.md).
 
 Decision tree:
 
@@ -250,7 +251,7 @@ Decision tree:
 7. **Is the change bounded, low-stakes, and doesn't need to deploy yet (still iterating)?** → `loop`, the day-to-day default. Promote to a deploy-capable track later with `--until` or a `custom_stages` re-run — see [§ The `loop` track](#the-loop-track).
 8. **Otherwise** → `quick`. This covers most bounded features and fixes: a new endpoint, a new UI component, added business logic, a non-trivial bug fix. Requirements must be clear and design self-contained. When in doubt between `quick` and `full`, start with `quick`; if Stage 2 design review surfaces cross-cutting concerns, restart on `full`.
 
-> **Note on the config.yml default.** The factory default is `pipeline.default_track: full`, which is conservative and always safe. However, `full` runs red-team adversarial review and formal design on every change, which is wasteful when most attack surfaces don't apply. Evaluate the appropriate track for each brief rather than relying on the config default — in practice, treat `loop` as the day-to-day default and reserve `full` for changes where the audited trail is worth the ceremony.
+> **Note on the config.yml default.** The factory default is `pipeline.default_track: full`, which is conservative. However, `full` runs red-team adversarial review and formal design on every change, which is wasteful when most attack surfaces don't apply. Evaluate the appropriate track for each brief rather than relying on the fallback — in practice, select `loop` explicitly for bounded day-to-day iteration and reserve `full` for changes where the audited trail is worth the ceremony.
 
 This decision tree is for the intent→code direction — you're about to *ship*
 something. `review-only` isn't a rung on that ladder: reach for it when

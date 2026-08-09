@@ -140,6 +140,7 @@ describe("commit --dry-run --json: file selection", () => {
     // Create the artifact file
     const pDir = path.join(cwd, "pipeline");
     fs.writeFileSync(path.join(pDir, "brief.md"), "# Brief\n");
+    fs.writeFileSync(path.join(pDir, "run-plan.json"), "{}\n");
 
     const r = runCommit(["--dry-run", "--json"], cwd);
     assert.equal(r.status, 0);
@@ -147,6 +148,7 @@ describe("commit --dry-run --json: file selection", () => {
     assert.equal(out.dry_run, true);
     assert.ok(out.files.some((f) => f.includes("stage-01.json")), "gate file missing");
     assert.ok(out.files.some((f) => f.includes("brief.md")), "brief.md missing");
+    assert.ok(out.files.some((f) => f.includes("run-plan.json")), "durable run plan missing");
   });
 
   it("uses diagnosis.md instead of brief.md in repair mode", () => {

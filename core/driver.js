@@ -42,6 +42,7 @@ const {
 } = require("./pipeline/right-sizing");
 const { assess } = require("./stage-shopping/assess");
 const { ceremonyPreview } = require("./ceremony-preview");
+const { buildRunPlan, persistRunPlan, portableRelative } = require("./run-plan");
 const { runAdvise } = require("./advise");
 const { MAX_RETRIES_DEFAULT, MAX_TRANSIENT_RETRIES_DEFAULT } = require("./gates/classify");
 const { loadPrincipalOutputs, runRuling, runFixEscalation } = require("./escalation");
@@ -451,10 +452,25 @@ function totalCostUsd(cwd, changeId) {
 //   "human"   — --track CLI flag or pipeline/track.json with source:"human"
 //   "inferred" — pipeline/track.json with source:"inferred", or assessed inline (below)
 //   "config"   — custom_stages or default_track from .devteam/config.yml
+//   "resume"   — migration fallback for pre-ADR-018 state without provenance
 //   "default"  — hard-coded "full" fallback
-function resolveTrack(opts, config, cwd) {
+function resolveTrack(opts, config, cwd, changeId = null) {
   // ADR-009 §Decision.1: --repair defaults to hotfix depth; --repair --track X overrides.
   if (opts.track) return { track: opts.track, source: "human", confidence: null };
+  // ADR-018: --resume means continue the original execution decision. The
+  // persisted state wins over mutable track.json/config unless the operator
+  // explicitly supplies --track, in which case plan drift is checked below.
+  if (opts.resume && cwd) {
+    const resumed = loadRunState(cwd, changeId);
+    if (resumed && (resumed.resolved_track || resumed.track)) {
+      const stored = resumed.resolved_track || resumed.track;
+      return {
+        track: stored,
+        source: resumed.track_source || "resume",
+        confidence: resumed.track_confidence || null,
+      };
+    }
+  }
   if (opts.repair) return { track: "hotfix", source: "human", confidence: null };
 
   // ADR-006 §2: pipeline/track.json per-run record takes precedence over
@@ -495,31 +511,6 @@ function resolveTrack(opts, config, cwd) {
     };
   }
   return { track: config.pipeline.default_track || "full", source: "config", confidence: null };
-}
-
-function summarizeRunPlan(order, config = {}, opts = {}) {
-  const skipStages = new Set((config.pipeline && config.pipeline.skip_stages) || []);
-  const rightSizedSkips = opts.rightSizedSkips || {};
-  const rightSizedStageNames = Object.keys(rightSizedSkips);
-  const deterministicSkipStages = new Set(rightSizedStageNames);
-  const included = order.filter((name) => !skipStages.has(name) && !deterministicSkipStages.has(name));
-  const skipped = order.filter((name) => skipStages.has(name));
-  const baseWorkstreams = included.reduce((sum, name) => {
-    const stage = STAGES[name];
-    return sum + (stage && Array.isArray(stage.roles) ? stage.roles.length : 0);
-  }, 0);
-  return {
-    stages_total: order.length,
-    stages_included: included.length,
-    stages_skipped_by_config: skipped.length,
-    stages_skipped_by_right_sizing: rightSizedStageNames.length,
-    base_workstreams: baseWorkstreams,
-    expected_workstreams: opts.expectedWorkstreams ?? baseWorkstreams,
-    conditional_stages: included.filter((name) => STAGES[name] && STAGES[name].conditionalOn).length,
-    skipped_stage_names: skipped,
-    right_sized_stage_names: rightSizedStageNames,
-    candidate_active_roles: opts.candidateActiveRoles || [],
-  };
 }
 
 const RUN_BLOCKERS_BEGIN = "<!-- devteam:run-blockers:begin -->";
@@ -859,6 +850,15 @@ async function run(opts = {}) {
   // silently corrupt an in-progress run. Users who edit .devteam/config.yml mid-run
   // must stop and restart (run.lock will alert them to the active run).
   const config = opts.config || loadConfig(cwd);
+  // Intent/isolation identity is independent of track selection and is needed
+  // to locate a bounded run-state before resolveTrack handles --resume.
+  const intent = opts.repair ? "repair" : "feature";
+  const isolation = config.pipeline.isolation;
+  const changeId = opts.changeId !== undefined
+    ? opts.changeId
+    : (isolation === "bounded"
+        ? (opts.repair ? changeIdFromSymptom(opts.repair || "") : changeIdFromFeature(opts.feature || ""))
+        : null);
   // ADR-006: resolveTrack returns {track, source, confidence} so the startup
   // confidence guard below can apply the require_confirmed_track check without
   // a second file read.
@@ -867,7 +867,7 @@ async function run(opts = {}) {
     source: trackSource,
     confidence: trackConfidence,
     assess_inline: assessInline,
-  } = resolveTrack(opts, config, cwd);
+  } = resolveTrack(opts, config, cwd, changeId);
   // ADR-016 (Phase 29.2): resolveTrack assessed a track inline (no --track, no
   // pipeline/track.json, no custom_stages). Persist the decision as the same
   // per-run record `devteam assess` writes, so it is a file an operator can
@@ -891,7 +891,6 @@ async function run(opts = {}) {
   }
   // ADR-009 §Decision.7: tag runs by intent from day one so feature vs repair
   // history is distinguishable in run-state.json and run-log.jsonl.
-  const intent = opts.repair ? "repair" : "feature";
   // ADR-009 Phase 2: --repair-at escape hatch. Defined early so the stage-order
   // computation below can tell whether to prepend the diagnosis stage.
   const repairAtRaw = opts.repairAt || null;
@@ -900,13 +899,6 @@ async function run(opts = {}) {
   // the same bounded subtree that runStageHeadless writes gates into.
   // Accept an explicit opts.changeId for tests; otherwise derive from feature
   // (or symptom for repair runs — ADR-009 §Consequences).
-  const isolation = config.pipeline.isolation;
-  const changeId = opts.changeId !== undefined
-    ? opts.changeId
-    : (isolation === "bounded"
-        ? (opts.repair ? changeIdFromSymptom(opts.repair || "") : changeIdFromFeature(opts.feature || ""))
-        : null);
-
   seedDeployContext(cwd, config, changeId);
 
   // Dependencies are injectable for deterministic testing of the loop without
@@ -1014,6 +1006,9 @@ async function run(opts = {}) {
   const nowTs = nowIso();
   const state = (opts.resume && loadRunState(cwd, changeId)) || {
     track: Array.isArray(effectiveTrack) ? effectiveTrack.join(",") : effectiveTrack,
+    resolved_track: effectiveTrack,
+    track_source: trackSource,
+    track_confidence: trackConfidence,
     intent,                                      // ADR-009 §Decision.7
     ...(opts.repair ? { repair: opts.repair } : {}), // symptom string persisted for correlation
     iterations: 0,
@@ -1031,6 +1026,9 @@ async function run(opts = {}) {
   }
   // PR-B counters (resilient to a resumed state that predates them).
   state.fixRetries = state.fixRetries || {};      // code-defect re-dispatches per stage
+  state.resolved_track = state.resolved_track || effectiveTrack;
+  state.track_source = state.track_source || trackSource;
+  state.track_confidence = state.track_confidence || trackConfidence;
   state.autoRule = state.autoRule || {};          // auto-rule attempts per stage
   state.transient = state.transient || {};        // no-gate transient retries per stage
   state.srcFingerprints = state.srcFingerprints || {}; // content hashes for no-source-change detection
@@ -1067,16 +1065,13 @@ async function run(opts = {}) {
     ...((config.pipeline && config.pipeline.skip_stages) || []),
     ...Object.keys(rightSizedSkips),
   ];
-  const runPlan = summarizeRunPlan(order, config, {
-    rightSizedSkips,
-    candidateActiveRoles: activeRoleCandidates.roles,
-    expectedWorkstreams: expectedWorkstreamCount(order, effectiveTrack, {
-      skipped: skippedForExpected,
-      activeRoles: activeRoleCandidates.roles,
-    }),
+  const expectedWorkstreams = expectedWorkstreamCount(order, effectiveTrack, {
+    skipped: skippedForExpected,
+    activeRoles: activeRoleCandidates.roles,
+    config,
   });
   // 29.3: ceremony cost preview for the pre-flight run-plan event. Scoped to
-  // the same right-sized stage list summarizeRunPlan just computed (not the
+  // the same right-sized stage list used by the materialized plan (not the
   // raw track shape) so the estimate matches what will actually dispatch.
   // Advisory only — a preview failure must never block a run.
   const includedStageNames = order.filter((name) =>
@@ -1120,24 +1115,38 @@ async function run(opts = {}) {
   let repairPatchItems = opts.repair ? [opts.repair] : null;
 
   try {
+    // ADR-018: make the exact deterministic preflight decision inspectable
+    // before any model dispatch. A resume reuses the original file only when
+    // its execution fingerprint still matches; routing/stage drift is a hard
+    // error instead of silently changing the run under an existing state.
+    const proposedRunPlan = buildRunPlan({
+      changeId,
+      order,
+      track: effectiveTrack,
+      trackSource,
+      trackConfidence,
+      intent,
+      config,
+      rightSizedSkips,
+      candidateActiveRoles: activeRoleCandidates.roles,
+      expectedWorkstreams,
+      ceremonyPreview: ceremony,
+      assessInline: assessInline || null,
+      runId: state.started_at,
+    });
+    const persistedRunPlan = persistRunPlan(cwd, changeId, proposedRunPlan, { resume: opts.resume });
+    const runPlan = persistedRunPlan.plan;
+    const planPath = portableRelative(cwd, persistedRunPlan.path);
     logEvent(cwd, changeId, {
       outcome: "run-plan",
-      track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
-      track_source: trackSource,
-      track_confidence: trackConfidence,
-      assess_inline: assessInline || null,
-      intent,
-      ceremony_preview: ceremony,
+      plan_path: planPath,
+      plan_reused: persistedRunPlan.reused,
       ...runPlan,
     });
     onEvent({
       type: "run-plan",
-      track: Array.isArray(effectiveTrack) ? "custom" : effectiveTrack,
-      track_source: trackSource,
-      track_confidence: trackConfidence,
-      assess_inline: assessInline || null,
-      intent,
-      ceremony_preview: ceremony,
+      plan_path: planPath,
+      plan_reused: persistedRunPlan.reused,
       ...runPlan,
     });
 

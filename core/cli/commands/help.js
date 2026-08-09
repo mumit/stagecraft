@@ -132,7 +132,8 @@ Commands:
                                    blockers remain (=all adds PEER_REVIEW_RISK).
                                    --auto-commit commits pipeline artifacts on
                                    a clean halt (ceiling, --until, budget).
-                                   Writes run.lock, run-state.json, run-log.
+                                   Writes run-plan.json, run.lock,
+                                   run-state.json, and run-log.jsonl.
   prototype <start|build|note|promote>
                                    Pre-SDLC fast-learning workflow. start
        [id-or-title] [--feature]    creates pipeline/prototypes/<id>/ with

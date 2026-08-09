@@ -18,7 +18,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 
 - [user-guide.md](user-guide.md) — daily-use reference: running stages, multi-host setups, headless mode
 - [user-guide.md § Prototype first, harden later](user-guide.md#prototype-first-harden-later) — short prototype-mode tutorial using a token cost estimator example
-- [tracks.md](tracks.md) — which of the seven tracks to pick for a given change, plus why prototype mode is a pre-SDLC workflow rather than a track
+- [tracks.md](tracks.md) — which of the ten tracks or task-specific modes to pick for a given change, plus why prototype mode is a pre-SDLC workflow rather than a track
 - [conventions.md](conventions.md) — pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments)
 - [runbooks/README.md](runbooks/README.md) — troubleshooting index: symptom → runbook section
 - [cost.md](cost.md) — cost tracking, pricing table, and budget workflow
@@ -57,13 +57,14 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [adr/014-docker-headless-runner.md](adr/014-docker-headless-runner.md) — Docker runner trust boundary and packaging decision
 - [adr/015-workstream-scheduling.md](adr/015-workstream-scheduling.md) — per-host workstream concurrency, queue telemetry, and retry backoff reasons
 - [adr/016-assess-by-default.md](adr/016-assess-by-default.md) — inline `assess()` inference on `devteam run` at any confidence, persisted to `pipeline/track.json`; supersedes ADR-006 §1
-- [adr/017-dag-wave-execution.md](adr/017-dag-wave-execution.md) — curated `dependsOn[]` metadata, wave formation bounded by `autonomy.max_parallel_stages`, chain stays track-order (Proposed, pending review)
+- [adr/017-dag-wave-execution.md](adr/017-dag-wave-execution.md) — accepted curated `dependsOn[]` metadata, wave formation bounded by `autonomy.max_parallel_stages`, and track-order gate-chain semantics
+- [adr/018-materialized-run-plan-and-loop-default.md](adr/018-materialized-run-plan-and-loop-default.md) — materialized pre-dispatch plan, plan-bound resume, and `loop` as the ordinary assessed fallback
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration
 - [../plans/phase-25-omnigent-director-hardening.md](../plans/phase-25-omnigent-director-hardening.md) — proposed and parked plan for hardening the Omnigent director prototype
 - [../plans/phase-26-performance-observability-usability.md](../plans/phase-26-performance-observability-usability.md) — proposed plan for critical-path telemetry, live run UX, verification speed, scheduling, and context/routing improvements
-- [../plans/phase-27-pattern-learning.md](../plans/phase-27-pattern-learning.md) — proposed plan for project-local pattern learning from blockers, warnings, auto-retry outcomes, and positive examples
+- [../plans/phase-27-pattern-learning.md](../plans/phase-27-pattern-learning.md) — completed plan for project-local pattern learning from blockers, warnings, auto-retry outcomes, and positive examples
 - [spec-authoring.md](spec-authoring.md) — writing AC-N criteria and scaffolding the spec file
 - [migration-safety.md](migration-safety.md) — veto criteria, gate fields, and the migration heuristic
 - [red-team.md](red-team.md) — 10 attack surfaces, gate fields, routing, and how it differs from security review

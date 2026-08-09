@@ -21,12 +21,24 @@ function reflectorEnabledConfig() {
   return "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\nlearning:\n  reflector: true\n";
 }
 
-function makeStdoutStub(content) {
+function makeOutputStub(content) {
   const text = typeof content === "string" ? content : JSON.stringify(content);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-reflector-stub-"));
   dirs.push(dir);
   const script = path.join(dir, "stub.js");
-  fs.writeFileSync(script, `process.stdout.write(${JSON.stringify(text)});\n`, "utf8");
+  fs.writeFileSync(script, `
+const fs = require("node:fs");
+const path = require("node:path");
+let prompt = "";
+process.stdin.on("data", (chunk) => { prompt += chunk; });
+process.stdin.on("end", () => {
+  const match = prompt.match(/Write ONLY the JSON object[^\`]*\`([^\`]+)\`/);
+  if (!match) process.exit(2);
+  const output = path.resolve(process.cwd(), match[1]);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, ${JSON.stringify(text)}, "utf8");
+});
+`, "utf8");
   return script;
 }
 
@@ -100,7 +112,7 @@ describe("driver: Reflector dispatch (phase-30 item 30.3)", () => {
 
   it("valid scripted reflector output lands new_candidates in the pattern store tagged source: reflector", async () => {
     const cwd = track(makeTargetProject({ config: reflectorEnabledConfig() }));
-    const script = makeStdoutStub(VALID_DELTA);
+    const script = makeOutputStub(VALID_DELTA);
     await withHeadlessCommand(`"${process.execPath}" "${script}"`, async () => {
       const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "done" }) });
       assert.equal(s.completed, true);
@@ -123,7 +135,7 @@ describe("driver: Reflector dispatch (phase-30 item 30.3)", () => {
 
   it("malformed reflector output (invalid JSON) is discarded whole; the run is unaffected", async () => {
     const cwd = track(makeTargetProject({ config: reflectorEnabledConfig() }));
-    const script = makeStdoutStub("this is not json {{{");
+    const script = makeOutputStub("this is not json {{{");
     await withHeadlessCommand(`"${process.execPath}" "${script}"`, async () => {
       const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "done" }) });
       assert.equal(s.completed, true, "malformed reflector output must never fail the run");
@@ -140,7 +152,7 @@ describe("driver: Reflector dispatch (phase-30 item 30.3)", () => {
     // Valid JSON, but new_candidates[0] is missing required fields and
     // dedup_merges is the wrong type — must be rejected in full, not
     // partially ingested.
-    const script = makeStdoutStub({
+    const script = makeOutputStub({
       schema_version: "1.0",
       new_candidates: [{ tier: "positive" }],
       counter_adjustments: [],

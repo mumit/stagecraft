@@ -7,8 +7,9 @@
 ## Context
 
 Every `devteam run` invocation must commit to a **track** — the named subset of pipeline
-stages that will execute. The seven tracks range from `loop` (4 stages, exactly 4 LLM
-dispatches) to `full` (18 stages, 15+ dispatches). Picking the wrong track is not a style error:
+stages that will execute. The current ten-track catalog ranges from `loop` (4 stages,
+exactly 4 LLM dispatches) to `full` (18 stages, 15+ dispatches), with review and refactor
+modes added after this ADR was accepted. Picking the wrong track is not a style error:
 
 > "Wrong-track autonomy is a 10× cost error."
 >  — docs/autonomous-execution-design.md §7

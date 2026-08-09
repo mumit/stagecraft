@@ -71,14 +71,14 @@ auto-applied regardless of what you pass.
 
 Before `devteam run` on an autonomous or CI pipeline:
 
-1. **Seed changed files** — write `pipeline/changed-files.txt` (or pass files directly to `devteam assess`).
-2. **Record the track** — run `devteam assess` to write `pipeline/track.json` with the inferred track. Review the confidence level. If the confidence is medium or low, either re-run with `--confirm` after verifying, or pass `--track <name>` explicitly to `devteam run`.
+1. **Describe the work** — pass `--feature` or `--feature-file`; this gives inline assessment and right-sizing a concrete signal.
+2. **Review the inferred track when risk warrants it** — `devteam run` assesses and writes `pipeline/track.json` automatically when no track decision exists. Use `devteam assess --confirm` or explicit `--track <name>` when you want a human-confirmed choice. Supplying `pipeline/changed-files.txt` or file arguments to `devteam assess` improves file-based inference but is optional.
 3. **Verify the stoplist** — if your change description mentions auth, PII, payments, or migrations, use `full` track; lighter tracks will be blocked anyway.
 
 ```bash
-devteam assess --description "fix login validation bug"   # inferred, writes track.json
-devteam assess --description "fix login validation bug" --confirm  # human-confirmed
-devteam run                                               # reads track.json automatically
+devteam run --feature "add sorting to the results page"  # assesses inline; generic work defaults to loop
+devteam assess --description "fix login validation bug" --confirm  # optional human-confirmed track
+devteam run --feature "fix login validation bug" --track full       # explicit safety override
 ```
 
 ## Launch
@@ -103,8 +103,13 @@ devteam run --repair "symptom" --repair-at src/auth.js:42      # skip diagnosis;
 `--repair` and `--feature` are mutually exclusive. See [§ Repair mode](#repair-mode-devteam-run---repair-adr-009) below and [`docs/runbooks/repair-flow.md`](repair-flow.md) for the diagnosis gate, scope-gate FAIL recovery, and tri-state reproduction.
 
 At startup, non-JSON runs print a plan preview to **stderr** with the effective track,
-included/total stages, configured skips, conditional stages, and base workstream count;
-the same data is recorded as a typed `run-plan` event in `run-log.jsonl`.
+included/total stages, configured skips, conditional stages, track-sized workstream
+counts, and the plan fingerprint. The complete pre-dispatch contract is written to
+`pipeline/run-plan.json`: stage order/disposition, candidate roles, resolved hosts and
+models, track provenance, and ceremony preview. The same data is recorded as a typed
+`run-plan` event in `run-log.jsonl`. A resumed run refuses changed stage or routing
+decisions; restart without `--resume` after reviewing the new plan. Conditional stages
+remain labelled conditional because their upstream gate does not exist at preflight.
 
 Progress prints to **stderr**; the `--json` summary prints to **stdout**. `--watch`
 and `--json` are mutually exclusive. When watch output is redirected or stderr is

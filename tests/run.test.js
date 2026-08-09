@@ -178,6 +178,15 @@ describe("driver: dispatch loop (injected deps)", () => {
     assert.equal(plan.stages_skipped_by_config, 1);
     assert.equal(plan.stages_skipped_by_right_sizing, expectedRightSized.length);
     assert.equal(plan.base_workstreams, expectedWorkstreams);
+    assert.equal(plan.schema, "stagecraft.run-plan/v1");
+    assert.match(plan.plan_fingerprint, /^[a-f0-9]{64}$/);
+    assert.equal(plan.plan_path, "pipeline/run-plan.json");
+    assert.equal(plan.stages.find((stage) => stage.name === "qa").disposition, "skipped");
+    assert.equal(plan.stages.find((stage) => stage.name === "deploy").disposition, "included");
+
+    const materialized = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"));
+    assert.equal(materialized.plan_fingerprint, plan.plan_fingerprint);
+    assert.deepEqual(materialized.stages, plan.stages);
 
     const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
       .trim()
@@ -193,6 +202,7 @@ describe("driver: dispatch loop (injected deps)", () => {
     const events = [];
     await run({
       cwd,
+      track: "full",
       feature: "add a hello HTTP endpoint",
       budgetUsd: 10,
       next: () => ({ action: "pipeline-complete", reason: "done" }),
@@ -208,6 +218,31 @@ describe("driver: dispatch loop (injected deps)", () => {
     const context = fs.readFileSync(path.join(cwd, "pipeline", "context.md"), "utf8");
     assert.match(context, /Right-sizing candidates/);
     assert.match(context, /Candidate active roles: backend/);
+  });
+
+  it("--resume reuses the original explicit track without requiring --track again", async () => {
+    const cwd = track(makeTargetProject());
+    await run({
+      cwd,
+      track: "loop",
+      budgetUsd: 10,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+
+    const events = [];
+    const resumed = await run({
+      cwd,
+      resume: true,
+      budgetUsd: 10,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+      onEvent: (event) => events.push(event),
+    });
+
+    assert.equal(resumed.completed, true);
+    const plan = events.find((event) => event.type === "run-plan");
+    assert.equal(plan.track, "loop");
+    assert.equal(plan.track_source, "human");
+    assert.equal(plan.plan_reused, true);
   });
 
   it("advances run-stage → merge → complete", async () => {

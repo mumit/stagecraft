@@ -436,7 +436,7 @@ describe("B9 read-side: driver run() uses bounded paths", () => {
   const { run } = require("../core/driver");
   const { clearConfigCache } = require("../core/config");
 
-  test("driver writes run-log, run-state, and lock under pipeline/changes/<id>/ in bounded mode", async () => {
+  test("driver writes run-plan, run-log, run-state, and lock under pipeline/changes/<id>/ in bounded mode", async () => {
     const cwd = makeTargetProject(); // isolation: bounded
     const changeId = "my-feature";
     clearConfigCache();
@@ -462,6 +462,10 @@ describe("B9 read-side: driver run() uses bounded paths", () => {
         fs.existsSync(path.join(changeRoot, "run-state.json")),
         `run-state.json must be under pipeline/changes/${changeId}/`,
       );
+      assert.ok(
+        fs.existsSync(path.join(changeRoot, "run-plan.json")),
+        `run-plan.json must be under pipeline/changes/${changeId}/`,
+      );
       // Lock should be released
       assert.ok(
         !fs.existsSync(path.join(changeRoot, "run.lock")),
@@ -471,6 +475,10 @@ describe("B9 read-side: driver run() uses bounded paths", () => {
       assert.ok(
         !fs.existsSync(path.join(cwd, "pipeline", "run-log.jsonl")),
         "run-log.jsonl must NOT appear under the global pipeline/ in bounded mode",
+      );
+      assert.ok(
+        !fs.existsSync(path.join(cwd, "pipeline", "run-plan.json")),
+        "run-plan.json must NOT appear under the global pipeline/ in bounded mode",
       );
     } finally {
       clearConfigCache();

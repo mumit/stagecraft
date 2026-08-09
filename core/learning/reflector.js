@@ -13,14 +13,12 @@
 // (core/patterns.js collect()), only on a clean pipeline-complete. Dispatch
 // follows the same routing precedence as any role (routing.roles.reflector →
 // routing.default_host) so it can be routed to a cheap model, but it is NOT
-// a stage dispatch: there is no descriptor/gate-footer rendering (that would
-// tell the model to write a gate, which this explicitly isn't) — the prompt
-// is assembled here from the role brief plus inline run context, and the
-// headless command is spawned directly (same pattern as core/a11y-fixer.js's
-// one-off remediation dispatch).
+// a stage dispatch: there is no descriptor/gate-footer rendering. The prompt
+// is assembled here from the role brief plus inline run context and sent via
+// adapter.invoke(), the same transport boundary as every other model call.
 //
-// Fire-and-forget contract: any failure — no adapter, no headlessCommand,
-// spawn error, non-zero exit, invalid JSON, or schema-invalid JSON — is
+// Fire-and-forget contract: any failure — no adapter/invoke implementation,
+// transport error, non-zero exit, invalid JSON, or schema-invalid JSON — is
 // logged as exactly one run-log event and never throws. The caller (driver)
 // still wraps the call in try/catch as defense in depth, but runReflector()
 // itself resolves in every case.
@@ -29,11 +27,10 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
-const { splitCommand } = require("../command-line");
 const { resolveHost } = require("../config");
 const { loadAdapter } = require("../router");
 const { gatesDir } = require("../paths");
+const { invokeAdapterTask } = require("../adapters/invoke-task");
 const patterns = require("../patterns");
 const { validateCandidatesDelta } = require("./validate-candidates-delta");
 
@@ -99,7 +96,7 @@ function readGateSummaries(cwd, changeId) {
   return summaries;
 }
 
-function buildPrompt({ cwd, pipelineRoot, changeId }) {
+function buildPrompt({ cwd, pipelineRoot, changeId, outputPath = "pipeline/reflector-output.json" }) {
   const brief = readRoleBrief();
   const gates = readGateSummaries(cwd, changeId);
   const events = readRunLogEvents(pipelineRoot);
@@ -129,7 +126,8 @@ function buildPrompt({ cwd, pipelineRoot, changeId }) {
     JSON.stringify(promoted, null, 2),
     "```",
     "",
-    "Output ONLY the JSON object described in your brief. No prose, no markdown fences, no commentary before or after.",
+    `Write ONLY the JSON object described in your brief to \`${outputPath}\`.`,
+    "Do not write any other file. Do not wrap the file content in markdown fences.",
   ].join("\n");
 }
 
@@ -140,54 +138,6 @@ function stripFences(text) {
   const trimmed = String(text || "").trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   return fenced ? fenced[1].trim() : trimmed;
-}
-
-function dispatch(cmdString, cwd, prompt, timeoutMs) {
-  return new Promise((resolve) => {
-    let bin, args;
-    try {
-      ({ bin, args } = splitCommand(cmdString, "headlessCommand"));
-    } catch (err) {
-      resolve({ ok: false, reason: `invalid headlessCommand "${cmdString}": ${err.message}` });
-      return;
-    }
-
-    let child;
-    try {
-      child = spawn(bin, args, { cwd, stdio: ["pipe", "pipe", "ignore"] });
-    } catch (err) {
-      resolve({ ok: false, reason: `failed to spawn "${bin}": ${err.message}` });
-      return;
-    }
-
-    let stdout = "";
-    let settled = false;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-      resolve(result);
-    };
-
-    const timer = timeoutMs > 0 ? setTimeout(() => {
-      try { child.kill("SIGTERM"); } catch { /* already gone */ }
-      finish({ ok: false, reason: "reflector dispatch timed out" });
-    }, timeoutMs) : null;
-    if (timer) timer.unref();
-
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.on("error", (err) => finish({ ok: false, reason: `failed to spawn "${bin}": ${err.message}` }));
-    child.stdin.on("error", () => { /* swallow EPIPE when child exits early */ });
-    child.stdin.write(prompt);
-    child.stdin.end();
-    child.on("close", (exitCode) => {
-      if (exitCode !== 0) {
-        finish({ ok: false, reason: `reflector dispatch exited ${exitCode}` });
-        return;
-      }
-      finish({ ok: true, stdout });
-    });
-  });
 }
 
 // opts:
@@ -216,27 +166,61 @@ async function runReflector(opts = {}) {
     return { ok: false, reason };
   }
 
-  const cmdString = process.env.DEVTEAM_HEADLESS_COMMAND || adapter.capabilities.headlessCommand;
-  if (!cmdString) {
-    const reason = `host "${hostName}" declares no headlessCommand`;
+  if (typeof adapter.invoke !== "function") {
+    const reason = `headless host "${hostName}" does not implement adapter.invoke()`;
     log({ outcome: "reflector-dispatch-failed", reason });
     return { ok: false, reason };
   }
 
-  const prompt = buildPrompt({ cwd, pipelineRoot: root, changeId });
+  const outputFile = path.join(root, "reflector-output.json");
+  const outputPath = path.relative(cwd, outputFile).replace(/\\/g, "/");
+  const cleanupOutput = () => { try { fs.unlinkSync(outputFile); } catch { /* output absent */ } };
+  cleanupOutput();
+  const prompt = buildPrompt({ cwd, pipelineRoot: root, changeId, outputPath });
   const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
-  const dispatched = await dispatch(cmdString, cwd, prompt, timeoutMs);
-  if (!dispatched.ok) {
-    log({ outcome: "reflector-dispatch-failed", reason: dispatched.reason });
-    return dispatched;
+  let dispatched;
+  try {
+    dispatched = await invokeAdapterTask({
+      adapter,
+      host: hostName,
+      cwd,
+      prompt,
+      label: "reflector",
+      role: "reflector",
+      allowedWrites: [outputPath],
+      toolBudget: ["Write"],
+      timeoutMs,
+      changeId,
+    });
+  } catch (err) {
+    const reason = err.message;
+    log({ outcome: "reflector-dispatch-failed", reason });
+    return { ok: false, reason };
+  }
+  if (dispatched.exitCode !== 0 || dispatched.timedOut) {
+    const reason = dispatched.timedOut
+      ? "reflector dispatch timed out"
+      : `reflector dispatch exited ${dispatched.exitCode}`;
+    log({ outcome: "reflector-dispatch-failed", reason });
+    cleanupOutput();
+    return { ok: false, reason };
+  }
+  if (Array.isArray(dispatched.writeViolations) && dispatched.writeViolations.length > 0) {
+    const reason = `reflector made unauthorized writes: ${dispatched.writeViolations.join(", ")}`;
+    log({ outcome: "reflector-dispatch-failed", reason });
+    cleanupOutput();
+    return { ok: false, reason };
   }
 
   let payload;
   try {
-    payload = JSON.parse(stripFences(dispatched.stdout));
+    if (!fs.existsSync(outputFile)) throw new Error(`output file not written: ${outputPath}`);
+    payload = JSON.parse(stripFences(fs.readFileSync(outputFile, "utf8")));
   } catch (err) {
     log({ outcome: "reflector-output-malformed", reason: `invalid JSON: ${err.message}` });
     return { ok: false, reason: `invalid JSON: ${err.message}` };
+  } finally {
+    cleanupOutput();
   }
 
   const { ok: valid, errors } = validateCandidatesDelta(payload);
