@@ -1,13 +1,19 @@
 <!-- generated: do not hand-edit -->
-<!-- To regenerate: npm run docs:generate (source: core/cli/commands/*.js) -->
+<!-- To regenerate: npm run docs:generate (source: bin/devteam + core/cli/commands/*.js) -->
 
 # CLI Reference
 
 Full `devteam` command reference. 43 commands.
-Derived from the per-command flag schemas in `core/cli/commands/`.
+Derived from the global CLI surface in `bin/devteam` and per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
-All flags are optional unless marked otherwise. `--help` is available on every command.
+## Global options
+
+| Invocation | Description |
+|---|---|
+| `devteam --version` | Print the Stagecraft version from `package.json` and exit. |
+
+All command flags are optional unless marked otherwise. `--help` is available on every command.
 
 ---
 

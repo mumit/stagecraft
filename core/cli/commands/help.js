@@ -48,6 +48,7 @@ Usage: devteam <command> [args]
 
   devteam <command> --help   Flags and details for one command
   devteam --help --all       Full reference (every command, every flag)
+  devteam --version          Print the Stagecraft version
 
 ${groupLines}
 
@@ -71,6 +72,9 @@ function printFullHelp() {
   console.log(`devteam — model-agnostic AI dev team orchestrator
 
 Usage: devteam <command> [args]
+
+Global options:
+  --version                        Print the Stagecraft version and exit.
 
 Commands:
   chat ["question"] [--host <name>] Grounded, read-only conversation about

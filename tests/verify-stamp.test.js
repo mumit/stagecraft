@@ -570,6 +570,8 @@ describe("verify/stamp: stage-04 workstream — lint scoped to allowedWrites", (
 
   it("appends the role's directory-shaped allowedWrites as extra lint args", async () => {
     const cwd = track(makeTargetProject());
+    fs.mkdirSync(path.join(cwd, "src", "backend"), { recursive: true });
+    fs.mkdirSync(path.join(cwd, "src", "tests"), { recursive: true });
     const script = path.join(cwd, "record-lint.js");
     fs.writeFileSync(script, `
       const fs = require('node:fs');
@@ -587,6 +589,29 @@ describe("verify/stamp: stage-04 workstream — lint scoped to allowedWrites", (
     assert.equal(r.gate._orchestrator_stamped.scope, "workstream");
     assert.equal(r.gate._orchestrator_stamped.role, "backend");
     assert.deepEqual(r.gate._orchestrator_stamped.runs.lint.scoped_paths, ["src/backend/", "src/tests/"]);
+  });
+
+  it("falls back to canonical lint when every declared role path is absent", async () => {
+    const cwd = track(makeTargetProject());
+    const script = path.join(cwd, "record-lint.js");
+    fs.writeFileSync(script, `
+      const fs = require('node:fs');
+      fs.writeFileSync('lint-args.json', JSON.stringify(process.argv.slice(2)));
+    `);
+    fs.writeFileSync(
+      path.join(cwd, ".devteam", "config.yml"),
+      configWith({ lint_command: `node ${script}` }),
+    );
+    const gatePath = seedRoleGate(cwd, "backend");
+    const r = await stampStage04Workstream(cwd, gatePath, { role: "backend", allowedWrites: ALLOWED_WRITES.backend });
+    assert.equal(r.ok, true);
+    const args = JSON.parse(fs.readFileSync(path.join(cwd, "lint-args.json"), "utf8"));
+    assert.deepEqual(args, [], "canonical lint command receives no nonexistent path arguments");
+    assert.equal(r.gate._orchestrator_stamped.runs.lint.scoped_paths, undefined);
+    assert.deepEqual(
+      r.gate._orchestrator_stamped.runs.lint.unavailable_scoped_paths,
+      ["src/backend/", "src/tests/"],
+    );
   });
 
   it("flips lint_passed to FAIL when the scoped lint command fails (model claimed true)", async () => {

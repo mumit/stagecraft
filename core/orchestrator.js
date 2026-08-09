@@ -466,10 +466,20 @@ function buildDescriptor(stageDef, role, opts = {}) {
     : null;
   const effectiveDef = { ...stageDef, ...(override || trackOverride || reviewModeOverride || {}) };
 
-  const allowedWrites = effectiveDef.roleWrites?.[role] ?? effectiveDef.allowedWrites;
   const wsId = opts.workstreamId || workstreamId(stageDef.stage, role, stageDef.roles.length);
   const changeId = opts.changeId || null;
   const prefix = (p) => prefixPipelineRelative(p, changeId);
+  const allowedWrites = effectiveDef.roleWrites?.[role] ?? effectiveDef.allowedWrites;
+  const resolvedAllowedWrites = Array.isArray(allowedWrites) ? allowedWrites.map(prefix) : allowedWrites;
+  const dispatchedGate = prefix(`pipeline/gates/${wsId}.json`);
+  // active_roles and track overrides can collapse a normally multi-role stage
+  // to one dispatch. In that case the workstream id becomes the bare stage id
+  // (for example stage-04), while the static roleWrites contract still names
+  // stage-04.backend.json. The rendered prompt requires the dynamically chosen
+  // gate path, so its own write audit must authorize that exact path too.
+  if (Array.isArray(resolvedAllowedWrites) && !isAllowed(dispatchedGate, resolvedAllowedWrites)) {
+    resolvedAllowedWrites.push(dispatchedGate);
+  }
   return {
     stage: stageDef.stage,
     name: nameForStage(stageDef.stage),
@@ -485,7 +495,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
           )
           .map((item) => resolveReadFirstItem(item, prefix, opts))
       : effectiveDef.readFirst,
-    allowedWrites: Array.isArray(allowedWrites) ? allowedWrites.map(prefix) : allowedWrites,
+    allowedWrites: resolvedAllowedWrites,
     artifact: prefix(effectiveDef.artifact),
     template: effectiveDef.template,
     goalCondition: effectiveDef.goalCondition

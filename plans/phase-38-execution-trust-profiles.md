@@ -1,6 +1,6 @@
 # Phase 38 — Execution Trust Profiles & Contained Workstreams
 
-Status: **implemented; ready for review in PR #413** (2026-08-08).
+Status: **complete; merged in PR #413** (2026-08-08).
 
 ## Why
 

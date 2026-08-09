@@ -865,6 +865,16 @@ function scopedPathsFor(allowedWrites) {
   return allowedWrites.filter((p) => typeof p === "string" && p.endsWith("/"));
 }
 
+function existingScopedPaths(cwd, scopedPaths) {
+  return scopedPaths.filter((p) => {
+    try {
+      return fs.statSync(path.resolve(cwd, p)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
 // Best-effort scoping: appends the role's paths as extra positional args.
 // `npm run <script>` needs `--` to forward args to the underlying script;
 // a directly-configured command (e.g. "npx eslint") takes them as-is. Tools
@@ -893,7 +903,15 @@ async function stampStage04Workstream(cwd, gatePath, { role, allowedWrites } = {
   const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
 
   const commands = resolveCommands(cwd, config);
-  const scopedPaths = scopedPathsFor(allowedWrites);
+  const declaredScopedPaths = scopedPathsFor(allowedWrites);
+  // roleWrites describe the framework's normal project layout, but a narrow
+  // repair can legitimately target a different surface (and some supported
+  // projects do not use src/<role>/ at all). Passing nonexistent directories
+  // makes tools such as ESLint fail before they inspect any code. Retain every
+  // existing role-owned directory; if none exists, run the project's canonical
+  // lint command unscoped instead of manufacturing a false verification failure.
+  const scopedPaths = existingScopedPaths(cwd, declaredScopedPaths);
+  const unavailableScopedPaths = declaredScopedPaths.filter((p) => !scopedPaths.includes(p));
   if (commands.lint) {
     const scopedCommand = scopedLintCommand(commands.lint, scopedPaths);
     const result = await runCommandWithReceipt(scopedCommand, {
@@ -917,6 +935,7 @@ async function stampStage04Workstream(cwd, gatePath, { role, allowedWrites } = {
     stamp.runs.lint = {
       command: result.command,
       scoped_paths: scopedPaths.length > 0 ? scopedPaths : undefined,
+      unavailable_scoped_paths: unavailableScopedPaths.length > 0 ? unavailableScopedPaths : undefined,
       exit_code: result.exitCode,
       duration_ms: result.durationMs,
       timed_out: result.timedOut || undefined,

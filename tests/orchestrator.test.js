@@ -191,6 +191,19 @@ describe("orchestrator: buildDescriptor honors overrides", () => {
     assert.equal(r.workstreams[0].descriptor.workstreamId, "stage-04.platform");
   });
 
+  it("authorizes the bare gate path when active_roles collapses build to one workstream", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      active_roles: ["backend"],
+      status: "PASS",
+    });
+
+    const r = runStage("build", { cwd });
+    assert.equal(r.workstreams.length, 1);
+    assert.equal(r.workstreams[0].descriptor.workstreamId, "stage-04");
+    assert.ok(isAllowed("pipeline/gates/stage-04.json", r.workstreams[0].descriptor.allowedWrites));
+  });
+
   it("all LLM-dispatched stages allow their workstream gate path", () => {
     for (const [name, stageDef] of Object.entries(STAGES)) {
       for (const role of stageDef.roles) {

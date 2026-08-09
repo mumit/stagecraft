@@ -1,6 +1,6 @@
 # Phase 40 — Approval-Bound Conversational Artifact Refinement
 
-Status: **implemented; ready for review** (2026-08-08).
+Status: **complete; merged in PR #415** (2026-08-08).
 
 ## Why
 

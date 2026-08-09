@@ -4,22 +4,70 @@ Walks one feature ("Add SMS notification opt-in to user settings") through the f
 
 If you read one doc to learn Stagecraft, read this one.
 
-> **Freshness:** captured at v0.9.0. Two kinds of output appear below, and they were
-> refreshed differently:
+> **Freshness:** verified at v0.11.0. Two kinds of output appear below, and they
+> have different provenance:
 >
-> - **Orchestrator output** — `devteam init`, `devteam next`, dispatch lines, gate JSON,
->   file counts. Re-captured 2026-08-03 by running the real CLI against a fresh temp
->   project. These are current.
+> - **Live v0.11 dogfood evidence** — re-captured 2026-08-09 with the real CLI and
+>   Codex in a dedicated Stagecraft clone. The repair outcome and observed failure
+>   modes are recorded immediately below.
+> - **SMS walkthrough output** — `devteam init`, `devteam next`, dispatch lines,
+>   gate JSON, and file counts were originally captured at v0.9.0. They remain an
+>   illustrative walkthrough of the artifact and gate shapes; exact counts and
+>   incidental output can change between releases.
 > - **Model-written content** — the brief text, design spec, review comments, and the
 >   wall-clock timings of real model calls. Carried over from the original v0.7.0 run
->   against live Claude Code. Nothing about the *shape* of these artifacts has changed,
->   but the prose is what that model wrote then, not a fresh generation. Re-running this
->   part costs real model spend, so it is done at release time rather than on every doc
->   pass.
+>   against live Claude Code. The prose is what that model wrote then, not a synthetic
+>   v0.11 transcript.
 >
 > Timings shown for model dispatches are from that original run and vary widely by model
 > and feature size — read them as order-of-magnitude, not benchmarks.
 > `npm run consistency` warns when this stamp is more than one minor behind the current version.
+
+## v0.11 live dogfood capture
+
+The v0.11 release was exercised against Stagecraft's own repository from a dedicated
+clone, with Codex as the headless host. The repair request was deliberately small:
+make the documented `devteam --version` invocation work from outside a target project.
+
+```bash
+devteam init --host codex --profile dogfood
+devteam run --repair "Running devteam --version returns Unknown command; add a canonical version flag backed by package.json and lock it with tests and generated docs" \
+  --budget-usd 25 --timeout-ms 1200000
+```
+
+The run diagnosed the missing global-token branch correctly, expanded the affected-file
+list when it found three stale documentation provenance claims, and produced an executable
+regression criterion. It also exposed three orchestration defects that a fixture-only test
+would not have found:
+
+1. A ten-file CLI repair initially fanned out to four build roles. Each role tried to run
+   the full suite in one shared checkout, producing redundant 7–19 minute workstreams and
+   `EMFILE` watcher exhaustion. A Principal ruling narrowed the repair to `active_roles:
+   ["backend"]`.
+2. After that narrowing, the runtime workstream id became bare `stage-04`, but the static
+   backend write contract authorized only `stage-04.backend.json`. The required gate was
+   rejected by the post-hoc write audit. v0.11 now always authorizes the exact dynamically
+   dispatched gate path.
+3. The workstream verifier appended nonexistent `src/backend/` and `src/tests/` targets to
+   ESLint even though the repair touched Stagecraft framework files. v0.11 now retains
+   existing role-owned lint paths and falls back to the project's canonical lint command
+   when none exists.
+
+The final orchestrator-owned verification was clean:
+
+```text
+stage-04: PASS
+lint: npm run lint (exit 0; canonical fallback recorded)
+test: npm test (exit 0; 3,217+ passing, 0 failing, 2 skipped across captures)
+consistency: 402 checks passed
+resolution: stage-04/code-defect accepted (derivable)
+```
+
+This capture is intentionally candid: the first run did not glide through. It paid for
+several redundant model turns and revealed that full-suite execution belongs to the
+orchestrator verification layer, not every coding role. That evidence is now both a set of
+regression tests and input to the Phase 41 calibration gate; it is not counted as a second
+independent project.
 
 ## Setup
 
