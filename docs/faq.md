@@ -742,7 +742,7 @@ context:
 
 The agents are prompted to limit their analysis to that sub-tree. Gate files land in `pipeline/gates/` relative to whichever directory you run `devteam` from (use `--cwd` to target a different root). Run separate `devteam` invocations from separate directories to isolate pipelines per package.
 
-There's no automatic file-restriction enforcement at the framework level — the `allowedWrites` field in stage descriptors controls where agents are *allowed* to write, but the scope hint is advisory. If your agents need stricter isolation, add explicit paths to `allowedWrites` in the relevant stage descriptors. See `STAGES.js` for the structure.
+`allowedWrites` is always the role contract, but enforcement depends on the host. For parallel headless build roles in a Git repository, `pipeline.workstream_isolation: git-worktree` adds a host-neutral reconciliation boundary: unauthorized results are not copied into the operator checkout and the workstream gate fails. This is not an OS sandbox; use a container or VM when running untrusted code. See [ADR-018](adr/018-isolated-build-workstreams.md).
 
 ### Can I run Stagecraft fully offline?
 
