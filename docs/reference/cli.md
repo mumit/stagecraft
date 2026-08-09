@@ -263,12 +263,13 @@ One-screen pipeline state report.
 
 Chronological event timeline: every gate and artifact write in mtime order. --follow tails at 1-second poll.
 
-| Flag      | Type   | Description                           |
-| --------- | ------ | ------------------------------------- |
-| --cwd     | string | Target project directory              |
-| --feature | string | Feature name (bounded isolation mode) |
-| --json    | bool   | JSON output (one object per line)     |
-| --follow  | bool   | Tail pipeline/ at 1s poll             |
+| Flag       | Type   | Description                                                   |
+| ---------- | ------ | ------------------------------------------------------------- |
+| --cwd      | string | Target project directory                                      |
+| --feature  | string | Feature name (bounded isolation mode)                         |
+| --json     | bool   | JSON output (one object per line)                             |
+| --follow   | bool   | Tail pipeline/ at 1s poll                                     |
+| --timeline | bool   | Show durable queue/invoke/verification/retry/blocker timeline |
 
 ### `devteam report [options]`
 
@@ -287,11 +288,14 @@ Generate a self-contained HTML report of the most recent pipeline run. Embeds st
 
 Reconstruct run critical path from run-log.jsonl: dispatch wall, workstream compute, retry delay, telemetry coverage, and verification reuse candidates.
 
-| Flag      | Type   | Description                           |
-| --------- | ------ | ------------------------------------- |
-| --cwd     | string | Target project directory              |
-| --feature | string | Feature name (bounded isolation mode) |
-| --json    | bool   | JSON output                           |
+| Flag      | Type   | Description                                                |
+| --------- | ------ | ---------------------------------------------------------- |
+| --cwd     | string | Target project directory                                   |
+| --feature | string | Feature name (bounded isolation mode)                      |
+| --input   | list   | Additional local project root for calibration (repeatable) |
+| --fit     | string | Track fit feedback: too-light, right, or too-heavy         |
+| --reason  | string | Bounded fit reason code                                    |
+| --json    | bool   | JSON output                                                |
 
 ### `devteam evidence <status|export|identity|accept-resolution|verify-attestation> [options]`
 

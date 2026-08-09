@@ -39,6 +39,7 @@ const RECORD_FIELDS = [
   "ts", "run_id", "stage", "role", "host", "model_observed", "model_requested",
   "prompt_pack_version", "track", "prompt_hash", "prompt_bytes", "tokens_in",
   "tokens_out", "cost_usd", "cost_basis", "duration_ms", "queue_ms",
+  "cached_tokens", "knowledge_items", "prior_knowledge_items",
   "gate_status", "blockers", "retry_of", "framework_version",
 ];
 
@@ -166,6 +167,7 @@ function recordDispatch(cwd, opts = {}) {
   const promptPackVersion = (gate && typeof gate.prompt_pack_version === "string") ? gate.prompt_pack_version : null;
   const gateStatus = (gate && typeof gate.status === "string") ? gate.status : null;
   const retryOf = (gate && typeof gate.retry_number === "number") ? gate.retry_number : null;
+  const cachedTokens = nonNegativeNumber(gate && gate._orchestrator_observed && gate._orchestrator_observed.cached_tokens);
   const track = Array.isArray(opts.track) ? opts.track.join(",") : (opts.track || null);
 
   return appendDispatchRecord(cwd, {
@@ -186,6 +188,9 @@ function recordDispatch(cwd, opts = {}) {
     cost_basis,
     duration_ms: nonNegativeNumber(opts.durationMs),
     queue_ms: nonNegativeNumber(opts.queueMs),
+    cached_tokens: cachedTokens,
+    knowledge_items: nonNegativeNumber(opts.knowledgeItems),
+    prior_knowledge_items: nonNegativeNumber(opts.priorKnowledgeItems),
     gate_status: gateStatus,
     blockers: gate && gate.blockers,
     retry_of: retryOf,

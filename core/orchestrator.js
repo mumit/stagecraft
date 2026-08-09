@@ -1513,6 +1513,8 @@ async function runStageHeadless(stageName, opts = {}) {
         promptBytes: result.promptBytes,
         durationMs: result.durationMs,
         queueMs: result.queueMs,
+        knowledgeItems: Array.isArray(result.descriptor?.projectFacts) ? result.descriptor.projectFacts.length : 0,
+        priorKnowledgeItems: Array.isArray(result.descriptor?.priorKnowledge) ? result.descriptor.priorKnowledge.length : 0,
         gatePath: result.gatePath,
       });
       // Phase-33 item 33.1: capture a replayable eval case for single-role

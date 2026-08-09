@@ -110,3 +110,32 @@ Dogfood mode
   ✓ no npm publish script
   ℹ budget-usd reminder  — always use --budget-usd with devteam run to cap spend
 ```
+
+## Two-project calibration protocol
+
+Use two real, non-fixture repositories before treating Phase 41 readiness as evidence. Keep
+the raw corpus local; the calibration command reads only paths you name.
+
+1. In project A, run one representative `quick`, `loop`, and `full` change. Include one
+   naturally occurring or deliberately introduced test failure that goes through
+   `fix-and-retry`, then repeat one stage so provider cache telemetry can be observed.
+2. In project B, repeat at least the `loop` run and one track at a different ceremony level.
+   Ensure the project knowledge pack is non-empty before one run. If Phase 38 is installed,
+   run one workstream with `--trust-profile contained` and retain its reconciliation events.
+3. After every run, record bounded fit feedback:
+
+   ```bash
+   devteam performance feedback --fit right --reason other
+   # Alternatives: too-light/too-heavy and one documented --reason code.
+   ```
+
+4. From either project, aggregate both local roots and save the JSON as the review artifact:
+
+   ```bash
+   devteam performance calibration --input ../project-b --json > calibration.json
+   ```
+
+The report must show at least two projects and must not expose either source path. Inspect
+sample denominators, telemetry coverage, observed-versus-estimated cost, track-fit proxies,
+and the two Phase 41 gates. Synthetic fixtures validate arithmetic only and never count as
+activation evidence.
