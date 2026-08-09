@@ -69,10 +69,12 @@ function resolveConfig(ctx, role) {
 }
 
 // Phase 32.1: build the `content` value for the single user message from a
-// renderStagePromptLayers() result. When caching is disabled (default) or
-// the layers aren't available (a preRendered prompt string was supplied),
-// callers should just use the plain prompt string instead — this only
-// handles the cache-aware array-of-blocks shape.
+// renderStagePromptLayers() result. When caching is disabled (default),
+// callers use the plain prompt string instead. A pre-rendered prompt does
+// not automatically rule out layers: the orchestrator pre-renders every
+// real dispatch. invoke() may safely recover the layers when joining them
+// reproduces that exact string; if the orchestrator transformed the prompt,
+// it retains the transformed string rather than losing content for caching.
 //
 // cache_control breakpoints land after layers 1-3 (framework preamble, role
 // brief, learned context) — every layer except the volatile tail, which
@@ -87,6 +89,18 @@ function buildCacheAwareContent(layers) {
       ? { type: "text", text: b.text, cache_control: { type: "ephemeral" } }
       : { type: "text", text: b.text });
   return blocks.length > 0 ? blocks : [{ type: "text", text: "" }];
+}
+
+function contentForInvocation(adapter, descriptor, ctx, preRenderedPrompt, cachingEnabled) {
+  const fallback = preRenderedPrompt || adapter.renderStagePrompt(descriptor, ctx);
+  if (!cachingEnabled || typeof adapter.renderStagePromptLayers !== "function") return fallback;
+
+  const rendered = adapter.renderStagePromptLayers(descriptor, ctx);
+  const renderedPrompt = Array.isArray(rendered.lines)
+    ? rendered.lines.join("\n")
+    : rendered.layers.join("\n");
+  if (preRenderedPrompt && preRenderedPrompt !== renderedPrompt) return preRenderedPrompt;
+  return buildCacheAwareContent(rendered.layers);
 }
 
 // Single HTTP call to the chat-completions endpoint.
@@ -144,14 +158,10 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
   }
 
   const adapter = require("./adapter");
-  // Phase 32.1: when caching is enabled and we're rendering the prompt
-  // ourselves (no preRenderedPrompt — that arrives as a flat string with no
-  // layer boundaries), send the four layers as separate content blocks with
-  // cache_control breakpoints after layers 1-3. Otherwise, same plain-string
-  // content as before.
-  const content = (!preRenderedPrompt && cachingEnabled && typeof adapter.renderStagePromptLayers === "function")
-    ? buildCacheAwareContent(adapter.renderStagePromptLayers(descriptor, ctx).layers)
-    : (preRenderedPrompt || adapter.renderStagePrompt(descriptor, ctx));
+  // Normal orchestrated dispatches always arrive with preRenderedPrompt.
+  // Recover cacheable layers only when their byte-for-byte join equals that
+  // prompt, preserving any future orchestrator transform.
+  const content = contentForInvocation(adapter, descriptor, ctx, preRenderedPrompt, cachingEnabled);
   const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
   const timeoutMs =
     typeof ctx.timeoutMs === "number" && ctx.timeoutMs > 0
@@ -366,4 +376,4 @@ function isOrchestratorWrite(ctx, relPath) {
     normalized.startsWith(`${relLogsDir}/`);
 }
 
-module.exports = { invoke, resolveConfig, callAPI, isOrchestratorWrite, buildCacheAwareContent };
+module.exports = { invoke, resolveConfig, callAPI, isOrchestratorWrite, buildCacheAwareContent, contentForInvocation };
