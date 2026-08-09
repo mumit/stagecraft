@@ -1017,7 +1017,7 @@ Passing `--headless` explicitly is also accepted and has the same effect. This a
 | Hooks (`PreToolUse`, `PostToolUse`, `Stop`) | ✗ |
 | Subagents | ✗ |
 | Slash commands | ✗ |
-| Worktrees | ✗ — stage-04 parallel workstreams run without git-worktree isolation |
+| Host-native worktrees | ✗ — but core-managed `pipeline.workstream_isolation: git-worktree` works for parallel headless stage-04 builds |
 | Goal loop | ✗ — replaced by a 40-iteration tool-call loop per dispatch |
 | Per-role model selection | ✓ via `hosts.openai-compat.models.<role>` in config |
 
@@ -1847,6 +1847,41 @@ With `isolation: bounded`, every run's artifacts (gates, logs, context files) la
 The base `pipeline/context.md` still exists and should hold only permanent, project-wide facts (binding constraints, runtime conventions). Each change's `pipeline/changes/<slug>/context.md` starts from those static facts and accumulates only that feature's decisions.
 
 Default is `in-place` (global `pipeline/`). Zero impact on existing setups unless you explicitly set `isolation: bounded`. For projects that started `in-place` and want to switch: prune `pipeline/context.md` to just the permanent static layer first, then flip the flag. Existing gates in `pipeline/gates/` are left untouched.
+
+### Isolating parallel build workstreams
+
+`pipeline.isolation` above separates one feature's pipeline artifacts from
+another feature's artifacts; it does not separate coding agents. For parallel
+stage-04 builds, Git repositories can opt into a separate checkout per role:
+
+```yaml
+pipeline:
+  isolation: bounded                 # optional, independent artifact setting
+  workstream_isolation: git-worktree # coding workspace setting
+```
+
+The headless orchestrator snapshots the current repository state—including
+uncommitted and untracked work—and gives every planned build role the same
+baseline in `.devteam/worktrees/`. A role's results are reconciled into the
+operator checkout only when the path is in that role's `allowedWrites` list.
+If two roles edit separate parts of the same text file, Stagecraft performs a
+three-way merge. Overlapping text edits, binary/deletion overlap, unauthorized
+writes, and symlinks that escape the workspace are not copied; the role's gate
+is changed to FAIL when present.
+
+Requirements and boundaries:
+
+- Run from the Git repository root. Non-Git projects must use `shared`.
+- This applies only to multi-role build (stage-04) dispatches. Peer-review
+  workstreams intentionally exchange review files and remain shared.
+- `shared` is the default and preserves existing behavior.
+- Worktrees improve attribution and collision handling; they are not an OS
+  security sandbox. Use the Docker runner or another sandbox for untrusted code.
+
+Re-run `devteam init --force` after upgrading an existing project so the
+managed `.gitignore` block includes `.devteam/worktrees/`. See
+[ADR-018](adr/018-isolated-build-workstreams.md) for the decision and rejected
+alternatives.
 
 ### `/goal` injection for convergent stages
 

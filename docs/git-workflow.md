@@ -116,43 +116,27 @@ Do not commit every `devteam stage X` invocation. Interim failed states (FAIL ga
 
 **Stage 04: parallel build and git worktrees**
 
-`rules/stage-04.md` describes a worktree model where each build workstream operates in its own branch:
+Stagecraft can manage isolated worktrees for the parallel build automatically:
 
-```bash
-git worktree add ../dev-team-backend feature/backend
-git worktree add ../dev-team-frontend feature/frontend
-git worktree add ../dev-team-platform feature/platform
+```yaml
+pipeline:
+  workstream_isolation: git-worktree
 ```
 
-**In practice with Claude Code, worktrees are optional.** Claude Code dispatches all four build workstreams as concurrent subagents writing to the same working directory. Each workstream has a non-overlapping write surface (`src/backend/`, `src/frontend/`, `src/infra/`, `src/tests/`), so there are no file conflicts and a single working directory works. The SOC2 evidence collector ran all four workstreams in parallel without worktrees.
+The default is `shared`: all four build roles edit one checkout. The opt-in mode snapshots the current dirty/untracked-aware baseline, gives each role a detached worktree, and reconciles authorized results back into the current branch. Clean text overlap is three-way merged; unresolved overlap fails the affected workstream instead of taking the last writer.
 
 **When you do need worktrees:**
 
 | Scenario | Why worktrees help |
 |---|---|
-| Workstreams run on separate machines | Each machine needs its own checkout |
-| Mixed-host pipelines where adapters need filesystem isolation | e.g. Codex backend + Claude Code frontend in separate directories |
+| Mixed-host pipelines where writes need reliable attribution | e.g. Codex backend + Claude Code frontend cannot observe one another's partial files |
 | Workstreams write to shared root files (rare) | e.g., both backend and platform update `package.json` with conflicting changes |
+| Role boundaries are important | Unauthorized paths are refused during reconciliation even on prompt-only hosts |
 
-**If using worktrees**, commit each branch after its workstream's gate passes, then merge back to the feature branch before moving to Stage 4a:
-
-```bash
-# In each worktree after that workstream's build gate passes:
-cd ../dev-team-backend
-git add src/backend/ pipeline/pr-backend.md pipeline/gates/stage-04.backend.json
-git commit -m "stage-04 backend: PASS"
-
-# Merge all workstreams back to the feature branch
-cd /path/to/your-project
-git merge feature/backend --no-ff -m "merge stage-04 backend"
-git merge feature/frontend --no-ff -m "merge stage-04 frontend"
-git merge feature/platform --no-ff -m "merge stage-04 platform"
-
-# Then clean up worktrees
-git worktree remove ../dev-team-backend
-git worktree remove ../dev-team-frontend
-git worktree remove ../dev-team-platform
-```
+Stagecraft removes its temporary worktrees after reconciliation; no per-role
+branches or manual merge commits are created. Use manual branches only for
+separate-machine workflows, which remain outside the local orchestrator's
+scope. See [ADR-018](adr/018-isolated-build-workstreams.md).
 
 **What the final branch history looks like:**
 

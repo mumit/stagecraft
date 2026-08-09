@@ -58,6 +58,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [adr/015-workstream-scheduling.md](adr/015-workstream-scheduling.md) — per-host workstream concurrency, queue telemetry, and retry backoff reasons
 - [adr/016-assess-by-default.md](adr/016-assess-by-default.md) — inline `assess()` inference on `devteam run` at any confidence, persisted to `pipeline/track.json`; supersedes ADR-006 §1
 - [adr/017-dag-wave-execution.md](adr/017-dag-wave-execution.md) — curated `dependsOn[]` metadata, wave formation bounded by `autonomy.max_parallel_stages`, chain stays track-order (Proposed, pending review)
+- [adr/018-isolated-build-workstreams.md](adr/018-isolated-build-workstreams.md) — core-managed Git worktrees and deterministic reconciliation for parallel build roles
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration

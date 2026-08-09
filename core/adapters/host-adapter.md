@@ -60,7 +60,7 @@ Capability semantics:
 | `hooks`          | Auto-advance pipeline when a gate file is written                     | Orchestrator polls the gate file |
 | `subagents`      | Fan out workstreams (Backend / Frontend / Platform) in parallel       | Sequential stage execution      |
 | `slashCommands`  | Install `/devteam:*` slash commands                                   | User invokes `devteam` from terminal |
-| `worktrees`      | Honor `isolation: isolated` mode                                      | All work in-place               |
+| `worktrees`      | Host exposes a native worktree/workspace primitive for adapter-specific flows | Core-managed `pipeline.workstream_isolation: git-worktree` remains available for parallel headless builds; otherwise shared checkout |
 | `headless`       | Adapter can drive the host non-interactively (`cli-driven` mode)      | `user-driven` only              |
 | `enforces.<rule>`| Where the host enforces a core rule. Values: `tool-call-time` (blocked at write — hooks), `post-hoc-audit` (orchestrator write-audit diffs git state before/after invoke; unauthorized writes flip the gate to FAIL, while narrow runtime caches such as Python `__pycache__/*.pyc` are ignored), `prompt-only` (advisory only; no automated enforcement). | See `core/guards/write-audit.js`. |
 | `enforces.shell` | `true` if the agent can execute command-line tools (for example through a bash tool or direct-command executor). Required by pre-review, qa, verification-beyond-tests, deploy. | Orchestrator refuses dispatch with a named error. |
@@ -109,7 +109,7 @@ interface HostAdapter {
 }
 
 interface InstallOpts {
-  isolation: "in-place" | "isolated";    // default "in-place"
+  isolation: "in-place" | "bounded";     // pipeline artifact placement; default "in-place"
   force: boolean;                        // overwrite existing files
   roles: string[];                       // which roles/*.md to render (default: all)
 }
@@ -139,7 +139,7 @@ interface PipelineContext {
   track: "full" | "quick" | "nano" | "hotfix" | ...;
   feature: string;                       // free-text title
   cwd: string;
-  isolation: "in-place" | "isolated";
+  isolation: "in-place" | "bounded";
 }
 
 interface InvokeResult {

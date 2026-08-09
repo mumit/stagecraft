@@ -56,7 +56,19 @@ describe("config: loadConfig", () => {
     }));
     const c = loadConfig(cwd);
     assert.equal(c.pipeline.default_track, "full"); // default
+    assert.equal(c.pipeline.workstream_isolation, "shared");
     assert.deepEqual(c.routing.roles, {}); // default
+  });
+
+  it("enables Git-worktree isolation only for the explicit supported value", () => {
+    const enabled = track(makeTargetProject({
+      config: "pipeline:\n  workstream_isolation: git-worktree\n",
+    }));
+    const typo = track(makeTargetProject({
+      config: "pipeline:\n  workstream_isolation: worktree\n",
+    }));
+    assert.equal(loadConfig(enabled).pipeline.workstream_isolation, "git-worktree");
+    assert.equal(loadConfig(typo).pipeline.workstream_isolation, "shared");
   });
 
   it("enables signed-only gate policy only for explicit true", () => {
@@ -366,6 +378,7 @@ describe("config: renderDefaultConfig + writeConfigIfAbsent", () => {
     const text = renderDefaultConfig(["claude-code"]);
     assert.match(text, /default_host: claude-code/);
     assert.match(text, /default_track: full/);
+    assert.match(text, /workstream_isolation: shared/);
     assert.match(text, /require_signed_gates: false/);
     assert.match(text, /force_stages: \[\]/);
     assert.match(text, /receipts: true/);

@@ -134,7 +134,7 @@ an architectural dependency.
 Primary project config is `.devteam/config.yml`:
 
 - `routing.default_host`, `routing.roles`, `routing.stages`, `review_fanout`
-- `pipeline.default_track`, `isolation`, `skip_stages`, `verify`, `custom_stages`
+- `pipeline.default_track`, artifact `isolation`, `workstream_isolation`, `skip_stages`, `verify`, `custom_stages`
 - `autonomy.max_retries`, `require_confirmed_track`, and driver options
 - `deploy.adapter` plus adapter-specific values
 
