@@ -1,6 +1,6 @@
 # Phase 39 — Evidence & Performance Calibration
 
-Status: **approved for execution** (2026-08-08). This phase builds measurement and
+Status: **implemented; ready for review in PR #414** (2026-08-08). This phase builds measurement and
 calibration tooling; it does not manufacture the real-project evidence required by Phase 41.
 
 ## Why
@@ -77,4 +77,3 @@ aggregate looks favorable.
 A builder can locate p50/p95 latency and cost by meaningful phase, see denominators and data
 quality, compare assessed ceremony with operator feedback, and run a repeatable dogfood
 protocol. The same report states clearly when there is not enough real data to act.
-
