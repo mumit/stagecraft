@@ -570,7 +570,7 @@ test("check 9 schema-vocabulary: audit archives remain excluded", () => {
 
 function writeSupportPackage(root) {
   writeFile(root, "package.json", JSON.stringify({
-    engines: { node: ">=20.0.0" },
+    engines: { node: ">=22.0.0" },
     os: ["darwin", "linux", "win32"],
   }));
 }
@@ -592,7 +592,7 @@ test("check 10 support-state: native Windows contradiction is detected", () => {
   const root = mkFixtureRoot();
   try {
     writeSupportPackage(root);
-    writeFile(root, "README.md", "Node.js 20+. Native Windows is not supported.\n");
+    writeFile(root, "README.md", "Node.js 22+. Native Windows is not supported.\n");
     const r = runChecker(root, { noBaseline: true, only: "support-state" });
     assert.equal(r.status, 1, r.stdout + r.stderr);
     assert.match(r.stdout, /must affirm package\.json os support for win32/);
@@ -605,7 +605,7 @@ test("check 10 support-state: volatile maintainer test count is detected", () =>
   const root = mkFixtureRoot();
   try {
     writeSupportPackage(root);
-    writeFile(root, "README.md", "Node.js 20+. Native Windows is supported.\n");
+    writeFile(root, "README.md", "Node.js 22+. Native Windows is supported.\n");
     writeFile(root, "AGENTS.md", "Run 1,944 tests before committing.\n");
     const r = runChecker(root, { noBaseline: true, only: "support-state" });
     assert.equal(r.status, 1, r.stdout + r.stderr);
@@ -619,7 +619,7 @@ test("check 10 support-state: matching stable facts exit 0", () => {
   const root = mkFixtureRoot();
   try {
     writeSupportPackage(root);
-    writeFile(root, "README.md", "Prerequisite: Node.js 20+. Native Windows is supported.\n");
+    writeFile(root, "README.md", "Prerequisite: Node.js 22+. Native Windows is supported.\n");
     writeFile(root, "docs/FEATURES.md", "Stagecraft runs natively on Windows.\n");
     writeFile(root, "docs/faq.md", "Yes, native Windows is supported.\n");
     writeFile(root, "AGENTS.md", "Run the full offline suite before committing.\n");
@@ -641,6 +641,42 @@ test("check 10 support-state: violation can be baselined", () => {
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /baselined/i);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("check 10 support-state: unsupported CI matrix runtime is detected", () => {
+  const root = mkFixtureRoot();
+  try {
+    writeSupportPackage(root);
+    writeFile(root, "README.md", "Prerequisite: Node.js 22+. Native Windows is supported.\n");
+    writeFile(root, ".github/workflows/test.yml", [
+      "jobs:",
+      "  test:",
+      "    strategy:",
+      "      matrix:",
+      "        node-version: ['20', '22', '24']",
+    ].join("\n"));
+    const r = runChecker(root, { noBaseline: true, only: "support-state" });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /includes unsupported Node 20/);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test("check 10 support-state: child package Node engine drift is detected", () => {
+  const root = mkFixtureRoot();
+  try {
+    writeSupportPackage(root);
+    writeFile(root, "README.md", "Prerequisite: Node.js 22+. Native Windows is supported.\n");
+    writeFile(root, "packages/host-gemini-cli/package.json", JSON.stringify({
+      engines: { node: ">=20.0.0" },
+    }));
+    const r = runChecker(root, { noBaseline: true, only: "support-state" });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /engines\.node must match package\.json/);
   } finally {
     cleanup(root);
   }

@@ -1,6 +1,6 @@
 # Testing
 
-**Current state:** `npm test` runs the full suite offline with no external services. Wall-clock duration depends heavily on platform and available CPU; use the TAP summary from your own run rather than a checked-in timing claim. CI runs the full suite on Ubuntu with Node 20 / 22 / 24 and a native Windows portability smoke on Node 22. Exact counts remain in `npm test` output because they drift as coverage grows.
+**Current state:** `npm test` runs the full suite offline with no external services. Wall-clock duration depends heavily on platform and available CPU; use the TAP summary from your own run rather than a checked-in timing claim. CI runs the full suite on Ubuntu with Node 22 / 24 and a native Windows portability smoke on Node 22. Exact counts remain in `npm test` output because they drift as coverage grows.
 
 ## Running the suite
 
@@ -114,12 +114,15 @@ results are never reused, and uncertain lookup falls back to execution. Set
 
 `.github/workflows/test.yml` runs on every push and PR against `main`:
 
-- Node 20, 22, 24 (matrix; `fail-fast: false`)
+- Node 22 and 24 (matrix; `fail-fast: false`)
 - `npm ci` → `npm test` → `npm run consistency` → `./bin/devteam help` → `./bin/devteam init && ./bin/devteam doctor`
 - Windows Node 22 smoke: command parsing, PATHEXT probing, timeout termination,
   quoted executable dispatch, CLI help, fresh init, and doctor
 
-Node 18 was dropped in v0.2.0 — it reached EOL in April 2025 and `@huggingface/transformers ^4.x` requires Node ≥20. The matrix tracks current LTS (20, 22) plus latest (24).
+Node 20 was dropped after it reached EOL in 2026. The matrix now tests the minimum
+supported Maintenance LTS (22) and Active LTS (24). Lint, consistency, and informational
+coverage run once on Node 22; both versions still run the complete offline test suite and
+CLI smoke checks.
 
 ## What's NOT tested (deliberately out of scope)
 

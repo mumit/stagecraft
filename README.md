@@ -127,7 +127,7 @@ Full feature catalogue: **[docs/FEATURES.md](docs/FEATURES.md)**.
 
 **Platform:** macOS, Linux, and native Windows are supported. CI exercises the core Windows portability surface on Node 22: CLI startup, initialization, diagnostics, quoted host commands, executable discovery, and timeout termination. WSL2 remains a supported option when a host CLI or project toolchain expects a POSIX shell.
 
-- Node.js ≥ 20
+- Node.js ≥ 22
 - At least one of: **Claude Code** (`claude --version` works), **Codex CLI** (`codex --version` works), **Antigravity CLI** (`agy --version` works — the supported successor to Gemini CLI, which stopped serving free/Pro/Ultra requests 2026-06-18), **Gemini CLI** (`gemini --version` works, deprecated upstream — `npm install @devteam/host-gemini-cli` first; see `devteam doctor`), **Omnigent** (`omnigent --version` works), any **ACP** agent ([agentclientprotocol.com](https://agentclientprotocol.com) — no default binary; set the launch command via `routing.roles.<role>: acp:<command>` or `hosts.acp.command`), an OpenAI-compatible API key for `openai-compat`, or just a terminal (generic adapter — prompts rendered for manual use, no automation)
 - Git (recommended for version-controlling artifacts; the pipeline itself does not require it)
 

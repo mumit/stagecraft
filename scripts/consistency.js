@@ -27,6 +27,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const yaml = require("js-yaml");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const { STAGES, TRACKS, STAGES_BY_TRACK, ORDERED_STAGE_NAMES, stageNames, FOLD_ONLY_STAGES } =
@@ -1400,6 +1401,59 @@ function checkSupportState(scanRoot, trackedSet) {
 
   const nodeMatch = String(pkg.engines?.node || "").match(/(\d+)/);
   const minNode = nodeMatch ? Number(nodeMatch[1]) : null;
+
+  const packageContracts = ["packages/host-gemini-cli/package.json"];
+  for (const rel of packageContracts) {
+    const abs = path.join(root, rel);
+    if (!minNode || !fs.existsSync(abs)) continue;
+    if (trackedSet !== null && trackedSet !== undefined && !trackedSet.has(rel)) continue;
+    let child;
+    try { child = JSON.parse(fs.readFileSync(abs, "utf8")); } catch { continue; }
+    if (child.engines?.node === pkg.engines?.node) {
+      pass(`${rel} matches root Node support (${pkg.engines.node})`);
+    } else {
+      proseViolation(
+        "support-state",
+        rel,
+        0,
+        `engines.node must match package.json (${pkg.engines.node})`,
+        `support-state:${rel}:node-engine`,
+      );
+    }
+  }
+
+  const workflowRel = ".github/workflows/test.yml";
+  const workflowPath = path.join(root, workflowRel);
+  if (minNode && fs.existsSync(workflowPath)
+      && (trackedSet === null || trackedSet === undefined || trackedSet.has(workflowRel))) {
+    let versions = [];
+    try {
+      const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+      versions = workflow?.jobs?.test?.strategy?.matrix?.["node-version"] || [];
+    } catch { /* workflow validation reports malformed YAML elsewhere */ }
+    const majors = Array.isArray(versions)
+      ? versions.map((value) => Number(String(value).match(/\d+/)?.[0])).filter(Number.isFinite)
+      : [];
+    if (!majors.includes(minNode)) {
+      proseViolation(
+        "support-state",
+        workflowRel,
+        0,
+        `CI matrix must exercise minimum supported Node ${minNode}`,
+        `support-state:${workflowRel}:node-min-missing`,
+      );
+    }
+    for (const major of majors.filter((value) => value < minNode)) {
+      proseViolation(
+        "support-state",
+        workflowRel,
+        0,
+        `CI matrix includes unsupported Node ${major}; package.json requires ${pkg.engines.node}`,
+        `support-state:${workflowRel}:node:${major}`,
+      );
+    }
+  }
+
   const nodeDocs = ["README.md", "docs/guides/dogfooding.md"];
   for (const rel of nodeDocs) {
     const abs = path.join(root, rel);
