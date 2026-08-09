@@ -19,16 +19,10 @@
 //                 itself excludes these as "project-dependent, unknown at
 //                 analysis time" — that's exactly the gap sampled here).
 //
-// Cost requires a model. Hosts (routing.yml targets like "claude-code") are
-// not models — core/router.js resolves a CLI adapter, not a priced model id;
-// the actual model is only ever known from orchestrator-observed telemetry
-// (core/adapters/*.js usageFormat parsers → corpus.model_observed). So the
-// static path resolves "currently-routed model" per (role, host) as the most
-// recent model_observed for that pair in the corpus, independent of the
-// empirical run-count threshold above. When no such observation exists, cost
-// is never invented — the dispatch contributes to `unresolved_models` and the
-// whole track's cost_usd is null rather than a partial, misleadingly-precise
-// total (rule: never invent dollars for an unknown model).
+// Cost requires a model. Explicit routing model pins are authoritative for a
+// future dispatch; when a route does not pin one, the static path falls back
+// to the most recently observed model for that (role, host) pair. When neither
+// source resolves to a priced model, cost is never invented.
 //
 // Dispatch count and tokens are both reported as {min, max} ranges: `min`
 // excludes stages that are conditional at runtime (stage-04b security-review,
@@ -41,12 +35,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { STAGES, orderedStageNamesForTrack, rolesForStage } = require("./pipeline/stages");
-const { resolveHost } = require("./config");
+const { resolveRoute } = require("./config");
 const { readCorpus } = require("./corpus");
 const { pricingFor } = require("./pricing");
 const { computeStageStats } = require("../scripts/prompt-budget");
 
 const MIN_EMPIRICAL_RUNS = 5;
+const PRIMARY_ASSURANCE_TRACKS = ["loop", "quick", "full"];
 
 function tokEst(bytes) {
   return Math.ceil(bytes / 4);
@@ -97,6 +92,17 @@ function mostRecentModelObserved(records, role, host) {
   return best ? best.model_observed : null;
 }
 
+function resolveDispatchModel(records, config, stage, role, host) {
+  const route = resolveRoute(config, stage, role);
+  if (route.hostName === host && route.model) {
+    return { model: route.model, source: "configured" };
+  }
+  const observed = mostRecentModelObserved(records, role, host);
+  return observed
+    ? { model: observed, source: "observed" }
+    : { model: null, source: null };
+}
+
 function dispatchBytesForRole(stageStats, stageDef, role) {
   const dispatchRole = stageDef.subagent || role;
   const found = stageStats.dispatches.find((d) => d.role === dispatchRole);
@@ -124,6 +130,7 @@ function computeStaticEstimate(cwd, track, config, opts = {}) {
   let costHigh = 0;
   let allModelsKnown = true;
   const unresolved = new Set();
+  const modelSources = { configured: 0, observed: 0, unresolved: 0 };
   const conditionalStages = [];
   const perStage = [];
 
@@ -148,23 +155,26 @@ function computeStaticEstimate(cwd, track, config, opts = {}) {
 
     for (const area of areas) {
       const baseTokens = tokEst(dispatchBytesForRole(stats, stageDef, area));
-      const hosts = isPeerReviewFanout ? fanoutHosts : [resolveHost(config, stageDef.stage, area)];
+      const route = resolveRoute(config, stageDef.stage, area);
+      const hosts = isPeerReviewFanout ? fanoutHosts : [route.hostName];
 
       for (const host of hosts) {
         stageDispatches += 1;
         stageTokensLow += baseTokens;
         stageTokensHigh += baseTokens + artifactTokens;
 
-        const model = mostRecentModelObserved(corpusRecords, area, host);
+        const resolvedModel = resolveDispatchModel(corpusRecords, config, stageDef.stage, area, host);
+        const { model } = resolvedModel;
+        modelSources[resolvedModel.source || "unresolved"] += 1;
         const pricing = model ? pricingFor(model) : null;
         if (pricing) {
           costLow += (baseTokens / 1_000_000) * pricing.input;
-          costHigh += ((baseTokens + artifactTokens) / 1_000_000) * pricing.output;
+          costHigh += ((baseTokens + artifactTokens) / 1_000_000) * pricing.input;
         } else {
           allModelsKnown = false;
           unresolved.add(`${area}@${host}`);
         }
-        perArea.push({ role: area, host, model: model || null });
+        perArea.push({ role: area, host, model: model || null, model_source: resolvedModel.source });
       }
     }
 
@@ -189,7 +199,10 @@ function computeStaticEstimate(cwd, track, config, opts = {}) {
     conditional_stages: conditionalStages,
     dispatch_count: { min: dispatchMin, max: dispatchMax },
     tokens: { low: tokensLow, high: tokensHigh },
+    tokens_scope: "estimated-input",
     cost_usd: allModelsKnown && dispatchMax > 0 ? { low: costLow, high: costHigh } : null,
+    cost_scope: "input-only-floor",
+    model_sources: modelSources,
     unresolved_models: allModelsKnown ? [] : [...unresolved].sort(),
     per_stage: perStage,
   };
@@ -235,7 +248,9 @@ function computeEmpiricalEstimate(cwd, track) {
       .map((n) => STAGES[n].stage),
     dispatch_count: { min: dispatchMedian, max: dispatchMedian },
     tokens: { low: tokensMedian, high: tokensMedian },
+    tokens_scope: "observed-total",
     cost_usd: costMedian !== null ? { low: costMedian, high: costMedian } : null,
+    cost_scope: "observed-total",
     unresolved_models: costMedian !== null ? [] : ["insufficient cost data in corpus for this track's runs"],
   };
 }
@@ -248,10 +263,24 @@ function ceremonyPreview(cwd, track, config, opts = {}) {
   return computeStaticEstimate(cwd, track, config, opts);
 }
 
+function assuranceOptions(cwd, config, recommendedTrack) {
+  return PRIMARY_ASSURANCE_TRACKS.map((track) => ({
+    ...ceremonyPreview(cwd, track, config),
+    recommended: track === recommendedTrack,
+  }));
+}
+
 function formatUsdRange(range) {
   const { formatUsd } = require("./pricing");
   if (!range) return "— (unknown model)";
   return range.low === range.high ? formatUsd(range.low) : `${formatUsd(range.low)}–${formatUsd(range.high)}`;
+}
+
+function formatCostRange(preview) {
+  const range = formatUsdRange(preview.cost_usd);
+  return preview.cost_scope === "input-only-floor" && preview.cost_usd
+    ? `${range} input floor`
+    : range;
 }
 
 function formatTokenRange(range) {
@@ -269,7 +298,7 @@ function renderCeremonyPreviewText(preview) {
   lines.push(
     `Ceremony estimate (${preview.estimate_basis}): ${preview.stage_slots} stage slot(s), ` +
     `${dispatch} dispatch(es), ~${formatTokenRange(preview.tokens)} tokens, ` +
-    `${formatUsdRange(preview.cost_usd)}`,
+    `${formatCostRange(preview)}`,
   );
   if (preview.conditional_stages.length > 0) {
     lines.push(`  conditional (may not fire): ${preview.conditional_stages.join(", ")}`);
@@ -277,16 +306,39 @@ function renderCeremonyPreviewText(preview) {
   if (preview.unresolved_models.length > 0) {
     lines.push(`  cost omitted — unknown model for: ${preview.unresolved_models.join(", ")}`);
   }
+  if (preview.cost_scope === "input-only-floor" && preview.cost_usd) {
+    lines.push("  output generation is excluded until observed; use --budget-usd as a runtime halt threshold");
+  }
   lines.push(`  (${preview.estimate_basis === "empirical" ? `median of ${preview.sample_size} prior run(s)` : "estimate — framework overhead + on-disk artifact sampling"}, never a bill)`);
+  return lines;
+}
+
+function renderAssuranceOptionsText(options) {
+  const lines = ["Primary assurance options (specialist tracks remain available):"];
+  for (const option of options) {
+    const dispatch = option.dispatch_count.min === option.dispatch_count.max
+      ? String(option.dispatch_count.max)
+      : `${option.dispatch_count.min}–${option.dispatch_count.max}`;
+    const marker = option.recommended ? "  ← recommended" : "";
+    lines.push(
+      `  ${option.track.padEnd(5)} ${String(option.stage_slots).padStart(2)} stage slot(s), ` +
+      `${dispatch.padStart(5)} dispatch(es), ~${formatTokenRange(option.tokens)} tokens, ` +
+      `${formatCostRange(option)}${marker}`,
+    );
+  }
   return lines;
 }
 
 module.exports = {
   MIN_EMPIRICAL_RUNS,
+  PRIMARY_ASSURANCE_TRACKS,
   ceremonyPreview,
+  assuranceOptions,
   computeStaticEstimate,
   computeEmpiricalEstimate,
   mostRecentModelObserved,
+  resolveDispatchModel,
   sampleArtifactBytes,
   renderCeremonyPreviewText,
+  renderAssuranceOptionsText,
 };

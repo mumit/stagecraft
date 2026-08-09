@@ -227,7 +227,7 @@ For a complete walked-through example with the actual output you'll see at each 
 | Urgent production incident | `hotfix` | Moderate — pre-review and peer-review mandatory |
 | Complex/cross-cutting, regulated or high-stakes | `full` | Heaviest — all 18 stages, audited |
 
-These are relative sizings, not bills — run `devteam assess --json` for the actual stage-slot count, dispatch range, token estimate, and cost range against your project's routed models (static estimate, or an empirical median once the run corpus has ≥5 comparable runs). The `full` track's gate trail can be exported as a signed, in-toto-shaped attestation bundle with `devteam evidence export --attestation` (see [docs/compliance.md](docs/compliance.md)). Full decision tree and the generated stage-by-track matrix: [docs/tracks.md](docs/tracks.md).
+These are relative sizings, not bills — run `devteam assess --json` to compare the three primary assurance choices (`loop`, `quick`, `full`) and see specialist recommendations. Static previews price configured models and report an input-cost floor; after ≥5 comparable runs, they switch to an empirical median of observed total cost. The `full` track's gate trail can be exported as a signed, in-toto-shaped attestation bundle with `devteam evidence export --attestation` (see [docs/compliance.md](docs/compliance.md)). Full decision tree and the generated stage-by-track matrix: [docs/tracks.md](docs/tracks.md).
 
 ## What `devteam init` installs
 
