@@ -367,9 +367,10 @@ class WorkstreamIsolation {
 }
 
 function shouldIsolateBuildWorkstreams(config, plan) {
+  if (!Array.isArray(plan?.workstreams) || plan.workstreams.length === 0) return false;
+  if (plan?.ctx?.trustProfile === "contained") return true;
   return config?.pipeline?.workstream_isolation === "git-worktree"
-    && plan?.stage === "stage-04"
-    && Array.isArray(plan.workstreams)
+    && plan.stage === "stage-04"
     && plan.workstreams.length > 1;
 }
 

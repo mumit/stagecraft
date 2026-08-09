@@ -813,6 +813,7 @@ function defaultCheckScopeGate(cwd, affectedFiles) {
  * @param {number} [opts.maxIterations]  loop guard (default 100)
  * @param {number} [opts.budgetUsd]      halt before a dispatch once spend ≥ cap
  * @param {number} [opts.timeoutMs]      per-stage dispatch wall-clock
+ * @param {string} [opts.trustProfile]   trusted or contained execution boundary
  * @param {string[]} [opts.allowStages]  consequence-ceiling grants (sign-off/deploy)
  * @param {boolean} [opts.resume]        continue from existing run-state
  * @param {boolean} [opts.force]         override a stale lock
@@ -850,6 +851,7 @@ async function run(opts = {}) {
   // silently corrupt an in-progress run. Users who edit .devteam/config.yml mid-run
   // must stop and restart (run.lock will alert them to the active run).
   const config = opts.config || loadConfig(cwd);
+  const trustProfile = require("./containment").resolveTrustProfile(config, opts.trustProfile);
   // Intent/isolation identity is independent of track selection and is needed
   // to locate a bounded run-state before resolveTrack handles --resume.
   const intent = opts.repair ? "repair" : "feature";
@@ -1133,6 +1135,7 @@ async function run(opts = {}) {
       ceremonyPreview: ceremony,
       assessInline: assessInline || null,
       runId: state.started_at,
+      trustProfile,
     });
     const persistedRunPlan = persistRunPlan(cwd, changeId, proposedRunPlan, { resume: opts.resume });
     const runPlan = persistedRunPlan.plan;
@@ -1420,6 +1423,7 @@ async function run(opts = {}) {
           externalReviewMode: opts.externalReviewMode === true,
           intent,
           timeoutMs,
+          trustProfile,
           skipCompleted: r.action === "continue-stage",
           runId: state.started_at,
           isRetry: (state.fixRetries[r.name] || 0) > 0,
@@ -2096,6 +2100,7 @@ async function run(opts = {}) {
             externalReviewMode: opts.externalReviewMode === true,
             intent,   // ADR-009 §Decision.7: propagate so adapters render repair prompts
             timeoutMs,
+            trustProfile,
             skipCompleted: r.action === "continue-stage",
             runId: state.started_at, // 28.5: correlates run-corpus dispatch records to this run
             // 32.3: this stage has at least one prior fix-and-retry attempt —

@@ -144,6 +144,13 @@ describe("shouldIsolateBuildWorkstreams", () => {
     assert.equal(shouldIsolateBuildWorkstreams(config, { stage: "stage-05", workstreams: [{}, {}] }), false);
     assert.equal(shouldIsolateBuildWorkstreams({ pipeline: {} }, { stage: "stage-04", workstreams: [{}, {}] }), false);
   });
+
+  it("contains even a single workstream when the trust profile requires it", () => {
+    assert.equal(shouldIsolateBuildWorkstreams(
+      { pipeline: { workstream_isolation: "shared" } },
+      { stage: "stage-01", ctx: { trustProfile: "contained" }, workstreams: [{}] },
+    ), true);
+  });
 });
 
 describe("orchestrator isolated build integration", () => {

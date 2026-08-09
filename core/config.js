@@ -139,6 +139,7 @@ const DEFAULTS = {
   prompts: {
     inline_framework: true,
   },
+  execution: require("./containment").normalizeExecutionConfig(),
 };
 
 function configPath(cwd) {
@@ -238,6 +239,7 @@ function loadConfig(cwd = process.cwd()) {
       prompts: {
         inline_framework: parsed.prompts?.inline_framework !== false,
       },
+      execution: require("./containment").normalizeExecutionConfig(parsed.execution),
       _source: "file",
       _path: p,
       _raw: parsed,
@@ -533,6 +535,17 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push("  #     command: \"tlc spec.tla\"      # presence-and-exit-code only; no toolchain auto-detected");
   lines.push("  #     tool: \"TLA+\"                 # label recorded on the gate; defaults to \"configured\"");
   lines.push("  #     timeout_ms: 300000           # time-box for the formal-method run");
+  lines.push("");
+  lines.push("execution:");
+  lines.push("  trust_profile: trusted  # trusted is not OS-sandboxed; opt in to contained");
+  lines.push("  # contained:");
+  lines.push("  #   provider: docker");
+  lines.push("  #   image: your-agent-image:tag  # must contain the routed host CLI");
+  lines.push("  #   network: none                # bridge is an explicit, broader opt-in");
+  lines.push("  #   env_allowlist: []            # names only; values never enter the run plan");
+  lines.push("  #   cpus: 2");
+  lines.push("  #   memory_mb: 4096");
+  lines.push("  #   pids: 128");
   lines.push("  #   test_suites:                  # optional replacement for auto-discovered suites");
   lines.push("  #     - id: unit");
   lines.push("  #       command: \"npm test\"");

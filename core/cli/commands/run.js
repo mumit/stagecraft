@@ -52,6 +52,7 @@ const flags = {
   "max-iterations":  { type: "number",  description: "Iteration cap" },
   "budget-usd":      { type: "number",  description: "Cost cap in USD" },
   "timeout-ms":      { type: "number",  description: "Per-dispatch timeout (ms)" },
+  "trust-profile":   { type: "string",  description: "Execution boundary: trusted or contained (fail-closed)" },
   "retry-delay-ms":  { type: "number",  description: "Backoff delay between transient retries (ms)" },
   "auto-rule":       { type: "list", split: true, description: "Auto-apply Principal rulings of these classes (comma-separated)" },
   "allow-stage":     { type: "list", split: true, description: "Grant consequence-ceiling approval for this stage (repeatable, comma-separated)" },
@@ -119,6 +120,10 @@ function run(positional, _flags) {
         const skipped = ev.stages_skipped_by_config ? `, ${ev.stages_skipped_by_config} skipped by config` : "";
         const conditional = ev.conditional_stages ? `, ${ev.conditional_stages} conditional` : "";
         process.stderr.write(`[devteam run] plan: ${ev.track} track, ${ev.stages_included}/${ev.stages_total} stages${skipped}${conditional}, ${ev.base_workstreams} base workstreams\n`);
+        if (ev.execution_trust) {
+          const sandbox = ev.execution_trust.os_sandboxed ? "OS-contained" : "not OS-sandboxed";
+          process.stderr.write(`  Execution trust: ${ev.execution_trust.profile} (${sandbox})\n`);
+        }
         if (ev.plan_path && ev.plan_fingerprint) {
           process.stderr.write(`  Execution plan: ${ev.plan_path} (sha256:${ev.plan_fingerprint.slice(0, 12)}…)\n`);
         }
@@ -171,6 +176,7 @@ function run(positional, _flags) {
     maxIterations: Number.isFinite(_flags.maxIterations) ? _flags.maxIterations : undefined,
     budgetUsd: Number.isFinite(_flags.budgetUsd) ? _flags.budgetUsd : undefined,
     timeoutMs: Number.isFinite(_flags.timeoutMs) ? _flags.timeoutMs : undefined,
+    trustProfile: _flags.trustProfile,
     retryDelayMs: Number.isFinite(_flags.retryDelayMs) ? _flags.retryDelayMs : undefined,
     autoRule: _flags.autoRule || [],
     allowStages: _flags.allowStage || [],

@@ -50,6 +50,7 @@ const { splitCommand } = require("../command-line");
 const { terminateChild } = require("../process-kill");
 const { createStreamJsonExtractor } = require("./claude-stream-json");
 const { createCodexJsonExtractor } = require("./codex-exec-json");
+const { wrapContainedInvocation } = require("../containment");
 
 // capabilities.usageFormat → extractor factory. Adapters that don't declare
 // usageFormat (or declare a value not in this map) are unaffected: stdout
@@ -212,6 +213,17 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
   const extraEnv = (bgCeilingEnvVar && process.env[bgCeilingEnvVar] === undefined)
     ? { [bgCeilingEnvVar]: String(timeoutMs) }
     : null;
+  let invocation;
+  try {
+    invocation = wrapContainedInvocation({
+      bin,
+      args,
+      ctx,
+      env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
+    });
+  } catch (err) {
+    return Promise.reject(err);
+  }
 
   // Logging: write stdout/stderr to pipeline/logs/<workstreamId>.log.
   // Disabled in tests + by env opt-out. When disabled we keep the
@@ -285,13 +297,13 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     : null;
 
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, {
-      cwd: ctx.processCwd || ctx.cwd,
+    const child = spawn(invocation.bin, invocation.args, {
+      cwd: invocation.cwd,
       // When logging is on we read stdout/stderr ourselves to duplicate
       // them into the transcript; when off, inherit gets us the historical
       // terminal-color behavior for free.
       stdio: (logWriter !== null || captureOutput) ? ["pipe", "pipe", "pipe"] : ["pipe", "inherit", "inherit"],
-      ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
+      env: invocation.env,
     });
 
     // Transcript paths: always write chunks to the log. Live terminal
@@ -331,7 +343,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
       if (timer) clearTimeout(timer);
       endLog(`spawn error: ${err.message}`);
       reject(new Error(
-        `headless invoke failed to spawn "${bin}": ${err.message}. Is ${bin} installed and on PATH?`,
+        `headless invoke failed to spawn "${invocation.bin}": ${err.message}. Is ${invocation.bin} installed and on PATH?`,
       ));
     });
     child.stdin.on("error", () => { /* swallow EPIPE when child exits early */ });

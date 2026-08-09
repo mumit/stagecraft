@@ -58,6 +58,32 @@ describe("config: loadConfig", () => {
     assert.equal(c.pipeline.default_track, "full"); // default
     assert.equal(c.pipeline.workstream_isolation, "shared");
     assert.deepEqual(c.routing.roles, {}); // default
+    assert.equal(c.execution.trust_profile, "trusted");
+  });
+
+  it("parses a bounded contained-execution policy without environment values", () => {
+    const cwd = track(makeTargetProject({
+      config: [
+        "execution:",
+        "  trust_profile: contained",
+        "  contained:",
+        "    image: private/agent:v1",
+        "    network: bridge",
+        "    env_allowlist: [MODEL_KEY, BAD-NAME]",
+        "    cpus: 1.5",
+        "    memory_mb: 2048",
+        "    pids: 64",
+        "",
+      ].join("\n"),
+    }));
+    const execution = loadConfig(cwd).execution;
+    assert.equal(execution.trust_profile, "contained");
+    assert.equal(execution.contained.image, "private/agent:v1");
+    assert.equal(execution.contained.network, "bridge");
+    assert.deepEqual(execution.contained.env_allowlist, ["MODEL_KEY"]);
+    assert.equal(execution.contained.cpus, 1.5);
+    assert.equal(execution.contained.memory_mb, 2048);
+    assert.equal(execution.contained.pids, 64);
   });
 
   it("enables Git-worktree isolation only for the explicit supported value", () => {

@@ -23,6 +23,7 @@ const flags = {
   cwd:               { type: "string",  description: "Target project directory" },
   headless:          { type: "boolean", description: "Drive host CLI non-interactively" },
   "timeout-ms":      { type: "number",  description: "Per-workstream wall-clock cap (default 600000)" },
+  "trust-profile":   { type: "string",  description: "Execution boundary: trusted or contained (fail-closed)" },
   patch:             { type: "boolean", description: "Scope build agents to patch items from a prior gate" },
   from:              { type: "string",  description: "Stage to read patch items from (default: red-team)" },
   "skip-completed":  { type: "boolean", description: "Skip workstreams whose gate file already exists" },

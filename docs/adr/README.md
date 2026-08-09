@@ -59,6 +59,7 @@ What else was on the table and why we didn't pick those.
 | [017](017-dag-wave-execution.md) | Stage DAG waves: curated `dependsOn[]` metadata (not a mechanical readFirst mirror), wave formation bounded by `autonomy.max_parallel_stages`, chain stays track-order, per-member failure/stall/heartbeat handling | Accepted (scoped to two named regions); implemented 2026-08-05 as phase-32 item 32.6 (PR #401) |
 | [018](018-materialized-run-plan-and-loop-default.md) | Materialized pre-dispatch run plan, plan-bound resume, and `loop` as the assessed fallback for ordinary feature work | Accepted |
 | [019](019-isolated-build-workstreams.md) | Core-managed Git-worktree isolation and deterministic reconciliation for parallel build roles | Accepted |
+| [020](020-execution-trust-profiles.md) | Explicit trusted/contained/remote profiles; fail-closed Docker containment and worktree reconciliation | Accepted |
 
 ### Deferred
 

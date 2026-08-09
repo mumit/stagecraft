@@ -1,6 +1,6 @@
 # Phase 38 — Execution Trust Profiles & Contained Workstreams
 
-Status: **approved for execution** (2026-08-08).
+Status: **implemented; ready for review in PR #413** (2026-08-08).
 
 ## Why
 
@@ -99,4 +99,3 @@ A developer can inspect a run plan and know the exact trust boundary before disp
 requested contained run either executes one workstream inside the declared boundary and
 reconciles only validated outputs, or fails closed with an actionable diagnostic. No code or
 documentation calls the existing trusted CLI path an OS sandbox.
-
