@@ -6,8 +6,9 @@ written to be executed one item at a time.
 
 **Current state (2026-08-08):** phases 1–20, 22, 24, 27, 28, 29, 30, 31, 33, 34, 35, 36,
 and 37 are complete. Phase 32 is mostly complete with one open item (32.4, deferred).
-Phase 37 deliberately added no new capability. Phases 21, 25,
-and 26 are proposed and not authorized for implementation. See
+Phases 38–40 are approved for execution in that order. Phase 41 is designed but remains
+blocked on real-project evidence. Phases 21, 25, and 26 are proposed or parked; Phase 26's
+still-useful measurement work is re-scoped into Phase 39. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
 listed under [Evidence reviews](#evidence-reviews).
@@ -45,32 +46,39 @@ listed under [Evidence reviews](#evidence-reviews).
 | 29 | [phase-29-scale-adaptive-ceremony.md](phase-29-scale-adaptive-ceremony.md) | [prompts](prompts/roadmap-2026-prompts.md) | `loop` track, assess-by-default, ceremony cost preview, compact QA fold | ✅ complete — 29.1 `loop` track · 29.2 assess-by-default (ADR-016) · 29.3 ceremony cost preview · 29.4 compact QA fold (`stage-06x`) · 29.5 docs repositioning |
 | 30 | [phase-30-closed-learning-loop.md](phase-30-closed-learning-loop.md) | [prompts](prompts/roadmap-2026-prompts.md) | Auto-collect patterns, outcome-feedback counters, memory injection, reflector pass, SKILL.md export | ✅ complete — 30.1 auto-collect at run end · 30.2 injected/recurrence counters + demotion · 30.3 reflector pass · 30.4 memory retrieval into prompts · 30.5 SKILL.md export |
 | 31 | [phase-31-verification-depth.md](phase-31-verification-depth.md) | [prompts](prompts/roadmap-2026-prompts.md) | Per-role stamping, mechanical red-team floor, adversarial review pair, mutation gate, quorum verification | ✅ complete — 31.1 per-role stamping · 31.2 mechanical red-team floor · 31.3 adversarial reviewer+critic · 31.4 mutation smoke gate · 31.5 stage-05 quorum re-derivation |
-| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | ⚠️ mostly complete — 32.1 ✅ cache-first prompts (PR #360) · 32.2 ✅ ADR-017 **Accepted** 2026-08-05, scoped to two named regions · 32.3 ✅ model-tier routing (PR #362) · 32.4 ⏸ deferred (no host adapter exposes worktree-isolated dispatch; the item's own precondition can't be met yet) · 32.5 ✅ context.md diet (PR #363) · 32.6 ✅ wave-execution implemented 2026-08-05 |
+| 32 | [phase-32-performance-parallelism.md](phase-32-performance-parallelism.md) | [prompts](prompts/roadmap-2026-prompts.md) | Cache-first prompts, stage DAG waves (ADR-017), model-tier routing, best-of-N, context diet | ⚠️ mostly complete — 32.1 ✅ cache-first prompts (PR #360) · 32.2 ✅ ADR-017 **Accepted** 2026-08-05, scoped to two named regions · 32.3 ✅ model-tier routing (PR #362) · 32.4 ⏸ deferred pending isolated-workstream landing and Phase 39 cost/quality calibration · 32.5 ✅ context.md diet (PR #363) · 32.6 ✅ wave-execution implemented 2026-08-05 |
 | 33 | [phase-33-eval-flywheel.md](phase-33-eval-flywheel.md) | [prompts](prompts/roadmap-2026-prompts.md) | Failed-gate eval capture, `devteam evals run`, prompt-pack versioning, offline prompt optimization | ✅ complete — 33.1 eval capture · 33.2 `devteam evals run` · 33.3 `prompt_pack_version` · 33.4 `scripts/prompt-optimize.js` |
 | 34 | [phase-34-interop-auditable-sdlc.md](phase-34-interop-auditable-sdlc.md) | [prompts](prompts/roadmap-2026-prompts.md) | ACP host adapter, in-toto attestation export, compliance mapping, gemini-cli plugin retirement | ✅ complete — 34.1 ACP adapter (PR #368) · 34.2 attestation export (PR #369) · 34.3 compliance mapping (PR #370) · 34.4 gemini-cli → plugin package |
 | 35 | [phase-35-existing-codebase-mode.md](phase-35-existing-codebase-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | Review-only track + artifact-tolerant readFirst, `devteam review-pr`, stage-06d stamping, findings report, refactor track | ✅ complete — 35.1 review-only track (PR #373) · 35.2 `devteam review-pr` (PR #375) · 35.3 stage-06d stamping (PR #376) · 35.4 findings report (PR #377) · 35.5 refactor track (PR #378) |
 | 36 | [phase-36-external-review-mode.md](phase-36-external-review-mode.md) | [prompts](prompts/roadmap-2026-prompts.md) | External review mode (ACP-first): two-root permissions with enforced read-only, framework paths across roots, review workspace, `devteam review <path>`, standalone `review-pr` | ✅ complete (2026-08-04) — all seven items 36.0–36.6; see [`acp-read-scope.md`](acp-read-scope.md) for the 36.0 spike findings |
 | 37 | [phase-37-interface-and-token-efficiency.md](phase-37-interface-and-token-efficiency.md) | [prompts](prompts/roadmap-2026-prompts.md) | Interface and token efficiency: generated per-command help, inlined cacheable framework prefix, project-context guard, grouped help, docs front door, ADR-017 decision | ✅ complete (2026-08-05) — 37.1–37.6 shipped; **adds no capability by design** |
+| 38 | [phase-38-execution-trust-profiles.md](phase-38-execution-trust-profiles.md) | — | Explicit trust profiles and disposable, fail-closed contained workstreams | 🚧 approved; depends on PR #410 |
+| 39 | [phase-39-evidence-performance-calibration.md](phase-39-evidence-performance-calibration.md) | — | Cross-run latency/cost calibration, usefulness signals, right-sizing feedback, bottleneck timeline | 🚧 approved; depends on PRs #408–#409 |
+| 40 | [phase-40-conversational-artifact-refinement.md](phase-40-conversational-artifact-refinement.md) | — | Proposal-first requirements/design conversation with exact diff, explicit apply, and deterministic invalidation | 🚧 approved; depends on PR #411 |
+| 41 | [phase-41-evidence-gated-learning-routing.md](phase-41-evidence-gated-learning-routing.md) | — | Shadow routing and controlled recipe candidates after explicit multi-project thresholds | ⛔ evidence-gated; do not implement yet |
 
-**Executing with Sonnet:** every work item has an exact paste-ready prompt. Phases 1–4
-and the documentation phase use [prompts/ALL-PROMPTS.md](prompts/ALL-PROMPTS.md); phases
-28–35 use [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md). Paste the
-file's §0 PREAMBLE plus the item prompt into a fresh Sonnet session — one item per
-session per branch.
+**Execution format:** older phases with prompt packs retain their paste-ready prompts for
+historical use. Phases 38–41 use the plan itself as the contract and deliberately avoid
+model-specific instructions. Implement one independently verifiable work item per PR unless
+the plan records an unavoidable stack dependency.
 
 ---
 
 ## What is not delivered yet
 
-Everything below is either written-but-unbuilt or deliberately parked. Verified against
-`git log` on 2026-08-05, not inferred from status chips.
+Everything below is either written-but-unbuilt or deliberately parked. Status was
+reconciled against upstream and the active prerequisite PRs on 2026-08-08.
 
 | Work | Where | Why it is open |
 |---|---|---|
-| **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred: the item requires a host adapter that exposes worktree-isolated dispatch, and none does today. Its own precondition cannot be met, so it was not attempted. |
+| **32.4 gate-verified best-of-N** | [phase-32](phase-32-performance-parallelism.md) | Deferred. PR #410 supplies a core-managed isolation primitive, but best-of-N multiplies cost and should be re-evaluated only after that primitive lands and Phase 39 measures quality per dollar. |
 | **Phase 21 — cloud-runner adapter (A3)** | [phase-21](phase-21-cloud-runner-adapter.md) | Proposed for review, never authorized. `hosts/cloud-runner-github/` is an empty placeholder. |
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
-| **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Proposed ([#312](https://github.com/telus-labs/stagecraft/issues/312)). Partly overtaken by phases 28 and 32, which delivered telemetry, the run corpus, and cache-first prompts. Worth re-scoping rather than running as written. |
+| **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Superseded as an execution plan. Phases 28, 32, and 37 shipped much of it; remaining measurement/live-timeline work is re-scoped into Phase 39. |
+| **Phase 38 — contained execution** | [phase-38](phase-38-execution-trust-profiles.md) | Approved. Starts after its workstream-isolation dependency (PR #410); trusted CLI execution remains explicitly unsandboxed. |
+| **Phase 39 — calibration** | [phase-39](phase-39-evidence-performance-calibration.md) | Approved. Builds measurement and dogfood tooling; real-project collection continues afterward. |
+| **Phase 40 — conversational refinement** | [phase-40](phase-40-conversational-artifact-refinement.md) | Approved. Starts from the read-only coordinator in PR #411 and keeps mutation behind explicit local apply. |
+| **Phase 41 — learning/routing activation** | [phase-41](phase-41-evidence-gated-learning-routing.md) | Blocked until the plan's per-route and cross-project evidence thresholds are met. Test fixtures do not count. |
 
 Capability gates that stay shut for lack of real-project data — not for lack of code —
 are listed under [Evidence reviews](#evidence-reviews). Phase 28 removed the telemetry
@@ -101,9 +109,9 @@ They document why certain capability gates remain shut and what would open them.
 
 ---
 
-## How to run these with Sonnet (historical reference)
+## How to run prompt-backed phases (historical reference)
 
-All phases are complete. These notes are preserved for re-use if new phases are planned.
+These notes apply only to the older prompt-backed phases and are preserved for re-use.
 
 - **One work item per session/PR.** Each item is scoped to be independently mergeable.
   Paste the item (plus the "Conventions" section below) as the task. Do not batch items.

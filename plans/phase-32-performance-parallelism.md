@@ -12,7 +12,7 @@ Prompts: [prompts/roadmap-2026-prompts.md](prompts/roadmap-2026-prompts.md) §32
 | 32.1 Cache-first prompt assembly | ✅ complete (PR #360) |
 | 32.2 Stage DAG waves (ADR) | ✅ complete — [ADR-017](../docs/adr/017-dag-wave-execution.md) **Accepted** 2026-08-05, scoped to exactly two curated regions (`{04a ∥ 04c}`, `{06b ∥ 06c ∥ 06d ∥ 06e}`), `autonomy.max_parallel_stages` default 2; wave-execution code is out of scope for this item and tracked as 32.6 |
 | 32.3 Model-tier routing | ✅ complete (PR #362) |
-| 32.4 Gate-verified best-of-N | ⏸ deferred — no host adapter (`hosts/*/adapter.js`) declares worktree-isolation capability, so the item's own precondition ("hosts with `worktrees: true`") can't be satisfied; nothing to build against yet |
+| 32.4 Gate-verified best-of-N | ⏸ deferred — PR #410 proposes core-managed worktree isolation, replacing the assumed adapter capability. Reassess only after that lands and Phase 39 establishes quality-per-dollar evidence; isolation is necessary but does not justify multiplied spend. |
 | 32.5 context.md diet | ✅ complete (PR #363) |
 | 32.6 Stage DAG wave execution (implementation) | ✅ complete — both curated regions dispatch concurrently; see deviations note below |
 

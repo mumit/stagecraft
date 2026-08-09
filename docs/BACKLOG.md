@@ -79,7 +79,7 @@ Completed backlog items are preserved here so the active backlog tables stay sca
 | # | Idea | I | E | Notes |
 |---|---|---|---|---|
 | A2 | **Cursor / Windsurf / Aider / Cline adapters** | 3 | 3 | One per IDE-embedded agent. Each is an adapter, mostly install-payload work. |
-| A3 | **Cloud-runner adapter** (e.g. AWS Lambda + Bedrock, Replit Agent) | 4 | 4 | Host adapter that runs one workstream on a remote worker, not the user's laptop. Enables long-running stages (multi-hour audits, big test suites). [Phase 21 plan proposed for review.](../plans/phase-21-cloud-runner-adapter.md) |
+| A3 | **Cloud-runner adapter** (e.g. AWS Lambda + Bedrock, Replit Agent) | 4 | 4 | Host adapter that runs one workstream on a remote worker, not the user's laptop. Sequence after Phase 38 defines the trust/provider contract and Phase 39 measures local bottlenecks; then re-scope the older [Phase 21 proposal](../plans/phase-21-cloud-runner-adapter.md) instead of building its stale design verbatim. |
 | A5 | **API-direct adapter** (no host CLI; talks to Anthropic / OpenAI / Google APIs directly) | 3 | 3 | For users who don't want to install claude-code or codex but still want orchestration. Lighter dependency footprint. |
 | A7 | ~~**Docker-based headless runner** ([#282](https://github.com/telus-labs/stagecraft/issues/282))~~ | 4 | 2 | ✅ Unreleased · `hosts/docker/` packages Stagecraft into a non-root Docker runner for unattended local orchestration against a mounted project, with runtime-only credentials and conservative lock handling. |
 | A8 | ~~**Omnigent runtime adapter follow-through** ([#291](https://github.com/telus-labs/stagecraft/issues/291))~~ | 4 | 4 | ✅ Unreleased · Phase 24 ships the `omnigent` host adapter, launch config ([#292](https://github.com/telus-labs/stagecraft/issues/292)), prompt transport ([#293](https://github.com/telus-labs/stagecraft/issues/293)), policy bridge ([#294](https://github.com/telus-labs/stagecraft/issues/294)), session evidence ([#295](https://github.com/telus-labs/stagecraft/issues/295)), and experimental director prototype ([#296](https://github.com/telus-labs/stagecraft/issues/296)). Next-phase hardening is parked in [Phase 25](../plans/phase-25-omnigent-director-hardening.md) / [#305](https://github.com/telus-labs/stagecraft/issues/305). |
@@ -103,15 +103,16 @@ No open items. B7 moved to [Shipped](#shipped) in Phase 19.
 | C7 | ~~`eslint-plugin-security`~~ `[hist-a]` | 3 | 1 | ✅ v0.6.0 · [CHANGELOG](../CHANGELOG.md#060--2026-06-11) |
 | C8 | ~~CHANGELOG-per-PR fragments~~ `[hist-b]` | 3 | 2 | ✅ v0.6.0 · [CHANGELOG](../CHANGELOG.md#060--2026-06-11) |
 | C9 | ~~**Verify-before-promoting enforcement in audit skill** `[hist-c]`~~ | 3 | 2 | ✅ Unreleased · Phase 1/2 audit findings now require `verified_by` evidence, templates expose verification slots, and structural tests lock the contract. |
+| C10 | **Execution trust profiles and contained workstreams** | 5 | 5 | 🚧 Approved as [Phase 38](../plans/phase-38-execution-trust-profiles.md). Distinguishes trusted, contained, and remote execution; adds a fail-closed disposable local container path with scoped environment, default-deny network, resource limits, and validated output reconciliation. Git worktrees alone are not an OS sandbox. |
 
 ## D. Observability & learning — telemetry, metrics, persistent learning
 
 | # | Idea | I | E | Notes |
 |---|---|---|---|---|
-| D5 | **D5 maturation — continuous adaptive routing** | 5 | 3 | Today D5 proposes role-level swaps; the mature form re-routes the *next* run based on the prior run's outcomes automatically. **Cost telemetry is no longer the blocker** — [Phase 28](../plans/phase-28-ground-truth-telemetry.md) added orchestrator-observed tokens/cost per dispatch plus the `.devteam/corpus/` run corpus, and `devteam corpus stats` reports the per-(role, host) counts this gate asks for. Remaining requirement: ≥5 dispatches per (role, host) pair across ≥2 real user projects. Run `devteam corpus stats` to check. |
-| D8 | **Critical-path telemetry and performance report** ([#312](https://github.com/telus-labs/stagecraft/issues/312), [#313](https://github.com/telus-labs/stagecraft/issues/313)) | 5 | 3 | Proposed in [Phase 26](../plans/phase-26-performance-observability-usability.md). Add orchestrator-owned timing coverage, a critical-path report, queue/invoke/stamp/merge/retry breakdowns, and real-run p50/p95 baselines before changing scheduling. |
+| D5 | **D5 maturation — continuous adaptive routing** | 5 | 3 | Evidence-gated in [Phase 41](../plans/phase-41-evidence-gated-learning-routing.md). Phase 39 improves calibration, but activation still requires ≥5 durable dispatches per candidate `(role, host)` pair across ≥2 real projects, accepted outcomes, and labelled cost. The first runtime step is shadow recommendation, not automatic rerouting. |
+| D8 | **Cross-run performance calibration** ([#312](https://github.com/telus-labs/stagecraft/issues/312), [#313](https://github.com/telus-labs/stagecraft/issues/313)) | 5 | 3 | Core timing, queue wait, retry events, and critical-path reporting are shipped. Remaining work is re-scoped into [Phase 39](../plans/phase-39-evidence-performance-calibration.md): cross-run p50/p95, queue/invoke/verification/reconciliation/cache breakdown, cost per accepted change, and a repeatable two-project dogfood protocol. |
 | D9 | **Verification efficiency: concurrency and receipts** ([#315](https://github.com/telus-labs/stagecraft/issues/315)) | 4 | 4 | ✅ Unreleased · Independent suites now run with bounded concurrency and resource groups, and successful orchestrator-run verification commands mint content-addressed receipts that are reused only when command, suite, purpose, workspace bytes, config, env/toolchain, and verifier version match. |
-| D10 | **Safe track/workstream right-sizing** ([#316](https://github.com/telus-labs/stagecraft/issues/316)) | 4 | 4 | ✅ Core selection shipped · ADR-018 makes `loop` the reachable assessed default, promotes concrete security/migration risk, materializes stage/route decisions in `pipeline/run-plan.json`, and binds resume to its execution fingerprint. Autonomous runs already record typed skips and `pipeline.force_stages` overrides them. Remaining depth: runtime active-workstream discovery beyond preflight candidates and calibration from real-project false-positive/false-negative data. |
+| D10 | **Safe track/workstream right-sizing** ([#316](https://github.com/telus-labs/stagecraft/issues/316)) | 4 | 4 | ✅ Core selection shipped · ADR-018 makes `loop` the reachable assessed default, promotes concrete security/migration risk, materializes stage/route decisions in `pipeline/run-plan.json`, and binds resume to its execution fingerprint. [Phase 39](../plans/phase-39-evidence-performance-calibration.md) adds override and fit feedback before any runtime active-workstream selection is considered. |
 | D11 | **Per-host workstream scheduling and retry backoff** ([#317](https://github.com/telus-labs/stagecraft/issues/317)) | 4 | 3 | ✅ Unreleased · `routing.host_concurrency` caps already-ready workstreams per host, run logs record queue wait, critical-path reports surface queue time, and transient retry events include reason/backoff class. Stage-level DAG waves: [ADR-017](adr/017-dag-wave-execution.md) accepted 2026-08-05 and implemented the same day as [phase-32](../plans/phase-32-performance-parallelism.md) item 32.6 (PR #401) — `dependsOn` metadata on the two curated regions, wave-aware `nextWave()`, concurrent driver dispatch, `wave_id` in `run-log.jsonl`, and realized-savings reporting in `devteam performance critical-path`. |
 | D12 | ~~Pattern learning for agent growth~~ ([#332](https://github.com/telus-labs/stagecraft/issues/332)) | 5 | 4 | ✅ shipped — [Phase 27](../plans/phase-27-pattern-learning.md) added `devteam patterns` (sanitized collection, explicit promotion, bounded prompt injection); [Phase 30](../plans/phase-30-closed-learning-loop.md) closed the loop: auto-collect at run end, `injected` / `recurrence_after_injection` counters that actually increment, demotion, and `export --skill`. Distinct from H3: advisory prevention before coding, not deterministic recipe creation. |
 
@@ -120,9 +121,10 @@ No open items. B7 moved to [Shipped](#shipped) in Phase 19.
 | # | Idea | I | E | Notes |
 |---|---|---|---|---|
 | E3 | **VS Code extension** | 3 | 3 | Sidebar with stage status, "run next stage" button, gate viewer. |
-| E9 | **Conversational stage mode** `[cmp-E-4]` | 3 | 3 | `devteam stage requirements --interactive` opens a conversation with the PM subagent to refine the brief through Q&A before producing the artifact. Useful specifically for upstream stages (requirements, design, clarification) where the artifact benefits from refinement before being rendered. Architecture supports it (adapters could expose streaming-conversation alongside one-shot render). Implement if user feedback indicates the gate-driven loop is too rigid for upstream stages. Related to E7 but different mechanism: E7 is host-loops-until-condition; E9 is stage-manager-converses-with-agent. |
+| E9a | **Read-only conversational coordinator** `[cmp-E-4]` | 3 | 2 | 🚧 PR #411 provides grounded project Q&A through captured output with tools disabled. It is intentionally read-only. |
+| E9b | **Approval-bound artifact refinement** `[cmp-E-4]` | 4 | 3 | 🚧 Approved as [Phase 40](../plans/phase-40-conversational-artifact-refinement.md): requirements/design conversation produces an exact proposal and invalidation preview; a separate explicit command applies or rejects it. No arbitrary shell or automatic writes. |
 | E11 | **Prototype mode** | 4 | 2 | `devteam prototype` creates a lightweight pre-SDLC packet, can run the build prompt in a packet workspace, captures feedback, and records explicit discard/iterate/promote decisions. It is deliberately not a production gate track; promotion hands off into `devteam run --feature-file ... --track <t>`. |
-| E12 | **Rich live run UX** ([#314](https://github.com/telus-labs/stagecraft/issues/314)) | 4 | 2 | ✅ First slice in progress: `devteam run`, `--watch`, and `status --verbose` now expose active workstreams, last workstream, host/log/gate paths, elapsed time, and durable lifecycle events. Remaining depth: verification substeps, retry/backoff timeline, queue state, and richer `devteam log` views. |
+| E12 | **Rich live run UX** ([#314](https://github.com/telus-labs/stagecraft/issues/314)) | 4 | 2 | ✅ First slice shipped: `devteam run`, `--watch`, and `status --verbose` expose active workstreams, last workstream, host/log/gate paths, elapsed time, and durable lifecycle events. Remaining verification/retry/queue/blocker timeline is Phase 39.5, derived from the same event log rather than a parallel UI state store. |
 
 ## F. Integrations — where the team plugs in
 
@@ -140,7 +142,11 @@ These don't fit neatly in impact/effort because their value depends on how the f
 Design specs include architecture diagrams (images). Stage 2 (design) and Stage 5 (review) accept image inputs. Principal can output a system diagram, not just prose. Visual reasoning is no longer a separate workflow.
 
 ### G9. Self-modifying pipeline
-Retrospective stage proposes changes to `stages.js` / `roles/` / `rules/` based on what worked. Proposals queue for human approval. The pipeline learns its own shape from operation.
+
+Parked. Phase 41 may produce bounded routing and recipe proposals after its evidence gates,
+but it explicitly does not edit `stages.js`, roles, rules, gates, or source code. Reconsider
+G9 only after multiple independent teams produce enough longitudinal evidence to define a
+safe, reversible policy.
 
 ---
 
@@ -157,8 +163,8 @@ dispatch evidence durable, Phase 18 added explicit accepted-resolution evidence 
 H3, Phase 19 shipped polyglot verification in PR #264, and Phase 20 implements the
 separable `devteam run --watch` operator UX without enabling active stall response. The
 next capability horizon is real collection followed by review, not calendar-driven
-activation. E9 conversational stage mode remains a discovery proposal until five real
-users report upstream rigidity.
+activation. Approval-bound requirements/design refinement is now scoped in Phase 40;
+unbounded conversational repository editing remains out of scope.
 
 Completed from this audit cycle: dashboard HTML safety and lifecycle (PR #235),
 native Windows CI evidence, support wording, and A6 promotion (PR #236), and bounded
