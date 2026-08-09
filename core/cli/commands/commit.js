@@ -183,7 +183,11 @@ function run(positional, _flags) {
   }
 
   // Build the list of files to stage
-  const filesToStage = [];
+  // ADR-018: the materialized run plan is durable execution provenance, not
+  // volatile driver state. Include it once at least one stage is being
+  // committed; old runs without the artifact remain compatible via the
+  // existence filter below.
+  const filesToStage = [path.join(pRoot, "run-plan.json")];
 
   for (const stageId of toCommit) {
     // Gate file — include if gate status is PASS or WARN
@@ -353,7 +357,7 @@ function runCommit(cwd) {
   }
 
   // Build file list (mirrors the CLI run() logic exactly).
-  const filesToStage = [];
+  const filesToStage = [path.join(pRoot, "run-plan.json")];
   for (const stageId of toCommit) {
     const gateFile = path.join(gDir, `${stageId}.json`);
     if (fs.existsSync(gateFile)) {

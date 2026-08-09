@@ -5,6 +5,7 @@ Stagecraft records exactly what produced each gate: model version, temperature, 
 This is the **C4** BACKLOG item. It pairs with **E6** (`devteam replay <stage>`, which re-runs a recorded gate and diffs against the original) and supports audits that require evidence of how a change was developed: SOC 2, EU AI Act, and internal compliance reviews.
 
 - [What "reproducible" honestly means with LLMs](#what-reproducible-honestly-means-with-llms)
+- [Execution-plan fingerprint](#execution-plan-fingerprint)
 - [The recorded fields](#the-recorded-fields)
 - [How fields land in the gate](#how-fields-land-in-the-gate)
 - [Using the recorded fields](#using-the-recorded-fields)
@@ -29,6 +30,20 @@ What it **is**:
 - **Auditability.** The gate JSON alone answers "what model, what temperature, what prompt, what tools." No guessing, no chasing config history.
 - **Drift detection.** Re-render the prompt today, hash it, compare to the gate's hash. Drift means the prompt changed: role brief edited, skill updated, or rules file revised.
 - **Replay readiness.** With enough recorded fields, `devteam replay <stage-id>` re-invokes the host with the current config and diffs the result against the original. The model itself may still drift, but the *configuration* is preserved.
+
+## Execution-plan fingerprint
+
+Before any autonomous dispatch, `devteam run` writes `pipeline/run-plan.json`
+([ADR-018](adr/018-materialized-run-plan-and-loop-default.md)). Its SHA-256
+`plan_fingerprint` binds the stable run-level controls: resolved track and
+provenance, configured stage selection, track-sized roles, and configured
+host/model routes. `--resume` refuses to proceed when those controls drift.
+
+This is distinct from the per-gate fingerprints below. The run-plan fingerprint
+answers “is this still the execution plan I reviewed?” It does not hash prompts,
+model output, or dynamic evidence. Right-sizing observations and conditional
+stages are explicitly reevaluated as earlier stages produce code and gates; the
+append-only run log records the resulting runtime decisions.
 
 ## The recorded fields
 

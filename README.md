@@ -292,6 +292,12 @@ For multi-host (`--host claude-code,codex` or `--host claude-code,omnigent`): bo
 
 See `devteam help` for the up-to-date list with flags.
 
+`devteam run` also materializes `pipeline/run-plan.json` before the first model
+dispatch. It records stage dispositions and candidate role/host/model routes,
+and binds `--resume` to a SHA-256 execution fingerprint so configuration drift
+cannot silently change an in-progress run. `devteam commit` includes this durable
+plan alongside completed-stage evidence (ADR-018).
+
 ## Auditing an existing codebase
 
 The pipeline builds features. The **audit** workflow analyzes an existing codebase and produces a prioritized improvement roadmap under `docs/audit/00–10`, plus a `status.json` for resume. It is read-only by design: it writes findings, never source code. The `implement` skill consumes `docs/audit/10-roadmap.md` to pick the next change.

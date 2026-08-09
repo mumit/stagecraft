@@ -89,7 +89,7 @@ command.
 
 If a stage isn't appropriate for your change, pick a track that doesn't include it. See [`docs/tracks.md`](tracks.md) — `nano` skips most stages, `quick` skips design + clarification + pre-review, etc.
 
-If you want to skip a stage that *is* in your active track, just don't run it — the orchestrator won't auto-advance unless the gate exists. But `devteam next` will keep pointing at the skipped stage. If you want to mark it as deliberately bypassed, write a gate by hand with `status: "PASS"` and an explanation in `blockers: []` / `warnings: []` (or set up a custom track in `STAGES_BY_TRACK`).
+If you want to skip a stage that *is* in your active track, configure `pipeline.skip_stages` for an explicit, audited skip or choose/customize a track that omits it. Never hand-author a `PASS` gate to bypass work: PASS is evidence produced and validated by the stage, not a manual sequencing marker.
 
 ### Do I have to use all 18 stages?
 
@@ -101,12 +101,16 @@ Use the highest-risk read that applies:
 
 | Change type | Track |
 |---|---|
-| Hotfix, 1-line bug fix, doc update | `nano` |
-| Self-contained refactor, dependency bump, small feature | `quick` |
+| Small bounded iteration with no deploy yet | `loop` |
+| 1-line mechanical or docs-only change | `nano` |
+| Dependency bump | `dep-update` |
+| Self-contained behavior-preserving refactor | `refactor` |
+| Bounded feature/fix moving toward sign-off and deploy | `quick` |
+| Urgent production incident | `hotfix` |
 | Feature touching multiple services or adding new external dependencies | `full` |
 | Feature with auth, PII, schema migration, or security implications | `full` + run security review regardless of pre-review flag |
 
-When in doubt, `full`. The cost of a falsely-skipped stage is usually higher than the cost of running an unnecessary one. `devteam next` skips stages that aren't needed (conditional stages) automatically, so `full` doesn't mean you always run all 18 manually.
+When in doubt for ordinary iterative work, start with `loop`; use `full` when risk, security, cross-cutting architecture, or auditability is the uncertainty. The stoplist blocks known consequential subjects from lighter tracks, and `devteam assess` promotes security-triggered `loop`/`nano`/`quick` work to `full`.
 
 ### My `--feature` string specified implementation details (env var names, a specific API endpoint) but the PM rewrote them. How do I preserve them?
 
