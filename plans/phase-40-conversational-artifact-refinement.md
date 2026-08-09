@@ -1,6 +1,6 @@
 # Phase 40 — Approval-Bound Conversational Artifact Refinement
 
-Status: **approved for execution** (2026-08-08).
+Status: **implemented; ready for review** (2026-08-08).
 
 ## Why
 
@@ -70,4 +70,3 @@ automatic proposal apply, transcript telemetry, and a self-modifying stage/role/
 A developer can discuss a requirements or design artifact, receive an exact inspectable
 diff and invalidation preview, then explicitly apply or reject it. Chat remains unable to
 execute tools or mutate the repository, and stale/concurrent proposals fail safely.
-
