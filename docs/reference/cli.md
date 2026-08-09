@@ -3,13 +3,27 @@
 
 # CLI Reference
 
-Full `devteam` command reference. 42 commands.
+Full `devteam` command reference. 43 commands.
 Derived from the per-command flag schemas in `core/cli/commands/`.
 Run `npm run docs:generate` to regenerate after adding or changing flags.
 
 All flags are optional unless marked otherwise. `--help` is available on every command.
 
 ---
+
+### `devteam chat ["question"] [options]`
+
+Grounded, read-only conversation about current pipeline state and the safest next command. No question opens a TTY session; chat never executes its recommendation.
+
+| Flag         | Type   | Description                                           |
+| ------------ | ------ | ----------------------------------------------------- |
+| --cwd        | string | Target project directory                              |
+| --feature    | string | Feature description for bounded isolation lookup      |
+| --host       | string | Headless host override (supports acp:<agent-command>) |
+| --model      | string | Model override for this conversation                  |
+| --timeout-ms | number | Per-turn host timeout in milliseconds                 |
+| --json       | bool   | JSON output for a one-shot question                   |
+| --dry-run    | bool   | Print the grounded prompt without calling a host      |
 
 ### `devteam stage <name> [options]`
 

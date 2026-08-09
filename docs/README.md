@@ -17,6 +17,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 ## Operator — I run pipelines daily
 
 - [user-guide.md](user-guide.md) — daily-use reference: running stages, multi-host setups, headless mode
+- [conversational-coordinator.md](conversational-coordinator.md) — grounded read-only chat about pipeline state, cost, blockers, and next commands
 - [user-guide.md § Prototype first, harden later](user-guide.md#prototype-first-harden-later) — short prototype-mode tutorial using a token cost estimator example
 - [tracks.md](tracks.md) — which of the ten tracks or task-specific modes to pick for a given change, plus why prototype mode is a pre-SDLC workflow rather than a track
 - [conventions.md](conventions.md) — pipeline markers operators read and write (`QUESTION:`, `BLOCKER:`, magic comments)

@@ -133,6 +133,27 @@ describe("hosts/acp: end-to-end stage via stub agent", () => {
 });
 
 describe("hosts/acp: permission mapping denies at call time", () => {
+  it("denies even an otherwise-allowed edit when the invocation disables tools", async () => {
+    const cwd = tmpdir();
+    const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+    await withEnvVars({
+      DEVTEAM_HEADLESS_COMMAND: `node "${STUB_PATH}"`,
+      ACP_STUB_MODE: "normal",
+      ACP_STUB_ALLOWED_PATH: path.join(cwd, "pipeline", "build-plan.md"),
+      ACP_STUB_GATE_PATH: gatePath,
+      ACP_STUB_GATE_JSON: "{}",
+    }, async () => {
+      const result = await adapter.invoke(
+        makeDescriptor({ disableTools: true }),
+        makeCtx(cwd, { captureOutput: true }),
+        "read-only prompt",
+      );
+      assert.equal(result.gatePath, null);
+      assert.equal(fs.existsSync(gatePath), false);
+      assert.match(result.output, /stub agent working/);
+    });
+  });
+
   it("an edit outside allowedWrites is denied via a real reject option (not merely absent)", async () => {
     const cwd = tmpdir();
     const decisionPath = path.join(cwd, "decision.json");

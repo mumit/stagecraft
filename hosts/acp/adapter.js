@@ -139,7 +139,10 @@ async function handlePermissionRequest(params, descriptor, roots, knownToolCalls
   const toolCall = { ...known, ...requested };
   const options = Array.isArray(params && params.options) ? params.options : [];
 
-  const { deny, reason } = evaluateToolCall(toolCall, descriptor, roots);
+  const evaluated = descriptor.disableTools === true
+    ? { deny: true, reason: "this read-only invocation disables all tools" }
+    : evaluateToolCall(toolCall, descriptor, roots);
+  const { deny, reason } = evaluated;
   const chosen = selectOption(options, deny);
   appendLog(
     `[devteam] permission-request kind=${toolCall.kind || "?"} ` +
@@ -201,6 +204,7 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
   let logPath = null;
   let logWriter = null;
   let logEnded = false;
+  let capturedOutput = "";
   if (!logDisabled) {
     try {
       const logsDirPath = logsDir(ctx.cwd, ctx.changeId);
@@ -266,6 +270,11 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
     // carries ONLY protocol messages) — tee it into the same transcript.
     if (logWriter !== null) {
       child.stderr.on("data", (chunk) => appendLog(chunk.toString("utf8")));
+    } else {
+      // stdout is the ACP protocol and must always be piped. Drain stderr too
+      // when transcript logging is disabled so a chatty agent cannot fill the
+      // pipe buffer and deadlock an otherwise read-only coordinator turn.
+      child.stderr.resume();
     }
 
     const knownToolCalls = new Map();
@@ -275,6 +284,15 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
         const update = params && params.update;
         if (update && (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update")) {
           mergeToolCallInfo(knownToolCalls, update);
+        }
+        if (
+          ctx.captureOutput === true
+          && update?.sessionUpdate === "agent_message_chunk"
+          && update.content?.type === "text"
+          && typeof update.content.text === "string"
+          && capturedOutput.length < 256 * 1024
+        ) {
+          capturedOutput += update.content.text.slice(0, 256 * 1024 - capturedOutput.length);
         }
         appendLog(formatSessionUpdate(update));
       },
@@ -347,6 +365,7 @@ function invoke(descriptor, ctx, preRenderedPrompt) {
         durationMs: Date.now() - start,
         timedOut,
         writeViolations: [],
+        ...(ctx.captureOutput === true ? { output: capturedOutput } : {}),
         ...(protocolError ? { protocolError: protocolError.error } : {}),
         ...(stopReason ? { stopReason } : {}),
       });
