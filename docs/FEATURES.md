@@ -44,6 +44,8 @@ For longer briefs, use `--feature-file <path>` with `devteam stage` or `devteam 
 
 Build and peer-review can run parallel workstreams — frontend, backend, and infra simultaneously — within a single stage. Each workstream writes its own gate; they merge into one stage-level gate.
 
+Sign-off is also multi-role: PM owns product/docs approval and the deploy request, while platform owns runbook readiness. The merged Stage 7 gate preserves those semantic fields explicitly because Stage 8 consumes them as authorization; a merged PASS is never treated as deploy permission by itself.
+
 ### License compatibility gate — dependency licenses checked at pre-review
 
 `stage-04a` (pre-review) runs a license check on all installed packages as part of Platform's pre-review pass.

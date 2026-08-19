@@ -1,0 +1,1 @@
+- **Preserve deploy authorization when sign-off workstreams merge.** The Stage 7 merger now carries PM-owned sign-off, deploy request, documentation, and follow-up fields plus platform-owned runbook readiness into the stage-level gate, preventing Stage 8 from rejecting a fully approved sign-off—or inferring authorization from aggregate PASS alone.
