@@ -1403,7 +1403,7 @@ Boots a local HTTP server (default `http://127.0.0.1:3737/`) and opens it in you
 - **Click a row:** opens the gate detail panel (identity fields, blockers, warnings, workstreams table, raw JSON).
 - **Click a role chip:** opens that role's brief inline.
 
-Live updates: the UI watches `pipeline/gates/` via `fs.watch` and pushes changes over Server-Sent Events. Run a stage in another terminal; rows light up in the browser as gates land. No refresh needed.
+Live updates: the UI watches `pipeline/gates/` via `fs.watch` and pushes changes over Server-Sent Events. Run a stage in another terminal; rows light up in the browser as gates land. If the OS refuses the watcher (for example, `EMFILE` under a constrained file-descriptor limit), the server warns and keeps serving API/static responses; live refresh is unavailable until restart.
 
 ### Flags
 
