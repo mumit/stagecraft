@@ -121,7 +121,7 @@ function makeBroker() {
   return { broadcast, addClient, size, closeAll };
 }
 
-function watchGates(cwd, broker) {
+function watchGates(cwd, broker, opts = {}) {
   // B9 exemption: watches the in-place gates dir only (see loadGateFile comment).
   const gatesDir = path.join(cwd, "pipeline", "gates");
   if (!fs.existsSync(gatesDir)) {
@@ -134,13 +134,36 @@ function watchGates(cwd, broker) {
       broker.broadcast("state", buildState(cwd));
     }, 100);
   }
-  try {
-    const watcher = fs.watch(gatesDir, { persistent: false }, fire);
-    return () => { try { clearTimeout(debounceTimer); watcher.close(); } catch { /* */ } };
-  } catch (err) {
+  const watchFn = opts.watchFn || fs.watch;
+  const onError = opts.onError || ((err) => {
     process.stderr.write(`[devteam ui] could not watch ${gatesDir}: ${err.message}\n`);
-    return () => {};
+  });
+  let watcher = null;
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    clearTimeout(debounceTimer);
+    if (!watcher) return;
+    if (typeof watcher.removeListener === "function") watcher.removeListener("error", handleError);
+    try { watcher.close(); } catch { /* */ }
   }
+  function handleError(err) {
+    if (closed) return;
+    onError(err);
+    close();
+  }
+  try {
+    watcher = watchFn(gatesDir, { persistent: false }, fire);
+    // Resource exhaustion such as EMFILE can arrive asynchronously after
+    // fs.watch() returns. Without an error listener Node treats it as an
+    // uncaught exception and takes down an otherwise healthy local UI server.
+    if (watcher && typeof watcher.on === "function") watcher.on("error", handleError);
+  } catch (err) {
+    onError(err);
+    closed = true;
+  }
+  return close;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +245,10 @@ function startServer(opts = {}) {
     }
   });
 
-  const stopWatch = watchGates(cwd, broker);
+  const stopWatch = watchGates(cwd, broker, {
+    watchFn: opts.watchFn,
+    onError: opts.onWatchError,
+  });
   // Initial heartbeat so any newly-connected client sees state without
   // waiting for the first gate change.
   const setIntervalFn = opts.setIntervalFn || setInterval;

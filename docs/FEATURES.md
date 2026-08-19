@@ -565,6 +565,7 @@ The authoritative term map lives in [docs/conventions.md](conventions.md#repair-
 - Stage rows show PASS / WARN / FAIL / ESCALATE status; updates live via SSE as gate files land
 - Click a row for gate detail and raw JSON; click a role chip to read its brief inline
 - Zero build step, zero new production dependencies; loopback-only by default
+- Gate-watch resource errors degrade live refresh with a warning instead of crashing the HTTP server; API and static views remain available
 - Model-authored gate values are rendered as text, not executable markup; responses
   carry a restrictive Content Security Policy and related browser hardening headers
 

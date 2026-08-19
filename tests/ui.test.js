@@ -1,5 +1,6 @@
 const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
 const { startServer, buildState, loadGateFile, loadRoleBrief } =
@@ -129,6 +130,35 @@ describe("ui: HTTP server", () => {
     assert.equal(r.status, 200);
     assert.match(r.headers["content-type"] || "", /markdown/);
     assert.ok(r.text.length > 100);
+  });
+
+  it("keeps serving when the gate watcher emits an asynchronous EMFILE error", async () => {
+    const cwd = track(makeTargetProject());
+    const watcher = new EventEmitter();
+    let watcherClosed = false;
+    watcher.close = () => { watcherClosed = true; };
+    let resolveWatchError;
+    const watchError = new Promise((resolve) => { resolveWatchError = resolve; });
+    const s = trackServer(await startServer({
+      port: 0,
+      cwd,
+      watchFn() {
+        queueMicrotask(() => {
+          const error = new Error("too many open files, watch");
+          error.code = "EMFILE";
+          watcher.emit("error", error);
+        });
+        return watcher;
+      },
+      onWatchError(error) { resolveWatchError(error); },
+    }));
+
+    const error = await watchError;
+    assert.equal(error.code, "EMFILE");
+    assert.equal(watcherClosed, true);
+    const response = await get(s.url);
+    assert.equal(response.status, 200);
+    assert.match(response.text, /<title>devteam<\/title>/);
   });
 
   it("rejects path traversal attempts on /static/", async () => {
