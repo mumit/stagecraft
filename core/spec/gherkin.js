@@ -1,12 +1,12 @@
 // gherkin.js — minimal Gherkin reader for executable-spec verification.
 //
-// G2 uses Gherkin as the bridge between brief.md acceptance criteria
-// and QA's tests. We don't execute the Gherkin — execution would
+// G2 uses Gherkin as the bridge between feature acceptance criteria or
+// repair regression criteria and QA's tests. We don't execute the Gherkin — execution would
 // require step-definition wiring per project. We only need enough
 // structure to verify the chain:
 //
-//   AC-N in brief.md  →  Scenario in spec.feature  →  test in
-//                                                     test-report.md
+//   AC-N/RC-N source  →  Scenario in spec.feature  →  test in
+//                                                      test-report.md
 //
 // What this parser recognizes:
 //   - `Feature: <name>` — at most one per file (we accept multiple
@@ -40,10 +40,9 @@ const STEP_RE       = /^\s*(Given|When|Then|And|But)\s+(.+?)\s*$/;
 const TAG_LINE_RE   = /^\s*(@\S+(?:\s+@\S+)*)\s*$/;
 const COMMENT_RE    = /^\s*#/;
 const BLANK_RE      = /^\s*$/;
-// Embedded `@AC-3` tokens in a scenario *name* (e.g.
-// `Scenario: @AC-3 User can sign in`). Allowed as fallback when the
+// Embedded `@AC-3` / `@RC-1` tokens in a scenario *name*. Allowed as fallback when the
 // author doesn't use proper tag lines.
-const INLINE_AC_TAG_RE = /@(AC-\d+)/g;
+const INLINE_CRITERION_TAG_RE = /@((?:AC|RC)-\d+)/g;
 
 // Parse Gherkin source text into a structured representation.
 // Returns: { features: [{ name, scenarios: [{ name, tags, steps,
@@ -91,11 +90,11 @@ function parse(text) {
       flushScenario();
       const feature = ensureFeature();
       const name = m[1];
-      // Pull @AC-N tokens from the scenario name as fallback tags.
+      // Pull @AC-N/@RC-N tokens from the scenario name as fallback tags.
       const inlineAcs = [];
       let acMatch;
-      INLINE_AC_TAG_RE.lastIndex = 0;
-      while ((acMatch = INLINE_AC_TAG_RE.exec(name))) {
+      INLINE_CRITERION_TAG_RE.lastIndex = 0;
+      while ((acMatch = INLINE_CRITERION_TAG_RE.exec(name))) {
         inlineAcs.push("@" + acMatch[1]);
       }
       currentScenario = {
@@ -148,22 +147,19 @@ function allScenarios(spec) {
   return out;
 }
 
-// Extract the AC IDs referenced by a scenario, in order of priority:
-//   1. tags of the form @AC-N (most explicit)
-//   2. tokens of the form @AC-N inside the scenario *name*
-//   3. tokens of the form AC-N (without @) at the start of the name
-//      — e.g. `Scenario: AC-3 — user can sign in`
+// Extract criterion IDs referenced by a scenario. Feature-mode criteria use
+// AC-N; repair-mode regression criteria use RC-N.
 // Returns an array (often one element, occasionally many — one
-// scenario may cover several ACs).
+// scenario may cover several criteria).
 function acIdsFor(scenario) {
   const ids = new Set();
   for (const tag of scenario.tags || []) {
-    const m = tag.match(/^@?(AC-\d+)$/);
+    const m = tag.match(/^@?((?:AC|RC)-\d+)$/);
     if (m) ids.add(m[1]);
   }
   const name = scenario.name || "";
   let m;
-  const re = /\bAC-\d+\b/g;
+  const re = /\b(?:AC|RC)-\d+\b/g;
   while ((m = re.exec(name))) ids.add(m[0]);
   return Array.from(ids);
 }

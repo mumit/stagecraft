@@ -1246,7 +1246,10 @@ devteam run --repair "symptom description"
 2. **Scoped build** — The build agent sees a `⚠️ PATCH MODE` block and is constrained to the
    diagnosed files. Any write outside that set causes a `scope-gate` halt.
 3. **Failing-first regression test** — Stage-03b runs even on hotfix depth and writes a test
-   that is RED before the fix and GREEN after.
+   that is RED before the fix and GREEN after. `devteam spec verify --strict` validates the
+   resulting diagnosis → scenario → test chain: explicit `RC-N` identifiers are supported,
+   and a single unnumbered `## Regression Criterion` plus one `@regression` scenario maps
+   implicitly to `RC-1`.
 
 ```bash
 devteam run --repair "symptom"                         # hotfix depth (default), diagnosis first

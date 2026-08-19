@@ -1,9 +1,10 @@
-# Spec authoring — closed-loop AC → spec → tests
+# Spec authoring — closed-loop criteria → spec → tests
 
-Stage 3b (executable-spec) and the `devteam spec` commands. The pipeline enforces an unbroken chain from acceptance criteria in the brief to Gherkin scenarios in a feature file to test rows in the test report.
+Stage 3b (executable-spec) and the `devteam spec` commands. The pipeline enforces an unbroken chain from feature acceptance criteria (`AC-N`) or repair regression criteria (`RC-N`) to Gherkin scenarios and test rows.
 
 - [The chain](#the-chain)
 - [Writing acceptance criteria](#writing-acceptance-criteria)
+- [Repair-mode regression criteria](#repair-mode-regression-criteria)
 - [Scaffolding the spec file](#scaffolding-the-spec-file)
 - [Stage 03b gate](#stage-03b-gate)
 - [Checking for drift](#checking-for-drift)
@@ -29,6 +30,8 @@ pipeline/test-report.md    test row → @AC-1
 ```
 
 Each acceptance criterion must map to exactly one Gherkin scenario. Each scenario must map to exactly one test row. The pipeline enforces both constraints.
+
+Repair runs use the same chain with `pipeline/diagnosis.md` as the criteria source and `RC-N` identifiers. A diagnosis with one unnumbered `## Regression Criterion` is treated as `RC-1`; its sole `@regression` scenario is mapped to that criterion automatically. Numbered `RC-N` tags remain available when a repair needs multiple regression criteria.
 
 ---
 
@@ -78,6 +81,18 @@ Feature: SMS notification opt-in
 
 The PM fills in the Given/When/Then steps at the executable-spec stage. The `TODO` placeholders make incomplete scenarios easy to spot.
 
+## Repair-mode regression criteria
+
+Repair mode writes `pipeline/diagnosis.md` instead of a feature brief. The preferred explicit form is:
+
+```markdown
+## Regression Criteria
+
+RC-1: Given the original failure, when the fix is applied, then the command succeeds.
+```
+
+Tag the corresponding scenario `@RC-1`. For the common single-defect form, the diagnosis may instead contain one `## Regression Criterion` section and the scenario may carry only `@regression`; `devteam spec verify` assigns both to `RC-1`. `devteam spec generate` remains feature-only because repair scenarios must reproduce the diagnosed defect rather than use a generic scaffold.
+
 ---
 
 ## Stage 03b gate
@@ -104,12 +119,12 @@ At any point in the pipeline:
 devteam spec verify
 ```
 
-This compares the three sources — `pipeline/brief.md`, `pipeline/spec.feature`, and `pipeline/test-report.md` — and reports:
+This compares the criteria source (`pipeline/brief.md` for features or `pipeline/diagnosis.md` for repairs), `pipeline/spec.feature`, and `pipeline/test-report.md`, and reports:
 
-- **Orphan ACs** — in brief but missing from spec.feature
-- **Orphan scenarios** — in spec.feature with no corresponding AC in brief
-- **Duplicate AC numbers** — `AC-1` appears more than once
-- **Unknown AC refs in tests** — test report references `@AC-N` that doesn't exist in brief
+- **Orphan criteria** — in the brief or diagnosis but missing from spec.feature
+- **Orphan scenarios** — in spec.feature with no corresponding criterion in the source
+- **Duplicate criterion numbers** — an `AC-N` or `RC-N` appears more than once
+- **Unknown criterion refs in tests** — the test report references an ID that doesn't exist in the source
 - **Untested scenarios** — scenario in spec.feature with no test row
 
 Run `devteam spec verify` before the QA stage to catch drift early.

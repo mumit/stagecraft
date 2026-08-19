@@ -12,8 +12,10 @@ const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { makeTargetProject, cleanup } = require("./_helpers");
 const { stampStage04c, STAMPABLE_STAGES } = require("../core/verify/stamp");
+const { getChangedFiles } = require("../core/verify/redteam-floor");
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -53,6 +55,45 @@ function configWithVerify(verifyYaml) {
 describe("verify/stamp: stage-04c is registered as stampable", () => {
   it("STAMPABLE_STAGES includes stage-04c", () => {
     assert.ok(STAMPABLE_STAGES.has("stage-04c"));
+  });
+});
+
+describe("verify/redteam-floor: committed changeset discovery", () => {
+  it("falls back to the latest commit after build agents commit their work", () => {
+    const cwd = track(makeTargetProject());
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["config", "user.email", "stagecraft@example.invalid"], { cwd });
+    execFileSync("git", ["config", "user.name", "Stagecraft Test"], { cwd });
+    fs.writeFileSync(path.join(cwd, "changed.js"), "module.exports = true;\n");
+    execFileSync("git", ["add", "changed.js"], { cwd });
+    execFileSync("git", ["commit", "-qm", "build output"], { cwd });
+
+    assert.deepEqual(getChangedFiles(cwd), ["changed.js"]);
+  });
+
+  it("prefers an explicit pipeline changed-file manifest", () => {
+    const cwd = track(makeTargetProject());
+    fs.writeFileSync(path.join(cwd, "pipeline", "changed-files.txt"), "manifest.js\n");
+    assert.deepEqual(getChangedFiles(cwd), ["manifest.js"]);
+  });
+
+  it("secret-scans the latest committed changeset when the working tree is clean", async () => {
+    const cwd = track(makeTargetProject({
+      config: configWithVerify("    dependency_audit_command: null"),
+    }));
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["config", "user.email", "stagecraft@example.invalid"], { cwd });
+    execFileSync("git", ["config", "user.name", "Stagecraft Test"], { cwd });
+    const fixtureKeyValue = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghij0123"].join("");
+    fs.writeFileSync(path.join(cwd, "committed-secret.js"), `module.exports = { api_key: "${fixtureKeyValue}" };\n`);
+    execFileSync("git", ["add", "committed-secret.js"], { cwd });
+    execFileSync("git", ["commit", "-qm", "build output"], { cwd });
+    const gatePath = seedGateRaw(cwd, "stage-04c", base04cGate());
+
+    const result = await stampStage04c(cwd, gatePath);
+    assert.equal(result.stamp.runs.secret_scan.ran, true);
+    assert.equal(result.stamp.runs.secret_scan.findings.length, 1);
+    assert.match(result.stamp.runs.secret_scan.findings[0].summary, /committed-secret\.js/);
   });
 });
 

@@ -708,9 +708,11 @@ The PM writes numbered acceptance criteria (`AC-N`) in `pipeline/brief.md`. The 
 
 1. Stage-03b (executable-spec) translates each `AC-N` into one Gherkin scenario in `pipeline/spec.feature`, tagged `@AC-N`
 2. Stage-06 (QA) maps each scenario 1:1 to a test
-3. `devteam spec verify` checks all three are still in sync
+3. `devteam spec verify` checks all three are still in sync. Repair runs use `diagnosis.md` regression criteria (`RC-N`) instead of feature-brief acceptance criteria; a single unnumbered `## Regression Criterion` plus one `@regression` scenario maps implicitly to `RC-1`.
 
 Catches orphan ACs, orphan scenarios, duplicate AC numbers, and unknown AC refs in tests. `devteam spec generate` scaffolds the `.feature` file from the brief.
+
+The verifier chooses `brief.md` when present and otherwise falls back to `diagnosis.md`, so strict verification works for both feature and repair pipelines. Generation remains feature-only.
 
 See [`docs/spec-authoring.md`](spec-authoring.md) for how to write AC-N criteria, scaffold the spec file, and interpret drift reports.
 

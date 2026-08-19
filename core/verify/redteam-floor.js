@@ -108,14 +108,22 @@ function getChangedFiles(cwd) {
       if (files.length > 0) return files;
     } catch { /* fall through to git */ }
   }
-  const result = spawnSync("git", ["diff", "--name-only", "HEAD"], { cwd, encoding: "utf8" });
-  if (!result || result.status !== 0) return [];
-  return result.stdout.split(/\r?\n/).filter(Boolean);
+  const working = spawnSync("git", ["diff", "--name-only", "HEAD"], { cwd, encoding: "utf8" });
+  if (!working || working.status !== 0) return [];
+  const workingFiles = working.stdout.split(/\r?\n/).filter(Boolean);
+  if (workingFiles.length > 0) return workingFiles;
+
+  // Build agents normally commit before red-team runs. In that lifecycle an
+  // empty working-tree diff means the changeset is the latest commit, not that
+  // there are no changed files.
+  const committed = spawnSync("git", ["show", "--name-only", "--format=", "HEAD"], { cwd, encoding: "utf8" });
+  if (!committed || committed.status !== 0) return [];
+  return committed.stdout.split(/\r?\n/).filter(Boolean);
 }
 
 function runSecretScanFloor(cwd, changedFiles) {
   if (changedFiles.length === 0) {
-    return record({ ran: true, reason: "no changed files detected (pipeline/changed-files.txt absent and git diff --name-only HEAD is empty)" });
+    return record({ ran: true, reason: "no changed files detected (pipeline/changed-files.txt absent and neither the working tree nor HEAD contains a changeset)" });
   }
 
   const findings = [];
