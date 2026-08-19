@@ -323,7 +323,10 @@ Standard OTel spans for every workstream, compatible with any collector. See `do
 
 ### Project memory — the pipeline remembers what it has seen
 
-Per-project semantic memory under `.devteam/memory/`. Uses a local embedder (`Xenova/bge-small-en-v1.5`, ~33 MB, lazy download) with a git-friendly JSON backend.
+Per-project retrieval memory under `.devteam/memory/`. The default builtin
+feature-hash embedder is dependency-free, offline, and instant; an opt-in local
+transformer offers richer semantic matching with a larger supply-chain and model
+download. Storage remains a git-friendly JSON backend.
 
 - Indexes briefs, design specs, ADRs, retros, lessons, runbooks, and audit reports
 - `devteam memory ingest`, `query`, `stats`, `clear`, `reindex`
@@ -474,7 +477,7 @@ into a non-root container for unattended local orchestration.
 
 - Checks the Stagecraft install, each declared host CLI is reachable, and roles/rules/skills are correctly laid down
 - Prints a green/red checklist; fix what's red before running a stage
-- Reports local embedding availability as informational (`ℹ`) — absence is not a failure; run `npm install @huggingface/transformers` to enable `devteam memory` with the default local embedder
+- Reports builtin memory retrieval as available and transformer embedding availability as informational (`ℹ`); missing transformers never disables the default retriever
 - Runs natively on Windows; the Node 22 Windows CI smoke covers CLI startup, initialization, diagnostics, quoted host commands, PATHEXT-aware executable discovery, and timeout termination. WSL2 remains available for POSIX-oriented host CLIs and project toolchains
 - **Dogfood mode section** (Phase 14.2) — when `.devteam/config.yml` contains `profile: dogfood`, a "Dogfood mode" section appears after the Adapters section with six checks: pre-commit infrastructure guard present, hook executable, `# BEGIN stagecraft-dogfood` block in `.gitignore`, `pipeline/stages/deploy.md` in `.git/info/exclude`, no `npm publish` script (⚠ warn), and a budget-usd reminder (ℹ info). Absent when the profile is not set.
 

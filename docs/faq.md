@@ -748,7 +748,10 @@ The agents are prompted to limit their analysis to that sub-tree. Gate files lan
 
 Mostly yes. The framework itself is offline (Node, no network calls). The model invocation is whatever the host CLI does — `claude --print` and `codex exec --sandbox workspace-write` need network; `generic` host doesn't run a model at all.
 
-The memory system's default embedder (`Xenova/bge-small-en-v1.5`) downloads ~33MB on first use, then runs offline. If your CI doesn't have network access, set `DEVTEAM_EMBEDDING_PROVIDER=stub` to skip embedding entirely.
+The default builtin memory retriever is fully offline and has no download or
+external dependency. The optional `local` transformer provider downloads its
+model on first use; CI can keep the builtin default, while `stub` remains a
+deterministic test-only provider.
 
 OpenTelemetry is no-op when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset — no network attempts.
 

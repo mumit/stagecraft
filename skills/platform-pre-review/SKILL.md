@@ -54,8 +54,17 @@ peer review starts.
    Record only non-allowed packages in `license_findings[]`. Set
    `license_check_passed: true` when no findings have `policy: "denied"`;
    set it `false` if any do.
-5. Apply the security heuristic (`npm run security:check -- <changed-files>`).
-   Record `"security_review_required": true | false` in the Stage 4a gate.
+5. Apply the trigger heuristics:
+
+   ```bash
+   node core/guards/security-heuristic.js <changed-files>
+   node core/guards/migration-heuristic.js <changed-files>
+   ```
+
+   Both scanners always apply path rules, then inspect added lines rather than
+   the full historical body of an edited file. Record
+   `"security_review_required": true | false` and
+   `"migration_safety_required": true | false` in the Stage 4a gate.
 
 6. **Platform hygiene checks** — these catch problems that reviewers consistently
    flag in Stage 5 and that have clear, mechanical fixes:

@@ -16,6 +16,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { readChangedContent } = require("./changed-content");
 
 // Path-pattern matches. Conservative — false positives here cost a
 // stage-04d review run, false negatives skip safety on a real
@@ -66,7 +67,7 @@ function needsMigrationSafety(paths, patterns = PATH_PATTERNS) {
 // when the caller has the diff and wants to catch DDL hidden inside
 // non-obvious paths (.ts files, fixture files, etc.). Returns the
 // list of files whose CONTENT matched a DDL pattern.
-function matchContent(files, readFn = (p) => fs.readFileSync(p, "utf8")) {
+function matchContent(files, readFn = readChangedContent) {
   const matches = [];
   for (const f of files) {
     let body;

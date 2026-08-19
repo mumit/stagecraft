@@ -4,6 +4,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const { execFileSync, spawnSync } = require("node:child_process");
 const { makeTargetProject, cleanup, runCLI } = require("./_helpers");
 const {
   needsMigrationSafety,
@@ -77,6 +79,24 @@ test("matchContent: scans non-path-matching files for DDL fragments", () => {
 test("matchContent: ignores files that throw on read (e.g. deleted)", () => {
   const results = matchContent(["missing.ts"], () => { throw new Error("ENOENT"); });
   assert.deepEqual(results, []);
+});
+
+test("migration CLI ignores historical DDL when only safe lines changed", () => {
+  const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-migration-diff-")));
+  execFileSync("git", ["init", "-q"], { cwd });
+  execFileSync("git", ["config", "user.email", "stagecraft@example.invalid"], { cwd });
+  execFileSync("git", ["config", "user.name", "Stagecraft Test"], { cwd });
+  fs.writeFileSync(path.join(cwd, "notes.md"), "Historical example: ALTER TABLE users ADD COLUMN x INT.\n");
+  execFileSync("git", ["add", "notes.md"], { cwd });
+  execFileSync("git", ["commit", "-qm", "baseline"], { cwd });
+  fs.appendFileSync(path.join(cwd, "notes.md"), "Unrelated clarification.\n");
+
+  const result = spawnSync(process.execPath, [path.join(REPO_ROOT, "core", "guards", "migration-heuristic.js"), "notes.md"], {
+    cwd,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /MIGRATION_SAFETY: skip/);
 });
 
 test("DDL_PATTERNS catches the common dangerous DDL keywords", () => {

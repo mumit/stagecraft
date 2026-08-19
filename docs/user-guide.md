@@ -1437,7 +1437,14 @@ devteam memory clear                                   # wipe
 devteam memory reindex                                 # re-embed (after embedder change)
 ```
 
-The local-default embedder (`Xenova/bge-small-en-v1.5` via `@huggingface/transformers`) is ~33MB, lazy-downloaded to `~/.cache/huggingface/`, and runs entirely offline after the first ingest. JSON-backed storage under `.devteam/memory/` is git-friendly, but `.devteam/memory/` is excluded by the managed `.gitignore` block that `devteam init` writes — so it is ignored by default. If you have a deliberate sharing strategy (the store contains plaintext copies of brief / design content), remove that entry from the block.
+The default builtin retriever uses dependency-free feature hashing: no model
+download, native binary, network, or API cost. It is strongest when queries and
+past artifacts share terminology. For richer semantic matching, deliberately
+install `@huggingface/transformers`, set `DEVTEAM_EMBEDDING_PROVIDER=local`, and
+run `devteam memory reindex` after reviewing the dependency's current advisories
+and licenses. JSON-backed storage under `.devteam/memory/` is excluded by the
+managed `.gitignore` block; remove that entry only with a deliberate sharing
+strategy because the store contains plaintext brief/design content.
 
 Opt out per artifact by including the marker `stagecraft-no-memory` anywhere in the file (a comment line works). Stagecraft skips that artifact at ingest.
 
@@ -1774,7 +1781,10 @@ The PreToolUse hook caught a credential pattern. Three options:
 @huggingface/transformers not installed.
 ```
 
-Run `npm install` in the Stagecraft framework directory. If you're on CI or in a constrained environment, set `DEVTEAM_EMBEDDING_PROVIDER=stub` to bypass the local model (stub vectors are useless for real retrieval but unblock tests).
+This message only appears when `DEVTEAM_EMBEDDING_PROVIDER=local` was selected.
+Install `@huggingface/transformers` in the Stagecraft framework environment after
+reviewing its current advisories and licenses, or unset the variable to return to
+the dependency-free builtin retriever. Use `stub` only for deterministic tests.
 
 ### UI won't start — `EADDRINUSE`
 

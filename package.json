@@ -32,9 +32,6 @@
     "@opentelemetry/semantic-conventions": "~1.28.0",
     "js-yaml": "^5.2.3"
   },
-  "optionalDependencies": {
-    "@huggingface/transformers": "^4.2.0"
-  },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "eslint": "^10.8.0",

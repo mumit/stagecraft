@@ -14,7 +14,13 @@ const { REPO_ROOT, makeTargetProject, cleanup } = require("./_helpers");
 const { chunkByHeading, extractTitle } = require(path.join(REPO_ROOT, "core", "memory", "chunker"));
 const { JSONMemoryStore, sha1 } = require(path.join(REPO_ROOT, "core", "memory", "store"));
 const memory = require(path.join(REPO_ROOT, "core", "memory"));
-const { getEmbedder, resetCache, _setRequireHF } = require(path.join(REPO_ROOT, "core", "memory", "embed"));
+const {
+  getEmbedder,
+  resetCache,
+  _setRequireHF,
+  BUILTIN_MODEL,
+  DEFAULT_DIM,
+} = require(path.join(REPO_ROOT, "core", "memory", "embed"));
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -99,6 +105,27 @@ describe("memory: extractTitle", () => {
 // ---------------------------------------------------------------------------
 
 describe("memory: stub embedder", () => {
+  it("defaults to dependency-free lexical retrieval", async () => {
+    const before = process.env.DEVTEAM_EMBEDDING_PROVIDER;
+    try {
+      delete process.env.DEVTEAM_EMBEDDING_PROVIDER;
+      resetCache();
+      const e = await getEmbedder({ fresh: true });
+      const related = await e.embed("cursor pagination for API results");
+      const query = await e.embed("API pagination cursor");
+      const unrelated = await e.embed("watercolor landscape painting");
+      const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0);
+
+      assert.equal(e.provider, "builtin");
+      assert.equal(e.modelId, BUILTIN_MODEL);
+      assert.equal(e.dimensions, DEFAULT_DIM);
+      assert.ok(dot(related, query) > dot(related, unrelated));
+    } finally {
+      process.env.DEVTEAM_EMBEDDING_PROVIDER = before;
+      resetCache();
+    }
+  });
+
   it("returns L2-normalized vectors of fixed dimension", async () => {
     const e = await getEmbedder();
     const v = await e.embed("hello world");
@@ -146,7 +173,7 @@ describe("memory: stub embedder", () => {
           () => getEmbedder(),
           (err) => {
             assert.match(err.message, new RegExp(`Unsupported embedding provider "${provider}"`));
-            assert.match(err.message, /supported providers: local, stub/);
+            assert.match(err.message, /supported providers: builtin, local, stub/);
             assert.doesNotMatch(err.message, /planned for/);
             return true;
           },

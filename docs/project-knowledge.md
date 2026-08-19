@@ -69,8 +69,9 @@ particular, `no-recurrence-observed` does not claim the prompt caused success.
 
 ## Retrieved history
 
-Semantic memory remains opt-in and headless-only because embedding retrieval is
-asynchronous. Matching chunks are capped at 1,200 bytes and retain `kind` and
+Retrieved memory remains opt-in and headless-only because retrieval is
+asynchronous. The builtin provider is dependency-free; transformer semantics are
+an explicit opt-in. Matching chunks are capped at 1,200 bytes and retain `kind` and
 `source`. See [Persistent project memory](memory.md) for ingestion, privacy,
 org promotion, and retrieval limits.
 

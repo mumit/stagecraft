@@ -19,7 +19,7 @@ to 18 ordered pipeline stages, and from v0.4.0 to v0.9.0.
 
 | Surface | Version / form | Where |
 |---|---|---|
-| JavaScript | CommonJS, Node.js >=20 | `bin/`, `core/`, `hosts/`, `scripts/`, `tests/` |
+| JavaScript | CommonJS, Node.js >=22 | `bin/`, `core/`, `hosts/`, `scripts/`, `tests/` |
 | Markdown | Host-neutral rules, roles, skills, plans, runbooks | `docs/`, `plans/`, `roles/`, `rules/`, `skills/`, `templates/` |
 | JSON / JSON Schema | Gate contracts and host capabilities | `core/gates/schemas/`, `hosts/*/capabilities.json` |
 | YAML | Project config and GitHub Actions | `.devteam/config.yml` in targets, `.github/workflows/` |
@@ -33,9 +33,9 @@ framework. The project deliberately uses Node built-ins and `node:test`.
 - Package manager: npm; `package-lock.json` is committed.
 - Build step: none. The CLI runs directly from source.
 - Runtime dependencies: `js-yaml` and six OpenTelemetry packages.
-- Optional runtime dependency: `@huggingface/transformers` for local embeddings.
+- Builtin memory retrieval has no dependency; `@huggingface/transformers` can be installed separately for the opt-in `local` provider.
 - Development dependencies: ESLint, `@eslint/js`, and `eslint-plugin-security`.
-- Package version: `0.9.0`; package remains `private: true`.
+- Package version: `0.11.0`; package remains `private: true`.
 
 ## Commands
 

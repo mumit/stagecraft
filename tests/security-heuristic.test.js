@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { REPO_ROOT } = require("./_helpers");
 const { needsSecurityReview, analyze, contentFindings, PATH_PATTERNS } =
   require(path.join(REPO_ROOT, "core", "guards", "security-heuristic"));
@@ -36,6 +37,12 @@ function writeFile(dir, relPath, content) {
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, content);
   return full;
+}
+
+function initRepo(dir) {
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "stagecraft@example.invalid"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Stagecraft Test"], { cwd: dir });
 }
 
 describe("security-heuristic: needsSecurityReview", () => {
@@ -175,6 +182,28 @@ describe("security-heuristic: content scanning", () => {
 
   it("does not throw on missing or unreadable files", () => {
     assert.deepEqual(contentFindings("/tmp/does-not-exist-stagecraft-test-xyz.ts"), []);
+  });
+
+  it("scans added lines instead of historical content in a changed file", () => {
+    const d = tmpdir();
+    initRepo(d);
+    const f = writeFile(d, "src/example.js", "// Documentation mentions bcrypt.\nmodule.exports = 1;\n");
+    execFileSync("git", ["add", "src/example.js"], { cwd: d });
+    execFileSync("git", ["commit", "-qm", "baseline"], { cwd: d });
+    fs.appendFileSync(f, "module.exports = 2;\n");
+
+    assert.deepEqual(contentFindings(f), []);
+  });
+
+  it("still flags security-sensitive added lines", () => {
+    const d = tmpdir();
+    initRepo(d);
+    const f = writeFile(d, "src/example.js", "module.exports = 1;\n");
+    execFileSync("git", ["add", "src/example.js"], { cwd: d });
+    execFileSync("git", ["commit", "-qm", "baseline"], { cwd: d });
+    fs.appendFileSync(f, "const bcrypt = require('bcrypt');\n");
+
+    assert.ok(contentFindings(f).includes("password-hash"));
   });
 
   it("devteam-no-security-review magic comment suppresses content findings", () => {

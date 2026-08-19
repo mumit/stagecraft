@@ -1,17 +1,15 @@
 // Embedding provider for the memory store.
 //
-// Default: local — @huggingface/transformers running BGE-small (384 dim).
-// ~150MB model downloaded once on first use, cached under
-// ~/.cache/huggingface/. Works offline thereafter. Aligns with Stagecraft's
-// model-agnostic ethos (D1 + this both default to "no external account
-// required" with opt-in API providers when set).
+// Default: builtin — dependency-free feature hashing (384 dim). It provides
+// useful lexical retrieval with no model download, native binary, network, or
+// supply-chain expansion. The richer local provider remains opt-in.
 //
 // Opt-in providers (not yet implemented; placeholder for the future):
 //   DEVTEAM_EMBEDDING_PROVIDER=openai  + OPENAI_API_KEY → text-embedding-3-small
 //   DEVTEAM_EMBEDDING_PROVIDER=cohere  + COHERE_API_KEY  → embed-english-v3.0
 //
-// Tests: DEVTEAM_EMBEDDING_PROVIDER=stub gives a deterministic
-// hash-based vector — fast, offline, no model load required.
+// Tests: DEVTEAM_EMBEDDING_PROVIDER=stub gives a deterministic whole-text
+// vector with a small dimension.
 //
 // API:
 //   const { getEmbedder } = require("./embed");
@@ -22,6 +20,7 @@
 
 const DEFAULT_MODEL = "Xenova/bge-small-en-v1.5";
 const DEFAULT_DIM = 384;
+const BUILTIN_MODEL = "builtin-feature-hash-v1";
 
 // Seam for tests — replaced with a throwing stub to exercise the absent-module path.
 let _requireHF = () => require("@huggingface/transformers");
@@ -31,14 +30,58 @@ let _cached = null;
 
 async function getEmbedder(opts = {}) {
   if (_cached && !opts.fresh) return _cached;
-  const provider = process.env.DEVTEAM_EMBEDDING_PROVIDER || "local";
+  const provider = process.env.DEVTEAM_EMBEDDING_PROVIDER || "builtin";
   switch (provider) {
+    case "builtin": _cached = makeBuiltin(opts);       return _cached;
     case "local":  _cached = await makeLocal(opts);  return _cached;
     case "stub":   _cached = makeStub(opts);          return _cached;
-    case "openai": throw new Error("Unsupported embedding provider \"openai\"; supported providers: local, stub");
-    case "cohere": throw new Error("Unsupported embedding provider \"cohere\"; supported providers: local, stub");
-    default:       throw new Error(`Unknown DEVTEAM_EMBEDDING_PROVIDER: ${provider}; supported providers: local, stub`);
+    case "openai": throw new Error("Unsupported embedding provider \"openai\"; supported providers: builtin, local, stub");
+    case "cohere": throw new Error("Unsupported embedding provider \"cohere\"; supported providers: builtin, local, stub");
+    default:       throw new Error(`Unknown DEVTEAM_EMBEDDING_PROVIDER: ${provider}; supported providers: builtin, local, stub`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Builtin — dependency-free signed feature hashing
+// ---------------------------------------------------------------------------
+
+function fnv1a(value) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function normalize(vector) {
+  let magnitude = 0;
+  for (let i = 0; i < vector.length; i++) magnitude += vector[i] * vector[i];
+  magnitude = Math.sqrt(magnitude) || 1;
+  for (let i = 0; i < vector.length; i++) vector[i] /= magnitude;
+  return vector;
+}
+
+function makeBuiltin(opts = {}) {
+  const dim = opts.dimensions || DEFAULT_DIM;
+
+  function hashVec(text) {
+    const vector = new Float32Array(dim);
+    const tokens = String(text).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu) || [];
+    const features = [...tokens];
+    for (let i = 1; i < tokens.length; i++) features.push(`${tokens[i - 1]} ${tokens[i]}`);
+
+    for (const feature of features) {
+      const hash = fnv1a(feature);
+      const bucket = hash % dim;
+      vector[bucket] += (hash & 0x80000000) === 0 ? 1 : -1;
+    }
+    return normalize(vector);
+  }
+
+  async function embed(text) { return hashVec(text); }
+  async function embedBatch(texts) { return texts.map(hashVec); }
+  return { modelId: BUILTIN_MODEL, dimensions: dim, provider: "builtin", embed, embedBatch };
 }
 
 // ---------------------------------------------------------------------------
@@ -116,4 +159,4 @@ function makeStub(opts = {}) {
 
 function resetCache() { _cached = null; }
 
-module.exports = { getEmbedder, resetCache, DEFAULT_MODEL, DEFAULT_DIM, _setRequireHF };
+module.exports = { getEmbedder, resetCache, DEFAULT_MODEL, DEFAULT_DIM, BUILTIN_MODEL, _setRequireHF };

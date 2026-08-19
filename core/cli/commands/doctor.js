@@ -75,9 +75,10 @@ function run(positional, _flags) {
   check("node_modules/js-yaml present", fs.existsSync(path.join(FRAMEWORK_ROOT, "node_modules", "js-yaml")),
     fs.existsSync(path.join(FRAMEWORK_ROOT, "node_modules", "js-yaml")) ? null : "run `npm install` in the framework dir");
   const hfAvailable = fs.existsSync(path.join(FRAMEWORK_ROOT, "node_modules", "@huggingface", "transformers"));
-  check("local embeddings (optional)",
+  check("builtin memory retrieval", true, "available (dependency-free)");
+  check("transformer embeddings (optional)",
     "info",
-    hfAvailable ? "available (DEVTEAM_EMBEDDING_PROVIDER=local works)" : "not installed — run: npm install @huggingface/transformers");
+    hfAvailable ? "available (DEVTEAM_EMBEDDING_PROVIDER=local works)" : "not installed — assess upstream advisories before adding @huggingface/transformers");
 
   console.log("\nTarget project");
   console.log(`  cwd: ${cwd}`);
