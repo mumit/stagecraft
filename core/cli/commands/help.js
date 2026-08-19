@@ -354,12 +354,12 @@ Commands:
                                    each gate as a GitHub check run on PRs.
                                    It does NOT run the pipeline itself in CI.
   ci show [--ci <type>]            Print the workflow template to stdout.
-  spec verify [--strict] [--json]  Drift-check brief.md ↔ spec.feature ↔
-                                   test-report.md. Exits non-zero if any AC
-                                   in brief lacks a scenario, any scenario
-                                   lacks an AC tag, or any test references
-                                   an unknown AC. --strict also fails when
-                                   one AC is mapped by multiple scenarios.
+  spec verify [--strict] [--json]  Drift-check brief.md/diagnosis.md ↔ spec.feature ↔
+                                   test-report.md. Exits non-zero if any criterion
+                                   lacks a scenario, any scenario lacks a criterion
+                                   tag, or any test references an unknown
+                                   criterion. --strict also fails when one
+                                   criterion maps to multiple scenarios.
   spec generate [--feature "..."]  Scaffold pipeline/spec.feature from the
        [--force]                   brief's numbered AC-N entries — one
                                    tagged Scenario per AC. Refuses to

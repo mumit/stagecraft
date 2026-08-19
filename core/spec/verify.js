@@ -1,5 +1,6 @@
-// verify.js — drift detection across brief.md, spec.feature, and
-// test-report.md. This is the engine behind:
+// verify.js — drift detection across a criteria source, spec.feature,
+// and test-report.md. Feature runs use brief.md/AC-N; repair runs use
+// diagnosis.md/RC-N. This is the engine behind:
 //
 //   - `devteam spec verify`            (CLI surface)
 //   - stage-03b's gate computation     (orchestrator)
@@ -10,10 +11,10 @@
 // drift between them should be caught structurally rather than by
 // hoping a human notices.
 //
-//   brief.md            spec.feature       test-report.md
-//   ─────────           ────────────       ──────────────
-//   AC-1: text     →    Scenario @AC-1 →   row referencing AC-1
-//   AC-2: text     →    Scenario @AC-2 →   row referencing AC-2
+//   criteria source       spec.feature       test-report.md
+//   ───────────────       ────────────       ──────────────
+//   AC-1/RC-1: text  →    Scenario @ID   →   row referencing ID
+//   AC-2/RC-2: text  →    Scenario @ID   →   row referencing ID
 //   ...
 //
 // What's drift:
@@ -61,6 +62,7 @@ const { parse: parseGherkin, allScenarios, acIdsFor } = require("./gherkin");
 //   1. AC-6: Numbered list bare.       (numbered list + bare)
 //   **AC-7** `[deploy-deferred]` — ... (inline backtick annotation before separator)
 const AC_LINE_RE = /^\s*(?:\d+\.\s+|[-*+]\s+)?\*{0,2}(AC-\d+)\b\*{0,2}(?:\s+`[^`]+`)?\s*[.:\-—]\s*(.+?)\s*$/;
+const RC_LINE_RE = /^\s*(?:\d+\.\s+|[-*+]\s+)?\*{0,2}(RC-\d+)\b\*{0,2}\s*[.:\-—]\s*(.+?)\s*$/;
 
 // When a brief uses a dedicated "Acceptance Criteria" section header,
 // extraction is scoped to that section. This prevents AC references in
@@ -109,14 +111,51 @@ function extractAcsFromBrief(text) {
   return { ids, byId, duplicates };
 }
 
-// Extracts the set of AC IDs referenced anywhere in a test-report.md
-// body. Looks for both `@AC-N` and bare `AC-N` tokens; either form
+function extractRcsFromDiagnosis(text) {
+  const ids = [];
+  const byId = new Map();
+  const duplicates = [];
+  const lines = String(text || "").split(/\r?\n/);
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(RC_LINE_RE);
+    if (!match) continue;
+    const id = match[1];
+    if (byId.has(id)) {
+      duplicates.push({ id, line: i + 1 });
+      continue;
+    }
+    byId.set(id, { id, body: match[2].trim(), line: i + 1 });
+    ids.push(id);
+  }
+
+  if (ids.length === 0) {
+    const heading = lines.findIndex((line) => /^\s*##\s+Regression\s+Criterion\b/i.test(line));
+    if (heading >= 0) {
+      const bodyLines = [];
+      for (let i = heading + 1; i < lines.length && !/^\s*##\s+/.test(lines[i]); i++) {
+        const value = lines[i].replace(/^\s*>\s?/, "").trim();
+        if (value) bodyLines.push(value);
+      }
+      if (bodyLines.length > 0) {
+        const body = bodyLines.join(" ");
+        ids.push("RC-1");
+        byId.set("RC-1", { id: "RC-1", body, line: heading + 2 });
+      }
+    }
+  }
+
+  return { ids, byId, duplicates };
+}
+
+// Extracts criterion IDs referenced anywhere in a test-report.md body.
+// Looks for tagged or bare AC-N/RC-N tokens; either form
 // counts as a reference. Returns a Map<id, lineNumbers[]> so a
 // duplicate/test-count can be reported.
 function extractAcRefsFromTestReport(text) {
   const refs = new Map();
   const lines = text.split(/\r?\n/);
-  const RE = /\bAC-\d+\b/g;
+  const RE = /\b(?:AC|RC)-\d+\b/g;
   for (let i = 0; i < lines.length; i++) {
     let m;
     RE.lastIndex = 0;
@@ -138,7 +177,8 @@ function readArtifact(filePath) {
 }
 
 // Compute the drift report from three (already-loaded) artifact
-// bodies. `briefText` and `specText` are required for any useful
+// bodies. `briefText` is the legacy API name for either criteria source;
+// it and `specText` are required for any useful
 // output; `testText` is optional — if absent (e.g. before QA has
 // written test-report.md), the test-side checks degrade to "not
 // yet computed" rather than erroring.
@@ -147,21 +187,22 @@ function verifyTexts({ briefText, specText, testText, opts = {} }) {
     criteria: [],
     scenarios: [],
     test_refs: [],
-    orphan_criteria: [],       // in brief, no scenario
-    orphan_scenarios: [],      // in spec, no AC
-    orphan_in_tests: [],       // in brief, no test row reference
-    unknown_in_tests: [],      // test row references an AC not in brief
-    duplicate_criteria: [],    // same AC-N appears twice in brief
-    multi_mapped_criteria: [], // AC with > 1 scenario (informational)
+    orphan_criteria: [],       // in criteria source, no scenario
+    orphan_scenarios: [],      // in spec, no known criterion
+    orphan_in_tests: [],       // in criteria source, no test row reference
+    unknown_in_tests: [],      // test row references an unknown criterion
+    duplicate_criteria: [],    // same criterion ID appears twice
+    multi_mapped_criteria: [], // criterion with > 1 scenario (informational)
     drift: false,
     test_phase_complete: testText != null && testText.trim().length > 0,
   };
 
-  // -- ACs -----------------------------------------------------------
+  // -- Criteria ------------------------------------------------------
   let briefIds = [];
   const briefById = new Map();
   if (briefText != null) {
-    const { ids, byId, duplicates } = extractAcsFromBrief(briefText);
+    const extractor = opts.criteriaSource === "diagnosis" ? extractRcsFromDiagnosis : extractAcsFromBrief;
+    const { ids, byId, duplicates } = extractor(briefText);
     briefIds = ids;
     for (const [k, v] of byId.entries()) briefById.set(k, v);
     for (const d of duplicates) report.duplicate_criteria.push(d);
@@ -169,13 +210,24 @@ function verifyTexts({ briefText, specText, testText, opts = {} }) {
   }
 
   // -- Scenarios -----------------------------------------------------
-  const scenarioById = new Map(); // AC-id -> Scenario[]
+  const scenarioById = new Map(); // criterion ID -> Scenario[]
+  const criterionIdsByScenario = new Map();
   let scenarios = [];
   if (specText != null) {
     const parsed = parseGherkin(specText);
     scenarios = allScenarios(parsed);
     for (const sc of scenarios) {
-      const ids = acIdsFor(sc);
+      let ids = acIdsFor(sc);
+      if (
+        ids.length === 0 &&
+        opts.criteriaSource === "diagnosis" &&
+        briefIds.length === 1 &&
+        scenarios.length === 1 &&
+        (sc.tags || []).includes("@regression")
+      ) {
+        ids = [briefIds[0]];
+      }
+      criterionIdsByScenario.set(sc, ids);
       if (ids.length === 0) {
         report.orphan_scenarios.push({ name: sc.name, line: sc.line });
         continue;
@@ -188,12 +240,12 @@ function verifyTexts({ briefText, specText, testText, opts = {} }) {
     report.scenarios = scenarios.map((s) => ({
       name: s.name,
       tags: s.tags,
-      ac_ids: acIdsFor(s),
+      ac_ids: criterionIdsByScenario.get(s) || [],
       line: s.line,
     }));
   }
 
-  // -- Brief→spec drift ----------------------------------------------
+  // -- Criteria→spec drift -------------------------------------------
   for (const id of briefIds) {
     if (!scenarioById.has(id)) {
       report.orphan_criteria.push({
@@ -209,7 +261,7 @@ function verifyTexts({ briefText, specText, testText, opts = {} }) {
     }
   }
 
-  // -- Spec→brief drift (orphan_scenarios catches the rest) ----------
+  // -- Spec→criteria drift (orphan_scenarios catches the rest) -------
   for (const [id, list] of scenarioById.entries()) {
     if (!briefById.has(id)) {
       for (const sc of list) {
@@ -259,31 +311,45 @@ function verifyTexts({ briefText, specText, testText, opts = {} }) {
 function verify(cwd, opts = {}) {
   const pipelineDir = opts.pipelineDir || path.join(cwd, "pipeline");
   const briefPath = path.join(pipelineDir, "brief.md");
+  const diagnosisPath = path.join(pipelineDir, "diagnosis.md");
   const specPath  = path.join(pipelineDir, "spec.feature");
   const testPath  = path.join(pipelineDir, "test-report.md");
 
   const briefText = readArtifact(briefPath);
+  const diagnosisText = readArtifact(diagnosisPath);
   const specText  = readArtifact(specPath);
   const testText  = readArtifact(testPath);
 
-  const report = verifyTexts({ briefText, specText, testText, opts });
+  const criteriaSource = briefText != null ? "brief" : diagnosisText != null ? "diagnosis" : "brief";
+  const criteriaText = briefText != null ? briefText : diagnosisText;
+  const report = verifyTexts({
+    briefText: criteriaText,
+    specText,
+    testText,
+    opts: { ...opts, criteriaSource },
+  });
+  report.criteria_source = criteriaSource;
 
   // Augment with file-status markers — the CLI uses these to
   // distinguish "no spec yet" from "spec exists but has drift".
   report.artifacts = {
     brief:        { path: briefPath, exists: briefText != null },
+    diagnosis:    { path: diagnosisPath, exists: diagnosisText != null },
+    criteria:     criteriaSource === "brief"
+      ? { path: briefPath, exists: briefText != null }
+      : { path: diagnosisPath, exists: diagnosisText != null },
     spec:         { path: specPath,  exists: specText  != null },
     test_report:  { path: testPath,  exists: testText  != null },
   };
 
-  // If the brief is missing entirely we can't compute anything
+  // If both criteria sources are missing we can't compute anything
   // meaningful — surface that as a single drift flag rather than
   // returning misleading "everything is an orphan" data.
-  if (briefText == null) {
+  if (criteriaText == null) {
     report.drift = true;
-    report.errors = [{ kind: "missing_artifact", path: briefPath }];
+    report.errors = [{ kind: "missing_artifact", path: briefPath, alternatives: [diagnosisPath] }];
   } else if (specText == null) {
-    // Spec missing but brief present — the entire brief is orphan
+    // Spec missing but a criteria source is present — every criterion is orphan
     // criteria, which is exactly what the report already captures.
     // Add the marker so the CLI can render a nicer message.
     report.errors = (report.errors || []).concat([{ kind: "missing_artifact", path: specPath }]);
@@ -325,6 +391,7 @@ function generateScaffold(briefText, opts = {}) {
 
 module.exports = {
   extractAcsFromBrief,
+  extractRcsFromDiagnosis,
   extractAcRefsFromTestReport,
   verify,
   verifyTexts,

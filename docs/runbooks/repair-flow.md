@@ -13,6 +13,7 @@ For the full decision record, see [ADR-009](../adr/009-repair-mode.md).
 - [The diagnosis gate — what you're looking at](#the-diagnosis-gate--what-youre-looking-at)
 - [Scope-gate FAIL recovery](#scope-gate-fail-recovery)
 - [Tri-state reproduction (`reproduced` field)](#tri-state-reproduction-reproduced-field)
+- [Verify the repair trace](#verify-the-repair-trace)
 
 ---
 
@@ -162,6 +163,20 @@ It must **never** silently pass. A silent pass would hide that the fix was unver
 The `hotfix` track previously skipped stage-03b. In repair mode, stage-03b is injected
 immediately before the build stage even on hotfix depth — repair intent pulls it into the active
 stage list. This gives hotfix-depth repair runs the reproduction discipline they otherwise lack.
+
+## Verify the repair trace
+
+Run this after QA writes `pipeline/test-report.md`:
+
+```bash
+devteam spec verify --strict
+```
+
+For repair pipelines the verifier reads regression criteria from `pipeline/diagnosis.md` because
+there is no feature brief. Explicit `RC-N` definitions map to `@RC-N` scenarios and `RC-N` test
+rows. For the common single-defect diagnosis, one unnumbered `## Regression Criterion` section
+and one `@regression` scenario map implicitly to `RC-1`. A non-zero exit means the diagnosis,
+scenario, or test report has drifted.
 
 ---
 

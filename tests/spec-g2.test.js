@@ -19,6 +19,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const { parse, acIdsFor } = require("../core/spec/gherkin");
 const {
   extractAcsFromBrief,
+  extractRcsFromDiagnosis,
   extractAcRefsFromTestReport,
   verifyTexts,
   verify,
@@ -117,6 +118,11 @@ test("gherkin: acIdsFor handles a scenario covering two ACs", () => {
   assert.deepEqual(acIdsFor(sc).sort(), ["AC-1", "AC-2"]);
 });
 
+test("gherkin: acIdsFor recognizes repair-mode RC tags", () => {
+  const sc = { name: "repair behavior", tags: ["@regression", "@RC-2"] };
+  assert.deepEqual(acIdsFor(sc), ["RC-2"]);
+});
+
 // -- AC extraction -----------------------------------------------------------
 
 test("extractAcsFromBrief: pulls AC-N from a bulleted list", () => {
@@ -132,6 +138,28 @@ test("extractAcsFromBrief: pulls AC-N from a bulleted list", () => {
   const { ids, byId } = extractAcsFromBrief(text);
   assert.deepEqual(ids, ["AC-1", "AC-2", "AC-3"]);
   assert.match(byId.get("AC-2").body, /Password reset/);
+});
+
+test("extractRcsFromDiagnosis: assigns RC-1 to a singular regression criterion", () => {
+  const text = [
+    "# Bug Diagnosis",
+    "",
+    "## Regression Criterion",
+    "",
+    "> Given a broken command, when repaired, then it exits zero.",
+    "",
+    "## Out of Scope",
+    "",
+    "Unrelated work.",
+  ].join("\n");
+  const result = extractRcsFromDiagnosis(text);
+  assert.deepEqual(result.ids, ["RC-1"]);
+  assert.match(result.byId.get("RC-1").body, /exits zero/);
+});
+
+test("extractRcsFromDiagnosis: preserves explicitly numbered RCs", () => {
+  const result = extractRcsFromDiagnosis("- RC-1: first\n- RC-2 — second\n");
+  assert.deepEqual(result.ids, ["RC-1", "RC-2"]);
 });
 
 test("extractAcsFromBrief: handles bold markdown **AC-N** format", () => {
@@ -615,6 +643,40 @@ test("`devteam spec verify --json` emits a machine-readable report", () => {
   const parsed = JSON.parse(r.stdout);
   assert.equal(parsed.drift, false);
   assert.deepEqual(parsed.criteria, ["AC-1"]);
+});
+
+test("`devteam spec verify --strict` validates a repair-mode diagnosis contract", () => {
+  const cwd = track(makeTargetProject());
+  fs.writeFileSync(path.join(cwd, "pipeline", "diagnosis.md"), [
+    "# Bug Diagnosis",
+    "",
+    "## Regression Criterion",
+    "",
+    "> Given a package version, when devteam --version runs, then it prints that version.",
+  ].join("\n"));
+  fs.writeFileSync(path.join(cwd, "pipeline", "spec.feature"), [
+    "Feature: Report the version",
+    "",
+    "  @regression @hotfix",
+    "  Scenario: devteam --version reports the package version",
+    "    Then the version is printed",
+  ].join("\n"));
+  fs.writeFileSync(path.join(cwd, "pipeline", "test-report.md"), [
+    "# Test Report",
+    "",
+    "| Criterion | Test | Result |",
+    "|---|---|---|",
+    "| RC-1 | version CLI test | PASS |",
+  ].join("\n"));
+
+  const result = runCLI(["spec", "verify", "--strict", "--json"], { cwd });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.criteria_source, "diagnosis");
+  assert.deepEqual(report.criteria, ["RC-1"]);
+  assert.deepEqual(report.scenarios[0].ac_ids, ["RC-1"]);
+  assert.deepEqual(report.test_refs, ["RC-1"]);
+  assert.equal(report.drift, false);
 });
 
 test("`devteam spec generate` scaffolds spec.feature from brief.md", () => {

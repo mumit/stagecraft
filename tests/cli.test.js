@@ -1,7 +1,6 @@
 const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const { makeTargetProject, seedGate, cleanup, runCLI, REPO_ROOT } = require("./_helpers");
 
@@ -11,7 +10,7 @@ afterEach(() => { _dirs.forEach(cleanup); _dirs = []; });
 
 describe("cli: help + listing", () => {
   it("--version prints the canonical package version outside a target project", () => {
-    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-version-")));
+    const cwd = track(makeTargetProject({ config: false, gates: false }));
     const { version } = require(path.join(REPO_ROOT, "package.json"));
     const r = runCLI(["--version"], { cwd });
     assert.equal(r.status, 0);
