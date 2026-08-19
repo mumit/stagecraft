@@ -51,11 +51,14 @@ pipeline:
 
 Successful orchestrator-run verification commands also mint content-addressed receipts
 under the active pipeline root (`pipeline/verification-receipts/` in in-place mode, or
-the bounded change's equivalent). Receipt reuse requires an exact key match across the
-normalized command, suite id, verification purpose, workspace file digests, verify
-config, material environment/toolchain inputs, and Stagecraft verifier version. Failed
-results are never reused, and uncertain lookup falls back to execution. Set
-`pipeline.verify.receipts: false` for projects whose tests depend on external state.
+the bounded change's equivalent). Build, pre-review, and QA use one project-test receipt
+scope, so an unchanged successful suite can cross those stage boundaries. Reuse still
+requires an exact key match across the normalized command, suite id, workspace file
+digests, verify config, material environment/toolchain inputs, and Stagecraft verifier
+version. The repair reproduction check uses a separate scope so it always observes the
+pre-build baseline. Failed results are never reused, and uncertain lookup falls back to
+execution. Set `pipeline.verify.receipts: false` for projects whose tests depend on
+external state.
 
 ## Test file inventory
 

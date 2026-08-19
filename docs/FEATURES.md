@@ -85,9 +85,10 @@ suites exclusive. Every suite must pass. The gate's
 `_orchestrator_stamped.runs.test.suites` records each command, exit code, duration,
 resource group, output-truncation flags, and verification receipt provenance. Successful
 orchestrator-run commands mint content-addressed receipts keyed by command, suite,
-purpose, workspace bytes, verify config, material env/toolchain data, and Stagecraft
-version; later stamps reuse them only when the full key matches. One failing language
-adds a named blocker without preventing the remaining suites from running. Set
+verification scope, workspace bytes, verify config, material env/toolchain data, and
+Stagecraft version. Build, pre-review, and QA share the project-test scope, so later
+stamps reuse an unchanged successful suite while repair reproduction stays isolated.
+One failing language adds a named blocker without preventing the remaining suites from running. Set
 `pipeline.verify.test_command` for an exclusive custom command, `null` to disable test
 discovery, or `pipeline.verify.receipts: false` to force fresh execution. See
 [Testing](TESTING.md#target-project-test-discovery).

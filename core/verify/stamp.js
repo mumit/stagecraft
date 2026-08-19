@@ -36,6 +36,7 @@ const { runPropertyGate } = require("./property");
 const { runFormalGate } = require("./formal");
 
 const STAMPER_VERSION = "1";
+const PROJECT_TEST_RECEIPT_SCOPE = "project-test";
 
 function testRunRecord(execution) {
   const suites = execution.runs.map((run) => ({
@@ -148,7 +149,7 @@ async function stampStage04a(cwd, gatePath) {
   }
 
   // tests_passed (lightweight check at 4a; 06 is the authoritative test stage)
-  const testExecution = await executeTests(cwd, config, gatePath, "stage-04a:test");
+  const testExecution = await executeTests(cwd, config, gatePath, PROJECT_TEST_RECEIPT_SCOPE);
   if (testExecution) {
     const passed = testExecution.passed;
     if (gate.tests_passed !== passed) {
@@ -267,7 +268,7 @@ async function stampStage06(cwd, gatePath) {
   const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
 
   // Test command exit code
-  const testExecution = await executeTests(cwd, config, gatePath, "stage-06:test");
+  const testExecution = await executeTests(cwd, config, gatePath, PROJECT_TEST_RECEIPT_SCOPE);
   if (testExecution) {
     const passed = testExecution.passed;
     stamp.runs.test = testRunRecord(testExecution);
@@ -952,10 +953,9 @@ async function stampStage04Workstream(cwd, gatePath, { role, allowedWrites } = {
   }
 
   // Not path-scoped: polyglot test commands (npm test / pytest / go test / configured
-  // test_suites) can't be portably filtered to a role's subtree. Same command+purpose
-  // as stampStage04Merged below, so the receipt cache (not new dedup logic) is what
-  // keeps 4 workstreams from meaning 4 real full-suite executions.
-  const testExecution = await executeTests(cwd, config, gatePath, "stage-04:test");
+  // test_suites) can't be portably filtered to a role's subtree. The shared project-test
+  // receipt scope lets later build, pre-review, and QA stamps reuse this exact result.
+  const testExecution = await executeTests(cwd, config, gatePath, PROJECT_TEST_RECEIPT_SCOPE);
   if (testExecution) {
     const passed = testExecution.passed;
     if (typeof gate.tests_passed === "boolean" && gate.tests_passed !== passed) {
@@ -991,7 +991,7 @@ async function stampStage04Merged(cwd, gatePath) {
   };
   const blockers = Array.isArray(gate.blockers) ? gate.blockers.slice() : [];
 
-  const testExecution = await executeTests(cwd, config, gatePath, "stage-04:test");
+  const testExecution = await executeTests(cwd, config, gatePath, PROJECT_TEST_RECEIPT_SCOPE);
   if (testExecution) {
     const passed = testExecution.passed;
     if (typeof gate.tests_passed === "boolean" && gate.tests_passed !== passed) {
