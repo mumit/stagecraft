@@ -327,7 +327,8 @@ Commands:
                                    (model_version, temperature, seed, prompt
                                    hash, tools hash). Re-renders the current
                                    prompt and compares hashes to surface drift.
-  verify <stage-id> [--json]       Orchestrator-stamped verification. For
+  verify <stage-id> [--track <t>]  Orchestrator-stamped verification. For
+       [--json]
                                    stage-04a (lint+tests) and stage-06 (tests
                                    + AC mapping), runs the configured commands
                                    and rewrites the gate fields with what was
@@ -338,7 +339,9 @@ Commands:
                                    findings_count / must_address_before_peer_review.
                                    Flips status to FAIL if
                                    the orchestrator's truth disagrees with the
-                                   model's claim. Commands resolve from
+                                   model's claim, then repairs the active run's
+                                   gate chain. Signed history requires the
+                                   signing secret. Commands resolve from
                                    .devteam/config.yml pipeline.verify.* or
                                    auto-discovered Node, pytest, and Go suites.
   replay <stage-id> [--dry-run]    Re-run a recorded stage with CURRENT

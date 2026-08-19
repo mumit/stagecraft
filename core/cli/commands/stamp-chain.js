@@ -20,10 +20,9 @@ function run(positional, _flags) {
   const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
   const { gatesDir: getGatesDir } = require(path.join(__dirname, "..", "..", "paths"));
   const { stampAll } = require(path.join(__dirname, "..", "..", "gates", "chain"));
+  const { resolveActiveTrack } = require(path.join(__dirname, "..", "..", "pipeline", "active-track"));
   const config = loadConfig(cwd);
-  const track = _flags.track
-    || (Array.isArray(config.pipeline.custom_stages) ? config.pipeline.custom_stages : null)
-    || config.pipeline.default_track || "full";
+  const { track } = resolveActiveTrack(cwd, config, _flags.track);
   const r = stampAll(getGatesDir(cwd, null), track);
   console.log(`Stamped chain on ${r.stamped.length} stage gate(s): ${r.stamped.join(", ") || "(none)"}`);
   if (r.signed.length) {

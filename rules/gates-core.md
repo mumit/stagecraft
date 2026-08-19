@@ -147,7 +147,11 @@ accepted as a CLI argument or written to disk. Use `devteam verify-chain` to
 check; add `--require-signed`, or set `pipeline.require_signed_gates: true`, to
 reject unsigned or unverifiable gates. Without signed-only policy, legacy
 unsigned gates remain compatible and are reported as warnings. Use
-`devteam stamp-chain` after a deliberate earlier-stage re-run. See
+`devteam verify <stage-id>` for an orchestrator check that rewrites its gate and
+re-stamps the active run's chain in the same command; it refuses signed history when the
+secret is unavailable. Use `devteam stamp-chain` after other deliberate manual
+edits. Chain commands prefer `pipeline/run-plan.json`'s materialized track over
+the mutable project default unless `--track` is explicit. See
 `core/gates/chain.js` and ADR-011.
 
 ## What the validator enforces

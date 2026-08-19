@@ -20,28 +20,28 @@ Multi-role stages appear once per dispatched role. The CI advisory
 
 | Stage     | Name                      | Role       | Framework B | Role brief B | Dispatch B | Tokens~ |
 | --------- | ------------------------- | ---------- | ----------- | ------------ | ---------- | ------- |
-| stage-01  | requirements              | pm         | 13,670      | 9,831        | 23,501     | 5876    |
-| stage-02  | design                    | principal  | 13,670      | 14,528       | 28,198     | 7050    |
-| stage-03  | clarification             | pm         | 13,670      | 9,831        | 23,501     | 5876    |
-| stage-03b | executable-spec           | pm         | 13,670      | 9,831        | 23,501     | 5876    |
-| stage-04  | build                     | backend    | 13,670      | 7,817        | 21,487     | 5372    |
-| stage-04  | build                     | frontend   | 13,670      | 6,583        | 20,253     | 5064    |
-| stage-04  | build                     | platform   | 13,670      | 2,400        | 16,070     | 4018    |
-| stage-04  | build                     | qa         | 13,670      | 2,718        | 16,388     | 4097    |
-| stage-04a | pre-review                | platform   | 13,670      | 2,400        | 16,070     | 4018    |
-| stage-04b | security-review           | security   | 13,670      | 7,303        | 20,973     | 5244    |
-| stage-04c | red-team                  | red-team   | 13,670      | 13,683       | 27,353     | 6839    |
-| stage-04d | migration-safety          | migrations | 13,670      | 8,272        | 21,942     | 5486    |
-| stage-05  | peer-review               | reviewer   | 13,670      | 7,249        | 20,919     | 5230    |
-| stage-06  | qa                        | qa         | 13,670      | 2,718        | 16,388     | 4097    |
-| stage-06b | accessibility-audit       | qa         | 13,670      | 2,718        | 16,388     | 4097    |
-| stage-06c | observability-gate        | platform   | 13,670      | 2,400        | 16,070     | 4018    |
-| stage-06d | verification-beyond-tests | verifier   | 13,670      | 9,089        | 22,759     | 5690    |
-| stage-06e | performance-budget        | qa         | 13,670      | 2,718        | 16,388     | 4097    |
-| stage-07  | sign-off                  | pm         | 13,670      | 9,831        | 23,501     | 5876    |
-| stage-07  | sign-off                  | platform   | 13,670      | 2,400        | 16,070     | 4018    |
-| stage-08  | deploy                    | platform   | 13,670      | 2,400        | 16,070     | 4018    |
-| stage-09  | retrospective             | principal  | 13,670      | 14,528       | 28,198     | 7050    |
+| stage-01  | requirements              | pm         | 13,994      | 9,831        | 23,825     | 5957    |
+| stage-02  | design                    | principal  | 13,994      | 14,528       | 28,522     | 7131    |
+| stage-03  | clarification             | pm         | 13,994      | 9,831        | 23,825     | 5957    |
+| stage-03b | executable-spec           | pm         | 13,994      | 9,831        | 23,825     | 5957    |
+| stage-04  | build                     | backend    | 13,994      | 7,817        | 21,811     | 5453    |
+| stage-04  | build                     | frontend   | 13,994      | 6,583        | 20,577     | 5145    |
+| stage-04  | build                     | platform   | 13,994      | 2,400        | 16,394     | 4099    |
+| stage-04  | build                     | qa         | 13,994      | 2,718        | 16,712     | 4178    |
+| stage-04a | pre-review                | platform   | 13,994      | 2,400        | 16,394     | 4099    |
+| stage-04b | security-review           | security   | 13,994      | 7,303        | 21,297     | 5325    |
+| stage-04c | red-team                  | red-team   | 13,994      | 13,683       | 27,677     | 6920    |
+| stage-04d | migration-safety          | migrations | 13,994      | 8,272        | 22,266     | 5567    |
+| stage-05  | peer-review               | reviewer   | 13,994      | 7,249        | 21,243     | 5311    |
+| stage-06  | qa                        | qa         | 13,994      | 2,718        | 16,712     | 4178    |
+| stage-06b | accessibility-audit       | qa         | 13,994      | 2,718        | 16,712     | 4178    |
+| stage-06c | observability-gate        | platform   | 13,994      | 2,400        | 16,394     | 4099    |
+| stage-06d | verification-beyond-tests | verifier   | 13,994      | 9,089        | 23,083     | 5771    |
+| stage-06e | performance-budget        | qa         | 13,994      | 2,718        | 16,712     | 4178    |
+| stage-07  | sign-off                  | pm         | 13,994      | 9,831        | 23,825     | 5957    |
+| stage-07  | sign-off                  | platform   | 13,994      | 2,400        | 16,394     | 4099    |
+| stage-08  | deploy                    | platform   | 13,994      | 2,400        | 16,394     | 4099    |
+| stage-09  | retrospective             | principal  | 13,994      | 14,528       | 28,522     | 7131    |
 
 ## Top 5 heaviest framework files
 
@@ -78,23 +78,23 @@ This replaces eager changed-file content loading: agents inspect file bodies on 
 when the manifest shows a relevant path or digest change.
 
 <!-- budget-data
-stage-01,23501
-stage-02,28198
-stage-03,23501
-stage-03b,23501
-stage-04,21487
-stage-04a,16070
-stage-04b,20973
-stage-04c,27353
-stage-04d,21942
-stage-05,20919
-stage-06,16388
-stage-06b,16388
-stage-06c,16070
-stage-06d,22759
-stage-06e,16388
-stage-07,23501
-stage-08,16070
-stage-09,28198
+stage-01,23825
+stage-02,28522
+stage-03,23825
+stage-03b,23825
+stage-04,21811
+stage-04a,16394
+stage-04b,21297
+stage-04c,27677
+stage-04d,22266
+stage-05,21243
+stage-06,16712
+stage-06b,16712
+stage-06c,16394
+stage-06d,23083
+stage-06e,16712
+stage-07,23825
+stage-08,16394
+stage-09,28522
 -->
 <!-- /generated -->

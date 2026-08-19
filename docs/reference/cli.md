@@ -411,12 +411,13 @@ Report what was recorded for a stage (model version, temperature, seed, prompt h
 
 ### `devteam verify <stage-id> [options]`
 
-Orchestrator-stamped verification: run configured or auto-discovered Node, pytest, and Go suites, then rewrite gate fields with observed reality.
+Orchestrator-stamped verification: run configured or auto-discovered Node, pytest, and Go suites, rewrite gate fields with observed reality, then repair the active run's gate chain. Signed history requires DEVTEAM_SIGNING_SECRET.
 
-| Flag   | Type   | Description              |
-| ------ | ------ | ------------------------ |
-| --cwd  | string | Target project directory |
-| --json | bool   | JSON output              |
+| Flag    | Type   | Description                        |
+| ------- | ------ | ---------------------------------- |
+| --cwd   | string | Target project directory           |
+| --track | string | Override the active pipeline track |
+| --json  | bool   | JSON output                        |
 
 ### `devteam replay <stage-id> [options]`
 
