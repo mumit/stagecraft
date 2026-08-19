@@ -1842,10 +1842,11 @@ Set either value to `null` to disable that check explicitly. See
 the stamped aggregate result.
 
 Successful orchestrator-run verification commands mint content-addressed receipts under
-the active pipeline root. A later stamp reuses a receipt only when the command, suite,
-verification purpose, workspace bytes, verify config, material env/toolchain data, and
-Stagecraft verifier version all match. Failed results are never reused; uncertain
-receipt lookup falls back to rerunning.
+the active pipeline root. Build, pre-review, and QA share a project-test receipt scope,
+so a later stage can reuse an unchanged successful suite. The command, suite, workspace
+bytes, verify config, material env/toolchain data, and Stagecraft verifier version must
+still all match. Repair reproduction has its own scope and does not reuse a post-build
+result. Failed results are never reused; uncertain receipt lookup falls back to rerunning.
 
 For multiple custom suites without a single monorepo command, omit `test_command` and
 use `test_suites`. Suites sharing a `resource_group` never overlap, while unrelated

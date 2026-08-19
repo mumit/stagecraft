@@ -731,6 +731,60 @@ describe("verify/stamp: stage-04 — receipts collapse 4 role stamps + 1 merged 
     assert.equal(receipts.filter((r) => r.reused === false).length, 1, "exactly one real execution recorded");
     assert.equal(receipts.filter((r) => r.reused === true).length, 4, "the remaining 4 stamp calls reused it");
   });
+
+  it("reuses an unchanged successful project test through pre-review and QA, then invalidates on source change", async () => {
+    const cwd = track(makeTargetProject());
+    const counterScript = path.join(cwd, "count-test.js");
+    fs.writeFileSync(counterScript, `
+      const fs = require('node:fs');
+      fs.mkdirSync('pipeline', { recursive: true });
+      const file = 'pipeline/cross-stage-run-count.txt';
+      const n = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) : 0;
+      fs.writeFileSync(file, String(n + 1));
+    `);
+    fs.writeFileSync(
+      path.join(cwd, ".devteam", "config.yml"),
+      configWith({ lint_command: null, test_command: `node ${counterScript}` }),
+    );
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "## Criteria\n- AC-1: unchanged behavior\n");
+    fs.writeFileSync(
+      path.join(cwd, "pipeline", "test-report.md"),
+      "| AC | Test |\n|---|---|\n| AC-1 | project test |\n",
+    );
+
+    const buildPath = seedGateRaw(cwd, "stage-04", {
+      stage: "stage-04", status: "PASS", orchestrator: "devteam@test", track: "full",
+      timestamp: "2026-08-19T00:00:00Z", blockers: [], warnings: [], tests_passed: true,
+      workstreams: [{ workstream: "backend", host: "codex", status: "PASS" }],
+    });
+    const preReviewPath = seedGateRaw(cwd, "stage-04a", {
+      stage: "stage-04a", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "full", timestamp: "2026-08-19T00:00:00Z", blockers: [], warnings: [],
+      lint_passed: true, tests_passed: true, dependency_review_passed: true,
+      security_review_required: false,
+    });
+    const qaPath = seedGateRaw(cwd, "stage-06", {
+      stage: "stage-06", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "full", timestamp: "2026-08-19T00:00:00Z", blockers: [], warnings: [],
+      all_acceptance_criteria_met: true, tests_total: 1, tests_passed: 1,
+      tests_failed: 0, failing_tests: [], criterion_to_test_mapping_is_one_to_one: true,
+    });
+
+    const build = await stampStage04Merged(cwd, buildPath);
+    const preReview = await stampStage04a(cwd, preReviewPath);
+    const qa = await stampStage06(cwd, qaPath);
+
+    assert.equal(build.gate._orchestrator_stamped.runs.test.receipt.reused, false);
+    assert.equal(preReview.gate._orchestrator_stamped.runs.test.receipt.reused, true);
+    assert.equal(qa.gate._orchestrator_stamped.runs.test.receipt.reused, true);
+    assert.equal(fs.readFileSync(path.join(cwd, "pipeline", "cross-stage-run-count.txt"), "utf8"), "1");
+
+    fs.writeFileSync(path.join(cwd, "src.js"), "module.exports = 1;\n");
+    const qaAfterChange = await stampStage06(cwd, qaPath);
+    assert.equal(qaAfterChange.gate._orchestrator_stamped.runs.test.receipt.reused, false);
+    assert.equal(fs.readFileSync(path.join(cwd, "pipeline", "cross-stage-run-count.txt"), "utf8"), "2");
+  });
 });
 
 describe("verify/stamp: stage-04 dispatch (31.1)", () => {
