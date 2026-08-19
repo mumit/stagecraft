@@ -22,10 +22,9 @@ function run(positional, _flags) {
   const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
   const { gatesDir: getGatesDir } = require(path.join(__dirname, "..", "..", "paths"));
   const { verifyChain } = require(path.join(__dirname, "..", "..", "gates", "chain"));
+  const { resolveActiveTrack } = require(path.join(__dirname, "..", "..", "pipeline", "active-track"));
   const config = loadConfig(cwd);
-  const track = _flags.track
-    || (Array.isArray(config.pipeline.custom_stages) ? config.pipeline.custom_stages : null)
-    || config.pipeline.default_track || "full";
+  const { track } = resolveActiveTrack(cwd, config, _flags.track);
   const requireSigned = _flags.requireSigned || config.pipeline.require_signed_gates;
   const r = verifyChain(getGatesDir(cwd, null), track, { requireSigned });
   if (_flags.json) {

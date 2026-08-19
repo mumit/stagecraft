@@ -183,7 +183,7 @@ const COMMANDS = [
   {
     name:        "verify",
     synopsis:    "devteam verify <stage-id> [options]",
-    description: "Orchestrator-stamped verification: run configured or auto-discovered Node, pytest, and Go suites, then rewrite gate fields with observed reality.",
+    description: "Orchestrator-stamped verification: run configured or auto-discovered Node, pytest, and Go suites, rewrite gate fields with observed reality, then repair the active run's gate chain. Signed history requires DEVTEAM_SIGNING_SECRET.",
   },
   {
     name:        "replay",

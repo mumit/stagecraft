@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 
@@ -7,6 +8,7 @@ const name = "verify";
 
 const flags = {
   cwd:  { type: "string",  description: "Target project directory" },
+  track: { type: "string", description: "Override the active pipeline track" },
   json: { type: "boolean", description: "JSON output" },
   help: { type: "boolean", description: "Show this help" },
 };
@@ -16,7 +18,7 @@ async function run(positional, _flags) {
   const cwd = _flags.cwd || process.cwd();
   const stageId = positional[0];
   if (!stageId) {
-    console.error("Usage: devteam verify <stage-id> [--json]");
+    console.error("Usage: devteam verify <stage-id> [--track <t>] [--json]");
     console.error("");
     console.error("Runs orchestrator-side verification for a stage and stamps the");
     console.error("gate with what was actually observed. Currently supports:");
@@ -40,14 +42,46 @@ async function run(positional, _flags) {
     console.error("and which fields it overrode.");
     process.exit(2);
   }
-  const { stamp, STAMPABLE_STAGES } = require(path.join(__dirname, "..", "..", "verify", "stamp"));
+  const frameworkRoot = path.join(__dirname, "..", "..");
+  const { stamp, STAMPABLE_STAGES } = require(path.join(frameworkRoot, "verify", "stamp"));
   if (!STAMPABLE_STAGES.has(stageId)) {
     console.error(`devteam verify: no orchestrator stamping defined for "${stageId}".`);
     console.error(`Supported stages: ${Array.from(STAMPABLE_STAGES).join(", ")}.`);
     process.exit(2);
   }
+  const { loadConfig } = require(path.join(frameworkRoot, "config"));
+  const { gatesDir: getGatesDir } = require(path.join(frameworkRoot, "paths"));
+  const { verifyChain, stampAll } = require(path.join(frameworkRoot, "gates", "chain"));
+  const { resolveActiveTrack, trackLabel } = require(path.join(frameworkRoot, "pipeline", "active-track"));
+  const config = loadConfig(cwd);
+  const gatesDir = getGatesDir(cwd, null);
+  const active = resolveActiveTrack(cwd, config, _flags.track);
+  const before = verifyChain(gatesDir, active.track);
+  const signedWithoutSecret = before.unverified_signatures.length > 0 && !process.env.DEVTEAM_SIGNING_SECRET;
+  const signedPolicyWithoutSecret = config.pipeline.require_signed_gates && !process.env.DEVTEAM_SIGNING_SECRET;
+  if (before.invalid_macs.length > 0 || signedWithoutSecret || signedPolicyWithoutSecret) {
+    const error = before.invalid_macs.length > 0
+      ? "gate chain has an invalid signature; refusing to rewrite audit history"
+      : "gate chain requires DEVTEAM_SIGNING_SECRET before on-demand verification can rewrite history";
+    if (_flags.json) console.log(JSON.stringify({ ok: false, error }, null, 2));
+    else console.error(`devteam verify: ${error}`);
+    process.exit(1);
+  }
+
+  const snapshots = new Map();
+  if (fs.existsSync(gatesDir)) {
+    for (const file of fs.readdirSync(gatesDir).filter((entry) => entry.endsWith(".json"))) {
+      const absolute = path.join(gatesDir, file);
+      snapshots.set(absolute, fs.readFileSync(absolute));
+    }
+  }
+  const restoreGates = () => {
+    for (const [file, bytes] of snapshots) fs.writeFileSync(file, bytes);
+  };
+
   const result = await stamp(cwd, stageId);
   if (!result.ok) {
+    restoreGates();
     if (_flags.json) {
       console.log(JSON.stringify({ ok: false, error: result.error }, null, 2));
     } else {
@@ -55,13 +89,29 @@ async function run(positional, _flags) {
     }
     process.exit(1);
   }
+  const repaired = stampAll(gatesDir, active.track);
+  if (repaired.failed.length > 0) {
+    restoreGates();
+    const error = `verification succeeded but chain repair failed: ${repaired.failed.map((failure) => `${failure.stage}: ${failure.reason}`).join("; ")}`;
+    if (_flags.json) console.log(JSON.stringify({ ok: false, error }, null, 2));
+    else console.error(`devteam verify: ${error}`);
+    process.exit(1);
+  }
+  const chain = {
+    track: trackLabel(active.track),
+    track_source: active.source,
+    prior_breaks: before.breaks.length,
+    restamped: repaired.stamped,
+    signed: repaired.signed,
+  };
   if (_flags.json) {
-    console.log(JSON.stringify({ ok: true, stamp: result.stamp, status: result.gate.status }, null, 2));
+    console.log(JSON.stringify({ ok: true, stamp: result.stamp, status: result.gate.status, chain }, null, 2));
     return;
   }
   const s = result.stamp;
   const icon = result.gate.status === "PASS" ? "✅" : "❌";
   console.log(`${icon} ${stageId}: orchestrator verification ${result.gate.status}`);
+  console.log(`   chain: re-stamped ${chain.restamped.length} gate(s) on ${chain.track} (${chain.track_source})`);
   for (const r of Object.keys(s.runs)) {
     const run = s.runs[r];
     if (Array.isArray(run.findings)) {
