@@ -9,7 +9,7 @@
 // buildDescriptor() calls across tests, plus three preview-only CLI
 // commands: `devteam stage` without --headless, `devteam reproduce`,
 // `devteam replay`) assume a plain synchronous return. Querying memory
-// needs an embedder, which is inherently async (@huggingface/transformers,
+// has an async provider contract (builtin, an optional transformer provider,
 // or the DEVTEAM_EMBEDDING_PROVIDER=stub test seam). So retrieval happens
 // *before* the synchronous descriptor-building pipeline, in
 // runStageHeadless() (core/orchestrator.js) — the one dispatch path that

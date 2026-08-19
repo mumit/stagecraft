@@ -36,7 +36,9 @@ devteam memory stats
 devteam memory clear
 ```
 
-The first `ingest` downloads the embedding model (~33MB for BGE-small) into `~/.cache/huggingface/`. Subsequent runs use the cached copy. The model runs fully offline.
+The first `ingest` works immediately with Stagecraft's dependency-free builtin
+retriever. It performs signed feature hashing over word and bigram features, so
+there is no model download, network request, native binary, or API cost.
 
 ## What it does
 
@@ -72,9 +74,21 @@ The store contains plaintext copies of every chunk it embeds, including whatever
 
 ## Embedder
 
-Default is **local**: `Xenova/bge-small-en-v1.5` via `@huggingface/transformers`. Runs on CPU, embeds ~10-50 chunks/sec depending on hardware, no external account or API key required, no data leaves the machine.
+Default is **builtin**: a 384-dimensional signed feature-hash retriever. It is
+fast, deterministic, offline, and useful for lexical and phrase overlap. It is
+not a neural semantic model: queries that only share meaning, not terminology,
+can rank worse.
 
-The model is downloaded lazily on first use and cached. ~33MB on disk.
+The optional **local** provider uses `Xenova/bge-small-en-v1.5` through
+`@huggingface/transformers`. It provides richer semantic matching, downloads a
+model on first use, and expands the native/transitive dependency surface.
+Install it deliberately after reviewing its current advisories and licenses:
+
+```bash
+npm install @huggingface/transformers
+export DEVTEAM_EMBEDDING_PROVIDER=local
+devteam memory reindex
+```
 
 ### Switching embedders
 
@@ -107,7 +121,10 @@ Chunks under 32 chars are dropped (typically just empty sections). Documents wit
 
 ## Performance
 
-For the realistic scale of a single project (10–100 artifacts, 100–1000 chunks), the in-memory cosine search runs in single-digit milliseconds. Local embedding adds 50–200ms per chunk on a modern CPU. A 12-chunk brief ingests in 1–3 seconds.
+For the realistic scale of a single project (10–100 artifacts, 100–1000 chunks),
+the builtin embedder and in-memory cosine search run in single-digit milliseconds
+for typical queries. The optional transformer provider adds roughly 50–200ms per
+chunk on a modern CPU; a 12-chunk brief typically ingests in 1–3 seconds.
 
 The JSON backend's ceiling is roughly 1k chunks per project before query latency becomes noticeable.
 
@@ -116,7 +133,7 @@ The JSON backend's ceiling is roughly 1k chunks per project before query latency
 Two trigger points:
 
 1. **Manual** — `devteam memory ingest` after any artifact-producing stage finishes. Safe to run repeatedly: re-ingesting an artifact replaces its old chunks (no duplicates).
-2. **Automatic, at pipeline-complete** (phase-30 item 30.4) — `core/driver.js` re-ingests once a run finishes cleanly, so the store stays current without a manual step. Gated on `.devteam/memory/` already existing (i.e. you've run `devteam memory ingest` at least once) and `memory.inject` not being `false` — a project that has never opted in sees no behavior change: no embedder load, no model download attempt. Fire-and-forget: an ingest failure (including the optional `@huggingface/transformers` dependency being absent) is logged to `run-log.jsonl` and never fails the run.
+2. **Automatic, at pipeline-complete** (phase-30 item 30.4) — `core/driver.js` re-ingests once a run finishes cleanly, so the store stays current without a manual step. Gated on `.devteam/memory/` already existing (i.e. you've run `devteam memory ingest` at least once) and `memory.inject` not being `false` — a project that has never opted in sees no behavior change. Fire-and-forget: an ingest failure is logged to `run-log.jsonl` and never fails the run.
 
 Manual `devteam memory ingest` remains the only way to *start* using memory in a project — auto-ingest only keeps an already-opted-in store current.
 
@@ -139,9 +156,15 @@ Deliberately excluded:
 
 ## Troubleshooting
 
-**"@huggingface/transformers not installed."** Run `npm install` in the Stagecraft framework directory. If you're getting this error on a CI runner or a constrained environment, set `DEVTEAM_EMBEDDING_PROVIDER=stub` to bypass the local model (stub vectors are useless for real retrieval but unblock tests).
+**"@huggingface/transformers not installed."** You explicitly selected the
+`local` provider. Install the package in the Stagecraft framework environment
+after reviewing its current supply-chain policy, or unset
+`DEVTEAM_EMBEDDING_PROVIDER` to use the builtin retriever. The `stub` provider is
+only for deterministic tests and is not useful for retrieval.
 
-**Slow first ingest.** The first call downloads the embedding model. Subsequent runs use the cache. If you keep hitting the download, check that `~/.cache/huggingface/` is writable.
+**Slow first ingest with `local`.** The first call downloads the embedding model.
+Subsequent runs use the cache. If downloads repeat, check that
+`~/.cache/huggingface/` is writable. The default builtin provider has no download.
 
 **"store was indexed with X but the current embedder is Y."** Your embedder changed. Run `devteam memory reindex` to re-embed with the new model. Vectors from different models aren't comparable.
 

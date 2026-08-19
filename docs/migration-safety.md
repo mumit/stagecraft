@@ -13,7 +13,9 @@ Stage 4d. Conditional — fires only when the pre-review heuristic (stage 4a) de
 
 ## What triggers it
 
-The pre-review heuristic in `core/guards/migration-heuristic.js` scans the changed files and sets `migration_safety_required: true` in the stage-04a gate when it detects:
+The pre-review heuristic in `core/guards/migration-heuristic.js` scans changed
+paths plus added lines and sets `migration_safety_required: true` in the
+stage-04a gate when it detects:
 
 - Files in migration directories (`migrations/`, `db/migrate/`, `database/migrations/`, etc.)
 - Schema files (`schema.rb`, `schema.prisma`, `*.sql` schema files)

@@ -59,3 +59,9 @@ Packages on the default permissive list (MIT, Apache-2.0, BSD-*, ISC, CC0-1.0,
 advisory database that the orchestrator cannot access offline. The orchestrator
 verifies license compliance mechanically; CVE scan results are reported by the
 platform agent and confirmed in human review at Stage 5.
+
+Security and migration content heuristics scan added lines from the working-tree,
+staged, or most recent build commit diff. Path triggers remain conservative and
+always apply. Untracked/non-Git files fall back to a full-file scan. This keeps a
+historical bcrypt example or DDL snippet from launching a conditional review when
+an unrelated line in the same file changes, without suppressing newly added risk.

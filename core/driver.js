@@ -2383,9 +2383,9 @@ async function run(opts = {}) {
   // memory ingest` sees zero behavior change (no embedder load, no model
   // download attempt) and reuses memory.inject as the single off switch for
   // both sides of the loop. Fire-and-forget like auto-collection and the
-  // reflector above: an ingest failure (including the optional
-  // @huggingface/transformers dependency being absent) is logged, never
-  // thrown — it must never fail an otherwise-clean run.
+  // reflector above: an ingest failure is logged, never thrown — it must never
+  // fail an otherwise-clean run. This also covers an explicitly selected local
+  // provider whose separately installed transformer dependency is absent.
   if (summary.completed && config.memory.inject !== false && fs.existsSync(path.join(cwd, ".devteam", "memory"))) {
     try {
       const result = await _ingestMemory({ cwd });

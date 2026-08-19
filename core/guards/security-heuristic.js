@@ -23,6 +23,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { readChangedContent } = require("./changed-content");
 
 // Files whose path alone is a strong-enough signal to require review.
 // Conservative: it's cheap to over-trigger here; under-triggering is the
@@ -136,6 +137,7 @@ function contentFindings(filePath, patterns = CONTENT_PATTERNS) {
     return [];
   }
   if (NO_REVIEW_MARKER.test(content)) return [];
+  content = readChangedContent(absolute);
   const hits = [];
   for (const { label, re } of patterns) {
     if (re.test(content)) hits.push(label);
