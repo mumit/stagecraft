@@ -33,6 +33,13 @@ The PM must answer this question even on the auto-fold path (see below). Failing
 
 Gate file: `pipeline/gates/stage-07.json`.
 
+Sign-off dispatches PM and platform as separate workstreams. During merge, the
+orchestrator copies `pm_signoff`, `deploy_requested`, the documentation fields,
+`open_followups`, and `delta_items` from the PM gate; it copies
+`runbook_referenced` plus optional adapter/smoke fields from the platform gate.
+The merged gate is Stage 8's authorization input—aggregate PASS alone never
+implies permission to deploy.
+
 ```json
 {
   "stage": "stage-07",
@@ -148,4 +155,3 @@ On the auto-fold path the orchestrator must still derive and populate
 reading the Stage 4 PR summaries and the brief. If a user-visible surface
 is detected (`docs_surface_affected: true`) but `docs_updated` cannot be
 confirmed from the artifacts, auto-fold is blocked and the PM is invoked.
-

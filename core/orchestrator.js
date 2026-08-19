@@ -1732,6 +1732,27 @@ function mergeWorkstreamGates(stageName, opts = {}) {
       if (testsClaims.length > 0) merged.tests_passed = testsClaims.every(Boolean);
     }
 
+    // Stage 7 is multi-role, but its merged gate is also the authorization
+    // contract consumed by Stage 8. Preserve each role's owned semantic
+    // fields instead of reducing sign-off to status + workstream metadata.
+    // PM owns product/docs approval; platform owns runbook readiness.
+    if (stageDef.stage === "stage-07") {
+      const pmGate = wsGates.find((w) => w.role === "pm")?.gate || {};
+      const platformGate = wsGates.find((w) => w.role === "platform")?.gate || {};
+      merged.pm_signoff = pmGate.pm_signoff === true;
+      merged.deploy_requested = pmGate.deploy_requested === true;
+      merged.runbook_referenced = platformGate.runbook_referenced === true;
+      merged.docs_surface_affected = pmGate.docs_surface_affected;
+      merged.docs_updated = pmGate.docs_updated;
+      merged.docs_skipped_reason = pmGate.docs_skipped_reason;
+      merged.open_followups = Array.isArray(pmGate.open_followups) ? pmGate.open_followups : [];
+      merged.delta_items = Array.isArray(pmGate.delta_items) ? pmGate.delta_items : [];
+      if (typeof platformGate.adapter === "string") merged.adapter = platformGate.adapter;
+      if (typeof platformGate.smoke_test_passed === "boolean") {
+        merged.smoke_test_passed = platformGate.smoke_test_passed;
+      }
+    }
+
     // 31.3: surface the critic's challenges on the merged stage-05 gate.
     // No extra gating logic needed here — the generic aggregate above
     // already flips merged.status to FAIL whenever the critic's own gate

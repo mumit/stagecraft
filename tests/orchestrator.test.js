@@ -264,6 +264,53 @@ describe("orchestrator: mergeWorkstreamGates aggregation", () => {
     assert.deepEqual(r.gate.warnings, ["coverage low"]);
   });
 
+  it("preserves Stage 7 authorization fields from their owning workstreams", () => {
+    const cwd = track(makeTargetProject());
+    const followup = { id: "QA-01", source: "stage-06", text: "repair verification", effort: "S" };
+    seedGate(cwd, "stage-07.pm", {
+      stage: "stage-07",
+      workstream: "pm",
+      host: "codex",
+      status: "PASS",
+      pm_signoff: true,
+      deploy_requested: true,
+      runbook_referenced: false,
+      docs_surface_affected: true,
+      docs_updated: true,
+      docs_skipped_reason: "",
+      open_followups: [followup],
+      delta_items: [],
+    });
+    seedGate(cwd, "stage-07.platform", {
+      stage: "stage-07",
+      workstream: "platform",
+      host: "codex",
+      status: "PASS",
+      pm_signoff: false,
+      deploy_requested: false,
+      runbook_referenced: true,
+      docs_surface_affected: false,
+      docs_updated: null,
+      docs_skipped_reason: "platform does not own this decision",
+      adapter: "local",
+      smoke_test_passed: true,
+    });
+
+    const result = mergeWorkstreamGates("sign-off", { cwd, track: "hotfix" });
+    assert.equal(result.merged, true);
+    assert.equal(result.gate.status, "PASS");
+    assert.equal(result.gate.pm_signoff, true, "PM owns product approval");
+    assert.equal(result.gate.deploy_requested, true, "PM owns the deploy request");
+    assert.equal(result.gate.runbook_referenced, true, "platform owns runbook readiness");
+    assert.equal(result.gate.docs_surface_affected, true);
+    assert.equal(result.gate.docs_updated, true);
+    assert.equal(result.gate.docs_skipped_reason, "");
+    assert.deepEqual(result.gate.open_followups, [followup]);
+    assert.deepEqual(result.gate.delta_items, []);
+    assert.equal(result.gate.adapter, "local");
+    assert.equal(result.gate.smoke_test_passed, true);
+  });
+
   it("PASS + FAIL → FAIL", () => {
     const cwd = track(makeTargetProject());
     seedFour(cwd, ["PASS", "FAIL", "PASS", "PASS"]);
