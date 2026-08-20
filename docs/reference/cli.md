@@ -94,7 +94,7 @@ Bounded autonomous driver with optional TTY watch mode: loop next â†’ dispatch â
 | --auto-rule        | list   | Auto-apply Principal rulings of these classes (comma-separated)                                      |
 | --allow-stage      | list   | Grant consequence-ceiling approval for this stage (repeatable, comma-separated)                      |
 | --resume           | bool   | Resume an interrupted run                                                                            |
-| --force            | bool   | Force-unlock a stale run.lock                                                                        |
+| --force            | bool   | Force-unlock a stale run.lock or authorize a scoped stoplist bypass                                  |
 | --json             | bool   | JSON summary on stdout                                                                               |
 | --fail-on-advisory | toggle | Exit 3 if advisory blockers remain after pipeline-complete (=all adds PEER_REVIEW_RISK to threshold) |
 | --auto-commit      | bool   | Automatically commit pipeline artifacts after a clean halt (ceiling, --until, budget)                |

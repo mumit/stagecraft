@@ -58,7 +58,7 @@ const flags = {
   "auto-rule":       { type: "list", split: true, description: "Auto-apply Principal rulings of these classes (comma-separated)" },
   "allow-stage":     { type: "list", split: true, description: "Grant consequence-ceiling approval for this stage (repeatable, comma-separated)" },
   resume:            { type: "boolean", description: "Resume an interrupted run" },
-  force:             { type: "boolean", description: "Force-unlock a stale run.lock" },
+  force:             { type: "boolean", description: "Force-unlock a stale run.lock or authorize a scoped stoplist bypass" },
   json:              { type: "boolean", description: "JSON summary on stdout" },
   // ADR-008: opt-in advisory-blocker exit code. Bare flag uses QA_BLOCKER+A11Y_FIX
   // threshold; =all also includes PEER_REVIEW_RISK. Default (no flag) exits 0.

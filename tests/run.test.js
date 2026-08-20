@@ -234,7 +234,6 @@ describe("driver: dispatch loop (injected deps)", () => {
     const resumed = await run({
       cwd,
       resume: true,
-      budgetUsd: 10,
       next: () => ({ action: "pipeline-complete", reason: "done" }),
       onEvent: (event) => events.push(event),
     });
@@ -244,6 +243,107 @@ describe("driver: dispatch loop (injected deps)", () => {
     assert.equal(plan.track, "loop");
     assert.equal(plan.track_source, "human");
     assert.equal(plan.plan_reused, true);
+    assert.equal(plan.safety_policy.budget_usd, 10);
+    assert.equal(plan.safety_policy.budget_tokens, null);
+  });
+
+  it("--resume rejects conflicting caps and track before dispatch", async () => {
+    const cwd = track(makeTargetProject());
+    await run({
+      cwd,
+      track: "loop",
+      budgetUsd: 10,
+      budgetTokens: 1000,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+
+    let dispatched = false;
+    await assert.rejects(
+      () => run({
+        cwd,
+        resume: true,
+        budgetTokens: 2000,
+        next: () => { dispatched = true; return { action: "pipeline-complete", reason: "done" }; },
+      }),
+      (error) => error.code === "ERUNPOLICYDRIFT" && /1000 -> 2000/.test(error.message),
+    );
+    assert.equal(dispatched, false);
+
+    await assert.rejects(
+      () => run({
+        cwd,
+        resume: true,
+        track: "quick",
+        next: () => { dispatched = true; return { action: "pipeline-complete", reason: "done" }; },
+      }),
+      (error) => error.code === "ERUNPOLICYDRIFT" && /"loop" -> "quick"/.test(error.message),
+    );
+    assert.equal(dispatched, false);
+  });
+
+  it("migrates a legacy run-state onto an explicit persisted safety policy", async () => {
+    const cwd = track(makeTargetProject());
+    fs.writeFileSync(path.join(cwd, "pipeline", "run-state.json"), JSON.stringify({
+      track: "full",
+      resolved_track: "full",
+      track_source: "config",
+      intent: "feature",
+      iterations: 0,
+      retries: {},
+      started_at: "2026-08-01T00:00:00.000Z",
+    }));
+
+    const resumed = await run({
+      cwd,
+      resume: true,
+      budgetTokens: 1000,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+    assert.equal(resumed.completed, true);
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.equal(state.safety_policy.schema, "stagecraft.run-safety/v1");
+    assert.equal(state.safety_policy.budget_usd, null);
+    assert.equal(state.safety_policy.budget_tokens, 1000);
+    const plan = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"));
+    assert.match(plan.execution_fingerprint, /^[a-f0-9]{64}$/);
+    assert.equal(plan.safety_policy.budget_tokens, 1000);
+  });
+
+  it("migrates a compatible pre-safety run plan without weakening its execution binding", async () => {
+    const cwd = track(makeTargetProject());
+    await run({
+      cwd,
+      track: "loop",
+      budgetTokens: 1000,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+
+    const statePath = path.join(cwd, "pipeline", "run-state.json");
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    delete state.safety_policy;
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+    const planPath = path.join(cwd, "pipeline", "run-plan.json");
+    const legacyPlan = JSON.parse(fs.readFileSync(planPath, "utf8"));
+    legacyPlan.plan_fingerprint = legacyPlan.execution_fingerprint;
+    delete legacyPlan.execution_fingerprint;
+    delete legacyPlan.safety_policy;
+    fs.writeFileSync(planPath, JSON.stringify(legacyPlan, null, 2));
+
+    const events = [];
+    const resumed = await run({
+      cwd,
+      resume: true,
+      budgetTokens: 1000,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+      onEvent: (event) => events.push(event),
+    });
+    assert.equal(resumed.completed, true);
+    const migrated = JSON.parse(fs.readFileSync(planPath, "utf8"));
+    assert.match(migrated.execution_fingerprint, /^[a-f0-9]{64}$/);
+    assert.notEqual(migrated.plan_fingerprint, migrated.execution_fingerprint);
+    assert.equal(migrated.safety_policy.budget_tokens, 1000);
+    assert.equal(events.find((event) => event.type === "run-plan").plan_reused, true);
   });
 
   it("advances run-stage → merge → complete", async () => {
@@ -1304,6 +1404,81 @@ describe("driver: stoplist enforcement on autonomous path (Phase 1 § 1.1)", () 
     const haltEvent = events.find((e) => e.outcome === "stoplist-halt" && e.label === "pre-build");
     assert.ok(haltEvent, "run-log must contain a pre-build stoplist-halt event");
   });
+
+  it("persists and reuses a scoped --force stoplist bypass across resume", async () => {
+    const cwd = track(makeTargetProject());
+    const description = "document the existing authentication boundary";
+    const first = await run({
+      cwd,
+      track: "loop",
+      description,
+      force: true,
+      budgetTokens: 1000,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+    assert.equal(first.completed, true);
+
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.equal(state.safety_policy.stoplist_bypass.authority, "operator:--force");
+    assert.match(state.safety_policy.stoplist_bypass.fingerprint, /^[a-f0-9]{64}$/);
+
+    const resumed = await run({
+      cwd,
+      resume: true,
+      description,
+      next: () => ({ action: "pipeline-complete", reason: "done" }),
+    });
+    assert.equal(resumed.completed, true);
+
+    const remediation = runCLI(["stage", "build", "--feature", description], { cwd });
+    assert.equal(remediation.status, 0, "a direct remediation stage must reuse the scoped bypass");
+
+    const events = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line));
+    assert.ok(events.some((event) => event.outcome === "stoplist-bypass-authorized"));
+    assert.ok(events.some((event) =>
+      event.outcome === "stoplist-bypass-reused" && event.label === "direct-stage:build"));
+  });
+
+  it("invalidates a scoped bypass when the feature, brief, or stoplist policy changes", async () => {
+    for (const changed of ["feature", "brief", "policy"]) {
+      const cwd = track(makeTargetProject());
+      const briefPath = path.join(cwd, "pipeline", "brief.md");
+      fs.writeFileSync(briefPath, "# Brief\nDocument the authentication boundary.\n");
+      await run({
+        cwd,
+        track: "loop",
+        description: "document authentication behavior",
+        force: true,
+        budgetTokens: 1000,
+        next: () => ({ action: "pipeline-complete", reason: "done" }),
+      });
+
+      if (changed === "brief") {
+        fs.writeFileSync(briefPath, "# Brief\nDocument changed authentication behavior.\n");
+      } else if (changed === "policy") {
+        const statePath = path.join(cwd, "pipeline", "run-state.json");
+        const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+        state.safety_policy.stoplist_bypass.policy_fingerprint = "superseded-policy";
+        fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+      }
+
+      const resumed = await run({
+        cwd,
+        resume: true,
+        description: changed === "feature"
+          ? "document changed authentication behavior"
+          : "document authentication behavior",
+        next: () => ({ action: "pipeline-complete", reason: "done" }),
+      });
+      assert.equal(resumed.halt_action, "stoplist", `${changed} change must reopen the stoplist`);
+      const events = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
+        .trim().split("\n").map((line) => JSON.parse(line));
+      assert.ok(events.some((event) =>
+        event.outcome === "stoplist-bypass-invalidated"
+        && event.reason === `${changed}-changed`));
+    }
+  });
 });
 
 // ─── Fix 1.7.3: budget cap must account for unmerged workstream gate costs ─
@@ -1477,7 +1652,7 @@ describe("driver: observed/estimated token budget", () => {
     let firstNext = 0;
     const first = await run({
       cwd,
-      budgetTokens: 5000,
+      budgetTokens: 500,
       next: () => firstNext++ === 0
         ? { action: "run-stage", stage: "stage-02", name: "design", reason: "first attempt" }
         : { action: "pipeline-complete", reason: "pause point" },
@@ -1501,7 +1676,6 @@ describe("driver: observed/estimated token budget", () => {
     const resumed = await run({
       cwd,
       resume: true,
-      budgetTokens: 500,
       next: () => ({ action: "run-stage", stage: "stage-03", name: "security", reason: "resume" }),
       runStageHeadless: async () => { resumedDispatch = true; return []; },
     });
@@ -2323,7 +2497,7 @@ describe("driver: assess-by-default on devteam run (Phase 29.2, ADR-016)", () =>
     const cwd = track(makeTargetProject());
     const s = await run({
       cwd,
-      feature: "quick fix for the login bug",
+      feature: "quick fix for the rendering bug",
       next: () => ({ action: "pipeline-complete", reason: "done" }),
     });
     assert.equal(s.completed, true);
@@ -2353,7 +2527,7 @@ describe("driver: assess-by-default on devteam run (Phase 29.2, ADR-016)", () =>
     const s = await run({
       cwd,
       track: "full",
-      feature: "quick fix for the login bug", // would infer "quick" if --track were absent
+      feature: "quick fix for the rendering bug", // would infer "quick" if --track were absent
       next: () => ({ action: "pipeline-complete", reason: "done" }),
     });
     assert.equal(s.completed, true);
@@ -2374,7 +2548,7 @@ describe("driver: assess-by-default on devteam run (Phase 29.2, ADR-016)", () =>
 
     const s = await run({
       cwd,
-      feature: "quick fix for the login bug", // would infer "quick" if track.json weren't present
+      feature: "quick fix for the rendering bug", // would infer "quick" if track.json weren't present
       next: () => ({ action: "pipeline-complete", reason: "done" }),
     });
     assert.equal(s.completed, true);

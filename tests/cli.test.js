@@ -182,6 +182,44 @@ describe("cli: stage", () => {
     assert.doesNotMatch(r.stdout, /devteam does\s*\n\s*NOT call a model/);
     assert.doesNotMatch(r.stdout, /Run `devteam next` to advance/);
   });
+
+  it("stage inherits the materialized run-plan track unless explicitly overridden", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: full\n",
+    }));
+    fs.writeFileSync(path.join(cwd, "pipeline", "run-plan.json"), JSON.stringify({
+      schema: "stagecraft.run-plan/v1",
+      track: "loop",
+      stages: [],
+    }));
+
+    const inherited = runCLI(["stage", "build", "--feature", "update copy"], { cwd });
+    assert.equal(inherited.status, 0);
+    assert.match(inherited.stdout, /end of stage-04 \(1 workstream\)/);
+    assert.doesNotMatch(inherited.stdout, /workstream: frontend/);
+
+    const overridden = runCLI(["stage", "build", "--track", "full", "--feature", "update copy"], { cwd });
+    assert.equal(overridden.status, 0);
+    assert.match(overridden.stdout, /end of stage-04 \(4 workstreams\)/);
+  });
+
+  it("stage inherits the materialized run-plan track in bounded isolation", () => {
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\npipeline:\n  default_track: full\n  isolation: bounded\n",
+    }));
+    const changeRoot = path.join(cwd, "pipeline", "changes", "bounded-copy");
+    fs.mkdirSync(changeRoot, { recursive: true });
+    fs.writeFileSync(path.join(changeRoot, "run-plan.json"), JSON.stringify({
+      schema: "stagecraft.run-plan/v1",
+      track: "loop",
+      stages: [],
+    }));
+
+    const inherited = runCLI(["stage", "build", "--feature", "bounded copy"], { cwd });
+    assert.equal(inherited.status, 0);
+    assert.match(inherited.stdout, /end of stage-04 \(1 workstream\)/);
+    assert.doesNotMatch(inherited.stdout, /workstream: frontend/);
+  });
 });
 
 describe("cli: stoplist guard", () => {

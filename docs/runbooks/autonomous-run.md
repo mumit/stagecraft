@@ -91,8 +91,8 @@ devteam run --until peer-review   # stop after a specific stage
 devteam run --budget-usd 10       # stop before a dispatch once spend ≥ $10
 devteam run --budget-tokens 5000000  # provider-neutral observed/estimated token cap
 devteam run --allow-stage sign-off --allow-stage deploy   # grant the ceiling
-devteam run --resume              # continue after a crash/stop
-devteam run --force               # override a stale lock
+devteam run --resume              # continue with the original caps/track/safety policy
+devteam run --force               # override a stale lock or authorize a scoped stoplist bypass
 
 # Repair mode (ADR-009) — bug-fix intent, not a feature:
 devteam run --repair "symptom"                                 # hotfix depth default; diagnosis stage runs first
@@ -108,9 +108,12 @@ included/total stages, configured skips, conditional stages, track-sized workstr
 counts, and the plan fingerprint. The complete pre-dispatch contract is written to
 `pipeline/run-plan.json`: stage order/disposition, candidate roles, resolved hosts and
 models, track provenance, and ceremony preview. The same data is recorded as a typed
-`run-plan` event in `run-log.jsonl`. A resumed run refuses changed stage or routing
-decisions; restart without `--resume` after reviewing the new plan. Conditional stages
-remain labelled conditional because their upstream gate does not exist at preflight.
+`run-plan` event in `run-log.jsonl`. A resumed run inherits omitted token/USD caps and
+refuses changed caps, track, stage, or routing decisions before dispatch. A `--force`
+stoplist ruling is fingerprint-bound to the feature, brief, and stoplist policy, so an
+unchanged resume or direct remediation stage reuses it while changed inputs invalidate
+it. Restart without `--resume` after reviewing an intentional policy change. Conditional
+stages remain labelled conditional because their upstream gate does not exist at preflight.
 
 Progress prints to **stderr**; the `--json` summary prints to **stdout**. `--watch`
 and `--json` are mutually exclusive. When watch output is redirected or stderr is
@@ -145,7 +148,7 @@ args, secret handling, and resource limits.
 | File | Purpose |
 |---|---|
 | `pipeline/run.lock` | Exclusive lock for the run (pid + host + start time). Removed on exit. |
-| `pipeline/run-state.json` | Resumable state: current stage, iteration count, per-stage retry counts. |
+| `pipeline/run-state.json` | Resumable state: current stage, iteration/retry counts, and the effective caps plus scoped stoplist-bypass record. |
 | `pipeline/run-log.jsonl` | One line per transition (stage, action, `failure_class`, outcome, duration, cost) — the audit + debug trail. |
 | `pipeline/gates/archive/<stage>.attempt-N.json` | A snapshot of each failed attempt's stage gate, taken before the auto-fix retry clears/overwrites it. Diff `attempt-1` vs `attempt-2` to see whether blockers were shrinking or stuck — the post-mortem record of a `code-defect` retry sequence. `devteam restart` clears the archive directory; a normal stage re-run does not. |
 
@@ -168,7 +171,7 @@ Read the `halt_action` (and `failure_class`) in the summary, or the last line of
 | `halt_action` | What happened | Do this |
 |---|---|---|
 | `unconfirmed-track` | `autonomy.require_confirmed_track` is set and `pipeline/track.json` carries an inferred track at medium or low confidence. | Run `devteam assess --confirm` to write `source:"human"`, or pass `--track <name>` explicitly. `--force` bypasses in an emergency. |
-| `stoplist` | The change description or `pipeline/brief.md` matched a safety-stoplist phrase (auth/credentials/PII/payments/migrations/…) and the resolved track is lighter than `full`. Checked at run start and again before build. | Switch to `devteam run --track full`. If this is a false positive, re-run with `--force`. |
+| `stoplist` | The change description or active brief matched a safety-stoplist phrase (auth/credentials/PII/payments/migrations/…) and the resolved track is lighter than `full`. Checked at run start and again before build. | Switch to `devteam run --track full`. If this is a false positive, re-run with `--force`; the audited bypass remains valid only while its feature/brief/policy fingerprints stay unchanged. |
 | `fix-and-retry` | A FAIL the driver won't auto-retry: `state-corruption` (gate unreadable) or `external-blocked` (needs a human/external action). | Run `devteam next` and follow [fix-and-retry.md](fix-and-retry.md). |
 | `resolve-escalation` | A gate escalated (`judgment-gate`), the retry budget was spent on a `code-defect` (`convergence-exhausted`), or an escalation's ruling class wasn't in your `--auto-rule` grant. | Follow [escalation.md](escalation.md), then re-run `devteam run`. |
 | `resolve-escalation` (`cannot-decide`) | The Principal declared it cannot decide — the run summary carries `cannot_decide.{reason_class, question}`. | Supply the missing authority/information/ranking, encode a `PRINCIPAL-RULING:` line, then re-run. |

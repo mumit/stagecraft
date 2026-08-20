@@ -1,6 +1,7 @@
 # Phase 42 — Dogfood Reliability and Recovery Fit
 
-**Status:** proposed from two-project dogfood evidence (2026-08-19).
+**Status:** in progress from two-project dogfood evidence (2026-08-19); 42.1
+implemented and unreleased.
 
 **Goal:** remove the control-plane friction observed while completing a real
 `loop` change, without activating any Phase 41 learning capability or weakening
@@ -12,6 +13,10 @@ Implement one item per PR. Items 42.1–42.3 are the reliability-critical path;
 the remaining items can follow independently.
 
 ## 42.1 Resume preserves the effective safety policy (P0)
+
+**Status:** ✅ implemented (unreleased). The effective caps and scoped bypass
+are persisted and plan-bound; resume conflicts fail before dispatch, legacy
+state migrates explicitly, and direct stages inherit the materialized track.
 
 Persist and fingerprint the effective token/USD caps and an audited stoplist
 bypass for the logical run. `--resume` must inherit those values when omitted,

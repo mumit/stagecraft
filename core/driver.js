@@ -43,7 +43,14 @@ const {
 } = require("./pipeline/right-sizing");
 const { assess } = require("./stage-shopping/assess");
 const { ceremonyPreview } = require("./ceremony-preview");
-const { buildRunPlan, persistRunPlan, portableRelative } = require("./run-plan");
+const { buildRunPlan, persistRunPlan, portableRelative, updateRunPlanSafetyPolicy } = require("./run-plan");
+const {
+  resolveEffectiveSafetyPolicy,
+  assertResumeTrack,
+  stoplistContext,
+  stoplistBypassStatus,
+  authorizeStoplistBypass,
+} = require("./run-safety");
 const { runAdvise } = require("./advise");
 const { MAX_RETRIES_DEFAULT, MAX_TRANSIENT_RETRIES_DEFAULT } = require("./gates/classify");
 const { loadPrincipalOutputs, runRuling, runFixEscalation } = require("./escalation");
@@ -972,7 +979,7 @@ function defaultCheckScopeGate(cwd, affectedFiles) {
  * @param {string} [opts.trustProfile]   trusted or contained execution boundary
  * @param {string[]} [opts.allowStages]  consequence-ceiling grants (sign-off/deploy)
  * @param {boolean} [opts.resume]        continue from existing run-state
- * @param {boolean} [opts.force]         override a stale lock
+ * @param {boolean} [opts.force]         override a stale lock or authorize a scoped stoplist bypass
  * @param {number} [opts.retryDelayMs]   backoff before a transient re-dispatch (default 30000)
  * @param {number} [opts.maxTransientRetries] no-gate retries before structural halt (default 1)
  * @param {string[]} [opts.autoRule]     pre-authorized ruling classes the driver may auto-apply (default none → halt on every escalation)
@@ -1019,6 +1026,8 @@ async function run(opts = {}) {
     : (isolation === "bounded"
         ? (opts.repair ? changeIdFromSymptom(opts.repair || "") : changeIdFromFeature(opts.feature || ""))
         : null);
+  const resumedState = opts.resume ? loadRunState(cwd, changeId) : null;
+  assertResumeTrack(resumedState, opts.track);
   // ADR-006: resolveTrack returns {track, source, confidence} so the startup
   // confidence guard below can apply the require_confirmed_track check without
   // a second file read.
@@ -1082,8 +1091,21 @@ async function run(opts = {}) {
   const _runReflector = opts.runReflector || runReflector;
   const _ingestMemory = opts.ingestMemory || ingestMemory;
   const maxIterations = Number.isInteger(opts.maxIterations) ? opts.maxIterations : DEFAULT_MAX_ITERATIONS;
-  const budgetUsd = typeof opts.budgetUsd === "number" ? opts.budgetUsd : null;
-  const budgetTokens = typeof opts.budgetTokens === "number" ? opts.budgetTokens : null;
+  const resolvedSafety = resolveEffectiveSafetyPolicy({
+    resume: opts.resume,
+    state: resumedState,
+    budgetUsd: opts.budgetUsd,
+    budgetTokens: opts.budgetTokens,
+  });
+  let safetyPolicy = resolvedSafety.policy;
+  const budgetUsd = safetyPolicy.budget_usd;
+  const budgetTokens = safetyPolicy.budget_tokens;
+  if (resolvedSafety.migrated) {
+    process.stderr.write(
+      "[devteam run] Warning: legacy run-state had no persisted safety policy; "
+      + "cap flags on this resume are now authoritative and omitted caps are explicitly uncapped.\n",
+    );
+  }
   if (budgetUsd === null && budgetTokens === null) {
     process.stderr.write(
       "[devteam run] Warning: no usage cap set. The run will not halt on spend or tokens.\n" +
@@ -1166,7 +1188,7 @@ async function run(opts = {}) {
   acquireLock(cwd, { force: opts.force }, changeId);
 
   const nowTs = nowIso();
-  const state = (opts.resume && loadRunState(cwd, changeId)) || {
+  const state = resumedState || {
     track: Array.isArray(effectiveTrack) ? effectiveTrack.join(",") : effectiveTrack,
     resolved_track: effectiveTrack,
     track_source: trackSource,
@@ -1188,6 +1210,7 @@ async function run(opts = {}) {
   }
   // PR-B counters (resilient to a resumed state that predates them).
   state.fixRetries = state.fixRetries || {};      // code-defect re-dispatches per stage
+  state.safety_policy = safetyPolicy;
   state.resolved_track = state.resolved_track || effectiveTrack;
   state.track_source = state.track_source || trackSource;
   state.track_confidence = state.track_confidence || trackConfidence;
@@ -1279,10 +1302,56 @@ async function run(opts = {}) {
   // STOPLIST_TRACKS.  --force opts out.
   function runStoplistCheck(label) {
     if (!STOPLIST_TRACKS.has(effectiveTrack)) return false; // bypass for full/hotfix
-    if (opts.force) return false;                            // --force explicit bypass
     const _checkStoplist = opts.checkStoplist || checkStoplist;
-    const matches = _checkStoplist({ description: opts.description || "", cwd });
+    const description = opts.feature || opts.description || "";
+    const context = stoplistContext({
+      cwd,
+      changeId,
+      description,
+      policyFingerprint: opts.stoplistPolicyFingerprint,
+    });
+    const bypass = safetyPolicy.stoplist_bypass;
+    const bypassStatus = stoplistBypassStatus(bypass, context);
+    if (bypass && !bypassStatus.valid) {
+      safetyPolicy = { ...safetyPolicy, stoplist_bypass: null };
+      const updatedPlan = updateRunPlanSafetyPolicy(cwd, changeId, safetyPolicy);
+      state.safety_policy = safetyPolicy;
+      saveRunState(cwd, changeId, state);
+      logEvent(cwd, changeId, {
+        outcome: "stoplist-bypass-invalidated",
+        label,
+        reason: bypassStatus.reason,
+        prior_bypass_fingerprint: bypass.fingerprint || null,
+        plan_fingerprint: updatedPlan.plan_fingerprint,
+      });
+    }
+    const matches = _checkStoplist({ description, cwd, changeId });
     if (matches.length === 0) return false;
+    if (bypassStatus.valid) {
+      logEvent(cwd, changeId, {
+        outcome: "stoplist-bypass-reused",
+        label,
+        bypass_fingerprint: bypass.fingerprint,
+        matches: matches.map((match) => match.name),
+      });
+      return false;
+    }
+    if (opts.force) {
+      const authorized = authorizeStoplistBypass(context, bypass);
+      safetyPolicy = { ...safetyPolicy, stoplist_bypass: authorized };
+      const updatedPlan = updateRunPlanSafetyPolicy(cwd, changeId, safetyPolicy);
+      state.safety_policy = safetyPolicy;
+      saveRunState(cwd, changeId, state);
+      logEvent(cwd, changeId, {
+        outcome: "stoplist-bypass-authorized",
+        label,
+        authority: authorized.authority,
+        bypass_fingerprint: authorized.fingerprint,
+        plan_fingerprint: updatedPlan.plan_fingerprint,
+        matches: matches.map((match) => match.name),
+      });
+      return false;
+    }
     const reason = explainMatches(matches);
     summary.halted = true;
     summary.halt_action = "stoplist";
@@ -1316,6 +1385,7 @@ async function run(opts = {}) {
       assessInline: assessInline || null,
       runId: state.started_at,
       trustProfile,
+      safetyPolicy,
     });
     const persistedRunPlan = persistRunPlan(cwd, changeId, proposedRunPlan, { resume: opts.resume });
     const runPlan = persistedRunPlan.plan;
@@ -1397,6 +1467,8 @@ async function run(opts = {}) {
       track_source: trackSource,
       track_confidence: trackConfidence,
       intent,
+      budget_usd: budgetUsd,
+      budget_tokens: budgetTokens,
     });
 
     // Check-point 1: run start (before the first loop iteration).

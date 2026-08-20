@@ -35,6 +35,34 @@ function fingerprint(value) {
   return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+function stableSafetyPolicy(policy) {
+  const bypass = policy && policy.stoplist_bypass;
+  return {
+    schema: policy && policy.schema || null,
+    budget_usd: (policy && policy.budget_usd) ?? null,
+    budget_tokens: (policy && policy.budget_tokens) ?? null,
+    stoplist_bypass_fingerprint: bypass && bypass.fingerprint || null,
+  };
+}
+
+function combinedPlanFingerprint(executionFingerprint, safetyPolicy) {
+  return fingerprint({
+    execution_fingerprint: executionFingerprint,
+    safety_policy: stableSafetyPolicy(safetyPolicy),
+  });
+}
+
+function writePlanAtomic(target, plan) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.tmp`);
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(plan, null, 2) + "\n", "utf8");
+    fs.renameSync(temporary, target);
+  } finally {
+    try { fs.unlinkSync(temporary); } catch { /* rename succeeded, or cleanup is best-effort */ }
+  }
+}
+
 function stageSelection(name, configSkipStages, rightSizedSkips) {
   if (configSkipStages.has(name)) {
     return {
@@ -87,6 +115,7 @@ function buildRunPlan({
   runId,
   generatedAt = new Date().toISOString(),
   trustProfile = null,
+  safetyPolicy = null,
 }) {
   const configSkipStages = new Set((config.pipeline && config.pipeline.skip_stages) || []);
   const trackLabel = Array.isArray(track) ? "custom" : track;
@@ -177,15 +206,19 @@ function buildRunPlan({
       };
     }),
   };
+  const executionFingerprint = fingerprint(fingerprintedExecution);
 
   return {
     schema: RUN_PLAN_SCHEMA,
     generated_at: generatedAt,
     run_id: runId,
-    plan_fingerprint: fingerprint(fingerprintedExecution),
+    execution_fingerprint: executionFingerprint,
+    plan_fingerprint: combinedPlanFingerprint(executionFingerprint, safetyPolicy),
     ...execution,
+    safety_policy: safetyPolicy,
     planning_semantics: {
       configured_selection: "fingerprinted and resume-bound",
+      safety_policy: "caps are resume-bound; scoped stoplist bypasses are fingerprinted and audited",
       right_sizing: "preflight snapshot; reevaluated when the stage becomes ready",
       conditional_stages: "resolved from upstream gates at runtime",
       candidate_routes: "resolved configuration; runtime discovery may narrow candidates",
@@ -207,26 +240,56 @@ function persistRunPlan(cwd, changeId, plan, { resume = false } = {}) {
   const target = runPlanPath(cwd, changeId);
   if (resume && fs.existsSync(target)) {
     const existing = JSON.parse(fs.readFileSync(target, "utf8"));
-    if (existing.plan_fingerprint !== plan.plan_fingerprint) {
+    const existingExecutionFingerprint = existing.execution_fingerprint || existing.plan_fingerprint;
+    if (existingExecutionFingerprint !== plan.execution_fingerprint) {
       const error = new Error(
-        `run plan changed since the original run (${existing.plan_fingerprint || "unknown"} -> ${plan.plan_fingerprint}). ` +
+        `run plan changed since the original run (${existingExecutionFingerprint || "unknown"} -> ${plan.execution_fingerprint}). ` +
         "Restart without --resume after reviewing pipeline/run-plan.json.",
       );
       error.code = "ERUNPLANDRIFT";
       throw error;
     }
-    return { plan: existing, path: target, reused: true };
+    if (!existing.execution_fingerprint || !existing.safety_policy) {
+      const upgraded = {
+        ...existing,
+        execution_fingerprint: plan.execution_fingerprint,
+        plan_fingerprint: plan.plan_fingerprint,
+        safety_policy: plan.safety_policy,
+        planning_semantics: plan.planning_semantics,
+      };
+      writePlanAtomic(target, upgraded);
+      return { plan: upgraded, path: target, reused: true, migrated: true };
+    }
+    if (existing.plan_fingerprint !== plan.plan_fingerprint) {
+      const error = new Error(
+        `run safety policy changed since the original run (${existing.plan_fingerprint || "unknown"} -> ${plan.plan_fingerprint}). ` +
+        "A resume cannot change caps or an existing scoped bypass implicitly.",
+      );
+      error.code = "ERUNPOLICYDRIFT";
+      throw error;
+    }
+    return { plan: existing, path: target, reused: true, migrated: false };
   }
 
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.tmp`);
-  try {
-    fs.writeFileSync(temporary, JSON.stringify(plan, null, 2) + "\n", "utf8");
-    fs.renameSync(temporary, target);
-  } finally {
-    try { fs.unlinkSync(temporary); } catch { /* rename succeeded, or cleanup is best-effort */ }
-  }
+  writePlanAtomic(target, plan);
   return { plan, path: target, reused: false };
+}
+
+function updateRunPlanSafetyPolicy(cwd, changeId, safetyPolicy) {
+  const target = runPlanPath(cwd, changeId);
+  const existing = JSON.parse(fs.readFileSync(target, "utf8"));
+  if (!existing.execution_fingerprint) {
+    const error = new Error("cannot update safety policy on a legacy run plan before it is migrated");
+    error.code = "ERUNPOLICYDRIFT";
+    throw error;
+  }
+  const updated = {
+    ...existing,
+    safety_policy: safetyPolicy,
+    plan_fingerprint: combinedPlanFingerprint(existing.execution_fingerprint, safetyPolicy),
+  };
+  writePlanAtomic(target, updated);
+  return updated;
 }
 
 module.exports = {
@@ -235,4 +298,5 @@ module.exports = {
   persistRunPlan,
   runPlanPath,
   portableRelative,
+  updateRunPlanSafetyPolicy,
 };

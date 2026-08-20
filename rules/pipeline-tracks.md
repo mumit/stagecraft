@@ -86,7 +86,9 @@ used to bypass this list. If the orchestrator is uncertain whether a
 change crosses the stoplist, it must default to `full`. As of
 B-13 (audit 2026-05-07), `devteam` enforces the stoplist
 programmatically by refusing the lighter tracks on description or diff
-matches; `--force` overrides for false positives.
+matches. `--force` authorizes a false-positive bypass scoped to the hashed
+feature, active brief, and stoplist policy. The same logical run may reuse that
+ruling; any bound-input change invalidates it before dispatch.
 
 The rules in `pipeline-build.md` and the per-stage `stage-NN.md` files
 describe the **full** track. When a gate in a lighter track differs from
