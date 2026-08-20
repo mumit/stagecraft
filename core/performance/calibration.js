@@ -135,6 +135,8 @@ function analyzeProjects(projects, opts = {}) {
   const totalCost = costs.reduce((sum, value) => sum + value, 0);
   const cacheEligible = allRecords.filter((r) => Number.isFinite(r.cached_tokens));
   const cacheHits = cacheEligible.filter((r) => r.cached_tokens > 0);
+  const cacheCreation = allRecords.filter((r) => Number.isFinite(r.cache_creation_tokens));
+  const cacheCreationTotal = cacheCreation.reduce((sum, r) => sum + r.cache_creation_tokens, 0);
   const knowledgeEligible = allRecords.filter((r) => Number.isFinite(r.knowledge_items) || Number.isFinite(r.prior_knowledge_items));
   const withKnowledge = knowledgeEligible.filter((r) => (r.knowledge_items || 0) + (r.prior_knowledge_items || 0) > 0);
   const withoutKnowledge = knowledgeEligible.filter((r) => (r.knowledge_items || 0) + (r.prior_knowledge_items || 0) === 0);
@@ -217,6 +219,14 @@ function analyzeProjects(projects, opts = {}) {
       hits: cacheHits.length,
       hit_rate: cacheEligible.length > 0 ? cacheHits.length / cacheEligible.length : null,
       cached_tokens: cacheHits.reduce((sum, r) => sum + r.cached_tokens, 0),
+      // A prefix that is written to cache every dispatch and read back rarely
+      // is not paying for itself — cache writes cost more than plain input.
+      // Reads-per-write is the ratio that says whether phase-32.1's byte-stable
+      // prefix is actually being reused or just re-created.
+      cache_creation_tokens: cacheCreation.reduce((sum, r) => sum + r.cache_creation_tokens, 0),
+      read_per_write: cacheCreationTotal > 0
+        ? cacheHits.reduce((sum, r) => sum + r.cached_tokens, 0) / cacheCreationTotal
+        : null,
     },
     knowledge_selection: {
       samples: knowledgeEligible.length,

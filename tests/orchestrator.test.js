@@ -1102,6 +1102,29 @@ describe("orchestrator: patchGateForObservedUsage (phase 28.1)", () => {
     assert.ok(typeof gate._orchestrator_observed.at === "string" && gate._orchestrator_observed.at.length > 0);
   });
 
+  it("records cache read and creation counters on the gate", () => {
+    // core/performance/calibration.js already computes a cache hit rate from
+    // these; claude-code was the one host contributing no samples to it.
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(gateFile, {
+      tokensIn: 100, tokensOut: 20, cachedTokens: 18000, cacheCreationTokens: 21000,
+      costUsd: 0.02, model: "claude-opus-5",
+    });
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    assert.equal(observed.cached_tokens, 18000);
+    assert.equal(observed.cache_creation_tokens, 21000);
+  });
+
+  it("omits cache fields entirely when the host reports none", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(gateFile, { tokensIn: 100, tokensOut: 20, costUsd: 0.02, model: "claude-opus-5" });
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    assert.equal("cached_tokens" in observed, false);
+    assert.equal("cache_creation_tokens" in observed, false);
+  });
+
   it("derives a cost from observed tokens when the host reports none", () => {
     // codex's exec --json stream carries tokens but neither a cost nor a model
     // (core/adapters/codex-exec-json.js). Without a derived figure --budget-usd
