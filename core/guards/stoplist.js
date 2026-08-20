@@ -11,8 +11,10 @@
 // false positive can pass --force.
 
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const { pipelineRoot } = require("../paths");
 
 const STOPLIST_PATTERNS = [
   {
@@ -66,14 +68,10 @@ function pipelineChangedFiles(cwd) {
   return fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean);
 }
 
-// Read pipeline/brief.md if present, so the pre-build check in the autonomous
-// driver catches sensitive topics added by the requirements agent (Phase 1 § 1.1).
-// B9 exemption: the stoplist check in the driver always uses cwd (the project root)
-// and reads the in-place brief.md. In bounded mode the brief would be at
-// pipeline/changes/<id>/brief.md; this is a known limitation — the driver's
-// runStoplistCheck can be extended to pass changeId when this matters in practice.
-function pipelineBrief(cwd) {
-  const filePath = path.join(cwd, "pipeline", "brief.md");
+// Read the active run's brief so the pre-build check catches sensitive topics
+// added by requirements in both in-place and feature-bounded runs.
+function pipelineBrief(cwd, changeId = null) {
+  const filePath = path.join(pipelineRoot(cwd, changeId), "brief.md");
   if (!fs.existsSync(filePath)) return "";
   try { return fs.readFileSync(filePath, "utf8"); } catch { return ""; }
 }
@@ -81,10 +79,10 @@ function pipelineBrief(cwd) {
 // Collect every string we want to scan for stoplist patterns: the user's
 // change description, pipeline/brief.md (written by requirements), any paths
 // git or the pipeline knows about.
-function gatherCandidates({ description, cwd }) {
+function gatherCandidates({ description, cwd, changeId = null }) {
   const list = [];
   if (description) list.push(description);
-  const brief = pipelineBrief(cwd);
+  const brief = pipelineBrief(cwd, changeId);
   if (brief) list.push(brief);
   list.push(...gitChangedFiles(cwd));
   list.push(...pipelineChangedFiles(cwd));
@@ -148,10 +146,11 @@ function findStoplistMatches(strings, patterns = STOPLIST_PATTERNS) {
 
 // Convenience entry point used by devteam. Returns an array of
 // matches; an empty array means the lighter track is permissible.
-function checkStoplist({ description, cwd } = {}) {
+function checkStoplist({ description, cwd, changeId = null } = {}) {
   const candidates = gatherCandidates({
     description,
     cwd: cwd || process.cwd(),
+    changeId,
   });
   return findStoplistMatches(candidates);
 }
@@ -186,6 +185,15 @@ function explainMatches(matches) {
 // core/driver.js (autonomous path) so both enforce the same set. (Phase 1 § 1.1)
 const STOPLIST_TRACKS = new Set(["quick", "nano", "config-only", "dep-update", "loop"]);
 
+function stoplistPolicyFingerprint() {
+  const policy = {
+    patterns: STOPLIST_PATTERNS.map(({ name, re }) => ({ name, source: re.source, flags: re.flags })),
+    tracks: [...STOPLIST_TRACKS].sort(),
+    negation: { source: NEGATION_RE.source, flags: NEGATION_RE.flags },
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(policy)).digest("hex");
+}
+
 if (require.main === module) {
   const description = process.argv.slice(2).filter((a) => a !== "--force").join(" ");
   const matches = checkStoplist({ description, cwd: process.cwd() });
@@ -204,4 +212,5 @@ module.exports = {
   findStoplistMatches,
   checkStoplist,
   explainMatches,
+  stoplistPolicyFingerprint,
 };

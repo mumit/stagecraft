@@ -61,7 +61,11 @@ The versioned `stagecraft.run-plan/v1` artifact contains:
 - candidate workstream roles plus resolved host/model routes;
 - track-sized base and right-sized expected workstream counts;
 - advisory ceremony preview; and
-- a SHA-256 execution fingerprint.
+- separate SHA-256 execution and safety-bound plan fingerprints.
+
+The safety policy records the effective dollar/token caps and only a hashed,
+audited stoplist-bypass record—never the feature or brief contents. The overall
+plan fingerprint binds that policy to the execution fingerprint.
 
 The file is written atomically before the first model dispatch. It is an
 inspectable execution contract, not gate evidence: a plan says what Stagecraft
@@ -72,7 +76,7 @@ are explicitly marked as preflight snapshots and reevaluated when their stage
 becomes ready, because earlier build stages can legitimately change their
 evidence. Configured stage selection is stable and resume-bound.
 
-### 3. Resume is plan-bound
+### 3. Resume is execution- and safety-bound
 
 A fresh run may replace an older plan in the same pipeline root. `--resume`
 instead reads the original artifact and proceeds only when the newly computed
@@ -85,6 +89,20 @@ Generated timestamps, run ids, and the advisory ceremony estimate do not affect
 the fingerprint. Empirical cost data may improve between invocations without
 changing what executes.
 
+Omitted cap flags inherit the original values. Explicit cap or track values
+that conflict with the original run fail before dispatch with both values;
+resuming cannot raise, lower, add, or remove a cap. A pre-safety run state is
+migrated from the explicit cap flags supplied on its first post-upgrade resume,
+with a warning when that leaves it uncapped.
+
+`--force` authorizes a stoplist bypass only for a SHA-256 binding of the current
+feature input (when supplied), active brief, and stoplist policy. The ruling is
+stored in `run-state.json`, bound into `run-plan.json`, and recorded in
+`run-log.jsonl`. An unchanged resume or direct remediation stage reuses it;
+changing any bound input invalidates it before dispatch. Direct stage commands
+also resolve their track from the active run plan before falling back to project
+configuration.
+
 ## Consequences
 
 - Generic feature work now reaches the documented four-dispatch `loop` path;
@@ -96,6 +114,8 @@ changing what executes.
   reconstructing configuration or parsing terminal prose.
 - Resume becomes safer but stricter: editing routing or stage configuration
   mid-run requires a fresh run rather than silently changing execution.
+- Resume no longer loses caps or asks for the same unchanged stoplist ruling;
+  intentional policy changes require a fresh run or a newly scoped `--force`.
 - The plan can disclose configured provider/model identifiers. It contains no
   prompts, credentials, free-form gate content, or model output, but projects
   should apply their normal repository confidentiality policy before committing

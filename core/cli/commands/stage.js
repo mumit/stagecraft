@@ -6,8 +6,19 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { applyFeatureFile } = require(path.join(__dirname, "..", "feature-file"));
 const { getOrchestrator } = require(path.join(__dirname, "..", "get-orchestrator"));
 const { getStage } = require(path.join(__dirname, "..", "..", "pipeline", "stages"));
+const { resolveActiveTrack } = require(path.join(__dirname, "..", "..", "pipeline", "active-track"));
 const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
+const { resolveChangeId } = require(path.join(__dirname, "..", "resolve-change-id"));
 const { checkStoplist, explainMatches, STOPLIST_TRACKS } = require(path.join(__dirname, "..", "..", "guards", "stoplist"));
+const {
+  stoplistContext,
+  stoplistBypassStatus,
+  authorizeStoplistBypass,
+  readRunSafety,
+  persistRunSafety,
+} = require(path.join(__dirname, "..", "..", "run-safety"));
+const { updateRunPlanSafetyPolicy } = require(path.join(__dirname, "..", "..", "run-plan"));
+const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
 
 // STOPLIST_TRACKS is the single source of truth (core/guards/stoplist.js).
 // Imported here so the interactive path (cmdStage) and the autonomous driver
@@ -52,7 +63,7 @@ function printStagePreamble(result, _flags) {
   if (_flags.headless || _flags.json) return;
   const stage = result.stage;
   const name2 = result.name;
-  const wsCount = result.roles.length;
+  const wsCount = result.workstreams.length;
   const wsWord = wsCount === 1 ? "workstream" : "workstreams";
   const featurePart = featureArg(_flags);
   const lines = [
@@ -104,6 +115,8 @@ function run(positional, _flags) {
   }
   // Resolve track and run stoplist if applicable
   const cwd = _flags.cwd || process.cwd();
+  const config = loadConfig(cwd);
+  const changeId = resolveChangeId(_flags, config);
   // If the target directory isn't initialized, the prompt we're about to
   // print will reference files (`.claude/agents/<role>.md`, `.devteam/
   // rules/*.md`, `.devteam/templates/*-template.md`) that don't exist. Warn loudly
@@ -120,15 +133,83 @@ function run(positional, _flags) {
   const CONVENTION_STAGES = new Set(["requirements", "design", "build"]);
   if (CONVENTION_STAGES.has(stageName)) {
     const { seedDeployContext } = require(path.join(__dirname, "..", "..", "driver"));
-    seedDeployContext(cwd, loadConfig(cwd), null);
+    seedDeployContext(cwd, config, changeId);
   }
-  const track = _flags.track || loadConfig(cwd).pipeline.default_track;
-  if (STOPLIST_GUARDED_TRACKS.has(track) && !_flags.force) {
-    const matches = checkStoplist({ description: _flags.feature || "", cwd });
+  const activeTrack = resolveActiveTrack(cwd, config, _flags.track, changeId);
+  const track = activeTrack.track;
+  if (STOPLIST_GUARDED_TRACKS.has(track)) {
+    const matches = checkStoplist({ description: _flags.feature || "", cwd, changeId });
+    const runSafety = readRunSafety(cwd, changeId);
+    const context = stoplistContext({ cwd, changeId, description: _flags.feature || "" });
+    const bypassStatus = stoplistBypassStatus(
+      runSafety.policy && runSafety.policy.stoplist_bypass,
+      context,
+    );
+    let policy = runSafety.policy;
+    const persistPolicy = (nextPolicy) => {
+      const plan = path.join(pipelineRoot(cwd, changeId), "run-plan.json");
+      const updatedPlan = fs.existsSync(plan)
+        ? updateRunPlanSafetyPolicy(cwd, changeId, nextPolicy)
+        : null;
+      if (runSafety.state) persistRunSafety(cwd, changeId, runSafety.state, nextPolicy);
+      policy = nextPolicy;
+      return updatedPlan;
+    };
+    if (policy && policy.stoplist_bypass && !bypassStatus.valid) {
+      const priorBypass = policy.stoplist_bypass;
+      const updatedPlan = persistPolicy({ ...policy, stoplist_bypass: null });
+      try {
+        fs.appendFileSync(
+          path.join(pipelineRoot(cwd, changeId), "run-log.jsonl"),
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            outcome: "stoplist-bypass-invalidated",
+            label: `direct-stage:${stageName}`,
+            reason: bypassStatus.reason,
+            prior_bypass_fingerprint: priorBypass.fingerprint || null,
+            plan_fingerprint: (updatedPlan && updatedPlan.plan_fingerprint) || null,
+          }) + "\n",
+        );
+      } catch { /* run-state and run-plan already reflect the invalidation */ }
+    }
     if (matches.length > 0) {
-      console.error(explainMatches(matches));
-      console.error(`(Active track: ${track}. Stoplist guarded.)`);
-      process.exit(2);
+      if (bypassStatus.valid) {
+        try {
+          fs.appendFileSync(
+            path.join(pipelineRoot(cwd, changeId), "run-log.jsonl"),
+            JSON.stringify({
+              ts: new Date().toISOString(),
+              outcome: "stoplist-bypass-reused",
+              label: `direct-stage:${stageName}`,
+              bypass_fingerprint: policy.stoplist_bypass.fingerprint,
+              matches: matches.map((match) => match.name),
+            }) + "\n",
+          );
+        } catch { /* audit append is best-effort; authorization is already durable */ }
+      } else if (_flags.force) {
+        if (policy) {
+          const authorized = authorizeStoplistBypass(context, policy.stoplist_bypass);
+          const updatedPlan = persistPolicy({ ...policy, stoplist_bypass: authorized });
+          try {
+            fs.appendFileSync(
+              path.join(pipelineRoot(cwd, changeId), "run-log.jsonl"),
+              JSON.stringify({
+                ts: new Date().toISOString(),
+                outcome: "stoplist-bypass-authorized",
+                label: `direct-stage:${stageName}`,
+                authority: authorized.authority,
+                bypass_fingerprint: authorized.fingerprint,
+                plan_fingerprint: (updatedPlan && updatedPlan.plan_fingerprint) || null,
+                matches: matches.map((match) => match.name),
+              }) + "\n",
+            );
+          } catch { /* run-state and run-plan remain the authority record */ }
+        }
+      } else {
+        console.error(explainMatches(matches));
+        console.error(`(Active track: ${track}. Stoplist guarded; source: ${activeTrack.source}.)`);
+        process.exit(2);
+      }
     }
   }
   // Auto-run preflight (stage-04e) when dispatching peer-review.
@@ -213,7 +294,7 @@ function run(positional, _flags) {
       console.error("devteam stage: --experimental-omnigent-director cannot be combined with --skip-completed.");
       process.exit(2);
     }
-    runStageHeadless(stageName, _flags)
+    runStageHeadless(stageName, { ..._flags, track })
       .then((result) => {
         let anyFail = false;
         for (const r of result.results) {
@@ -262,13 +343,12 @@ function run(positional, _flags) {
   }
   // --workstream filtering is handled in the orchestrator (runStage) before
   // rendering — result already contains only the requested workstreams.
-  const result = runStage(stageName, _flags);
+  const result = runStage(stageName, { ..._flags, track });
   printStagePreamble(result, _flags);
   // 30.2(a): printing the prompt here IS the dispatch for the interactive
   // path — the operator is about to paste it into a real host — unlike
   // `devteam replay --dry-run` / `devteam reproduce`, which only call
   // runStage() to preview a prompt and never reach this print loop.
-  const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
   const { recordInjection } = require(path.join(__dirname, "..", "..", "patterns"));
   const root = pipelineRoot(result.ctx.cwd, result.ctx.changeId);
   for (const ws of result.workstreams) {
@@ -282,7 +362,8 @@ function run(positional, _flags) {
       patterns: ws.descriptor.knownPatterns,
     });
   }
-  console.log(`\n────────  end of ${result.stage} (${result.roles.length} workstream${result.roles.length === 1 ? "" : "s"})  ────────`);
+  const workstreamCount = result.workstreams.length;
+  console.log(`\n────────  end of ${result.stage} (${workstreamCount} workstream${workstreamCount === 1 ? "" : "s"})  ────────`);
   printStagePostamble(result, _flags);
 }
 
