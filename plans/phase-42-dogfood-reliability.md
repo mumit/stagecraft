@@ -1,6 +1,6 @@
 # Phase 42 — Dogfood Reliability and Recovery Fit
 
-**Status:** in progress from two-project dogfood evidence (2026-08-19); 42.1
+**Status:** in progress from two-project dogfood evidence (2026-08-19); 42.1–42.2
 implemented and unreleased.
 
 **Goal:** remove the control-plane friction observed while completing a real
@@ -34,6 +34,12 @@ inherit the active run track unless the operator explicitly overrides it.
 - tests cover crash/resume, direct-stage remediation, and old-state migration.
 
 ## 42.2 Retry routing proves role/path compatibility (P0)
+
+**Status:** ✅ implemented (unreleased). Structured retry paths and requested
+artifacts are checked against the actual candidate build roles' existing
+`roleWrites` before gate clearing. A compatible owner is selected by declared
+file ownership then stable stage order; no compatible owner halts before host
+invocation with privacy-bounded ownership evidence.
 
 Before an automatic fix dispatch, compare the failing paths and requested
 artifact with the candidate workstream's allowed writes. Never dispatch a role
