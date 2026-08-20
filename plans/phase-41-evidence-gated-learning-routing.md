@@ -1,8 +1,10 @@
 # Phase 41 — Evidence-Gated Learning & Routing
 
-Status: **blocked on real-project evidence** (2026-08-09). Planning is approved; activation
-and implementation are not. Phases 38–40 are complete; Phase 39 makes the collection and
-decision measurable.
+Status: **blocked on real-project evidence** (reviewed 2026-08-19). Planning is
+approved; activation and implementation are not. Phases 38–40 are complete;
+Phase 39 makes the collection and decision measurable. The first two-project
+review is a dated **no-go**: see
+[`phase-41-evidence-review-2026-08.md`](phase-41-evidence-review-2026-08.md).
 
 ## Why
 
@@ -37,6 +39,11 @@ Synthetic fixtures, repository tests, and repeated runs of one toy project do no
 Publish the exact corpus query, denominators, exclusions, uncertainty, and counterexamples.
 Update the relevant ADR before changing runtime behavior. If either gate fails, close the
 review with a dated no-go decision and continue collecting data.
+
+**2026-08-19:** completed with a no-go decision. Two real projects and durable
+history are now present, but comparable hosts, cost coverage, accepted recurring
+resolutions, repair/ceiling evidence, and stall calibration are not. No runtime
+learning work below is authorized.
 
 ### 41.2 Shadow recommendations
 

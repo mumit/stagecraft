@@ -4,9 +4,11 @@ Phase plans produced from the 2026-06-10 full-framework review and subsequent au
 PR-sized work items with file/line anchors, acceptance criteria, and verification commands,
 written to be executed one item at a time.
 
-**Current state (2026-08-09):** phases 1–20, 22, 24, 27–31, and 33–40 are complete.
-Phase 32 is mostly complete with one open item (32.4, deferred). Phase 41 is designed but
-remains blocked on real-project evidence. Phases 21 and 25 are proposed or parked; Phase
+**Current state (2026-08-19):** phases 1–20, 22, 24, 27–31, and 33–40 are complete.
+Phase 32 is mostly complete with one open item (32.4, deferred). Phase 41.1
+completed a two-project no-go review; activation remains evidence-gated. Phase
+42 is proposed from the independently observed dogfood reliability findings.
+Phases 21 and 25 are proposed or parked; Phase
 26's still-useful measurement work shipped through Phase 39. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
 Real-project evidence collection remains the priority that unblocks the capability gates
@@ -54,7 +56,8 @@ listed under [Evidence reviews](#evidence-reviews).
 | 38 | [phase-38-execution-trust-profiles.md](phase-38-execution-trust-profiles.md) | — | Explicit trust profiles and disposable, fail-closed contained workstreams | ✅ complete (PR #413) |
 | 39 | [phase-39-evidence-performance-calibration.md](phase-39-evidence-performance-calibration.md) | — | Cross-run latency/cost calibration, usefulness signals, right-sizing feedback, bottleneck timeline | ✅ complete (PR #414) |
 | 40 | [phase-40-conversational-artifact-refinement.md](phase-40-conversational-artifact-refinement.md) | — | Proposal-first requirements/design conversation with exact diff, explicit apply, and deterministic invalidation | ✅ complete (PR #415) |
-| 41 | [phase-41-evidence-gated-learning-routing.md](phase-41-evidence-gated-learning-routing.md) | — | Shadow routing and controlled recipe candidates after explicit multi-project thresholds | ⛔ evidence-gated; do not implement yet |
+| 41 | [phase-41-evidence-gated-learning-routing.md](phase-41-evidence-gated-learning-routing.md) | — | Shadow routing and controlled recipe candidates after explicit multi-project thresholds | ⛔ 41.1 no-go review complete; activation stays gated |
+| 42 | [phase-42-dogfood-reliability.md](phase-42-dogfood-reliability.md) | — | Resume safety, compatible retry routing, docs ownership, layout-aware QA, and evidence semantics from real dogfood | 📝 proposed; 42.1–42.3 first |
 
 **Execution format:** older phases with prompt packs retain their paste-ready prompts for
 historical use. Phases 38–41 use the plan itself as the contract and deliberately avoid
@@ -66,7 +69,7 @@ the plan records an unavoidable stack dependency.
 ## What is not delivered yet
 
 Everything below is either written-but-unbuilt or deliberately parked. Status was
-reconciled against upstream on 2026-08-09.
+reconciled against upstream on 2026-08-19.
 
 | Work | Where | Why it is open |
 |---|---|---|
@@ -75,6 +78,7 @@ reconciled against upstream on 2026-08-09.
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Superseded as an execution plan. Phases 28, 32, 37, and 39 shipped its useful measurement and live-timeline scope. |
 | **Phase 41 — learning/routing activation** | [phase-41](phase-41-evidence-gated-learning-routing.md) | Blocked until the plan's per-route and cross-project evidence thresholds are met. Test fixtures do not count. |
+| **Phase 42 — dogfood reliability** | [phase-42](phase-42-dogfood-reliability.md) | Proposed from the 2026-08-19 two-project review; does not depend on opening Phase 41. |
 
 Capability gates that stay shut for lack of real-project data — not for lack of code —
 are listed under [Evidence reviews](#evidence-reviews). Phase 28 removed the telemetry
@@ -93,6 +97,7 @@ They document why certain capability gates remain shut and what would open them.
 | [phase-4-ground-truth.md](phase-4-ground-truth.md) | 4.0 — convergence vs. spec | — | Implementation matched spec; no gaps at Phase 4 entry |
 | [h3-ground-truth.md](h3-ground-truth.md) | 9.2a — H3 recipe factory corpus | #129 | Gate stays shut: zero run-logs, zero gate archives; re-escalate after ≥2 real projects with ≥5 autonomous runs each |
 | [adaptive-routing-evidence.md](adaptive-routing-evidence.md) | 9.4 — D5 adaptive routing | #133 | Gate stays shut: max 4 dispatches per role (sms-opt-in fixture only); re-escalate after ≥5 dispatches per (role, host) pair across ≥2 real user projects with cost telemetry |
+| [phase-41-evidence-review-2026-08.md](phase-41-evidence-review-2026-08.md) | 41.1 — first two-project review | — | No-go: project/history minimums met; host/cost comparison, accepted recurring resolutions, standing-grant evidence, and stall calibration absent |
 | [acp-read-scope.md](acp-read-scope.md) | 36.0 — ACP read-scope spike | — | Real agent confirms unsandboxed absolute-path reads outside session cwd; recommendation: absolute paths (no permission-layer change needed) for 36.2 |
 
 ## Strategic analyses
