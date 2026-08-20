@@ -36,7 +36,8 @@ function seedProject(projectIndex) {
       ts: ts(1), run_id: `p${projectIndex}-run${index}`, stage: "stage-04",
       role: "backend", host: "codex", track: "loop", duration_ms: 1000 + index * 100,
       queue_ms: index, gate_status: "PASS", cost_usd: 0.1, cost_basis: "observed",
-      cached_tokens: index === 0 ? 0 : 500, knowledge_items: 2, prior_knowledge_items: 1,
+      cached_tokens: index === 0 ? 0 : 500, cache_creation_tokens: index === 0 ? 2000 : 0,
+      knowledge_items: 2, prior_knowledge_items: 1,
     });
   }
   fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
@@ -64,6 +65,11 @@ describe("performance calibration", () => {
     assert.equal(report.cost.successful_run_samples, 10);
     assert.ok(Math.abs(report.cost.per_successful_run_usd - 0.1) < 1e-12);
     assert.equal(report.cache.hits, 8);
+    // 2 projects x 1 cold dispatch each writes 2,000 cache tokens; the other 8
+    // read 500 back. read_per_write below 1 means the prefix is being
+    // re-created more than it is reused — the signal phase-32.1 needs.
+    assert.equal(report.cache.cache_creation_tokens, 4000);
+    assert.equal(report.cache.read_per_write, 1);
     assert.equal(report.knowledge_selection.samples, 10);
     assert.equal(report.phase41.routing_ready, true);
     assert.equal(report.phase41.h3_candidate_ready, true);

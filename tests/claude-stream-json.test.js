@@ -36,7 +36,47 @@ describe("createStreamJsonExtractor — JSON mode", () => {
     }));
     const { usage, telemetry } = ex.result();
     assert.equal(telemetry, "observed");
+    // Cache counters are omitted, not zero-filled, when the CLI does not report
+    // them — an older claude must stay distinguishable from a real cache miss.
     assert.deepEqual(usage, { tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5" });
+  });
+
+  it("captures cache read and creation counters when the result message carries them", () => {
+    // Field names verified against claude-code 2.1.207's own result message:
+    //   usage: { input_tokens, cache_creation_input_tokens,
+    //            cache_read_input_tokens, output_tokens, ... }
+    const ex = createStreamJsonExtractor();
+    ex.push(line({
+      type: "result",
+      subtype: "success",
+      total_cost_usd: 0.02,
+      result: "ok",
+      usage: {
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_creation_input_tokens: 21000,
+        cache_read_input_tokens: 18000,
+      },
+      modelUsage: { "claude-opus-5": {} },
+    }));
+    const { usage } = ex.result();
+    assert.equal(usage.cachedTokens, 18000);
+    assert.equal(usage.cacheCreationTokens, 21000);
+  });
+
+  it("distinguishes a reported zero-read from an unreported counter", () => {
+    // A genuine cache miss reports 0 and must be recorded as 0; a CLI that
+    // never reports the field must leave it absent. Conflating them would make
+    // the hit rate in core/performance/calibration.js meaningless.
+    const ex = createStreamJsonExtractor();
+    ex.push(line({
+      type: "result", subtype: "success", total_cost_usd: 0.02, result: "ok",
+      usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 0 },
+      modelUsage: { "claude-opus-5": {} },
+    }));
+    const { usage } = ex.result();
+    assert.equal(usage.cachedTokens, 0);
+    assert.equal("cacheCreationTokens" in usage, false);
   });
 
   it("appends the final result's text to the transcript", () => {

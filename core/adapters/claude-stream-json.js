@@ -47,9 +47,24 @@ function createStreamJsonExtractor() {
     }
     if (obj.type === "result") {
       if (typeof obj.total_cost_usd === "number" && obj.usage) {
+        // cache_read_input_tokens / cache_creation_input_tokens are what make
+        // phase-32.1's byte-stable prompt prefix measurable rather than
+        // assumed: core/performance/calibration.js already computes a
+        // cache hit rate from _orchestrator_observed.cached_tokens, and
+        // claude-code — the host that carries the largest inlined prefix —
+        // was the one host contributing no samples to it. Field names verified
+        // against claude-code 2.1.207's own result message. Both are omitted
+        // rather than zero-filled when absent, so an older CLI that does not
+        // report them stays distinguishable from a real cache miss.
+        const cacheRead = typeof obj.usage.cache_read_input_tokens === "number"
+          ? obj.usage.cache_read_input_tokens : null;
+        const cacheCreation = typeof obj.usage.cache_creation_input_tokens === "number"
+          ? obj.usage.cache_creation_input_tokens : null;
         usage = {
           tokensIn: typeof obj.usage.input_tokens === "number" ? obj.usage.input_tokens : null,
           tokensOut: typeof obj.usage.output_tokens === "number" ? obj.usage.output_tokens : null,
+          ...(cacheRead !== null ? { cachedTokens: cacheRead } : {}),
+          ...(cacheCreation !== null ? { cacheCreationTokens: cacheCreation } : {}),
           costUsd: obj.total_cost_usd,
           model: modelFromResultMessage(obj),
         };

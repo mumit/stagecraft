@@ -176,6 +176,10 @@ function patchGateForObservedUsage(gatePath, usage, routedModel = null) {
     tokens_in: usage.tokensIn,
     tokens_out: usage.tokensOut,
     ...(typeof usage.cachedTokens === "number" ? { cached_tokens: usage.cachedTokens } : {}),
+    // Cache *writes* are billed at a premium; separating them from reads is
+    // what distinguishes "the prefix is being cached" from "the prefix is
+    // being re-cached every dispatch because something upstream of it moved".
+    ...(typeof usage.cacheCreationTokens === "number" ? { cache_creation_tokens: usage.cacheCreationTokens } : {}),
     cost_usd: usage.costUsd,
     model_observed: usage.model,
     source: usage.source || "claude-code:stream-json",
