@@ -9,7 +9,6 @@
   "headless": true,
   "httpNative": true,
   "telemetry": "native",
-  "goalLoop": false,
   "skillFormat": "markdown",
   "rolePromptsDir": ".openai-compat/prompts/roles",
   "skillsDir": ".openai-compat/skills",

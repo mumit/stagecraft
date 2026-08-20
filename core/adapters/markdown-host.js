@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const { listRoles, ROLES_DIR } = require("../roles");
 const baseInstall = require("./base-install");
-const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection } = require("./render-helpers");
+const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderGoalCondition, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection } = require("./render-helpers");
 
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -171,6 +171,7 @@ function makeMarkdownHostAdapter(capabilities) {
     lines.push(`## Objective`);
     lines.push(descriptor.objective);
     lines.push("");
+    renderGoalCondition(lines, descriptor);
     lines.push(`## Read first`);
     const { rest } = splitReadFirst(descriptor.readFirst);
     for (const f of rest) lines.push(`- ${f}`);

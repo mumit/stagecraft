@@ -681,13 +681,15 @@ A deterministic code loop around `devteam next` that advances the pipeline unatt
 
 See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the launch guide, halt reasons, and honest limitations.
 
-### `/goal` injection — convergent headless stages loop until their objective is met
+### Convergence conditions — `build` and `qa` state when they are done
 
-For `build` (stage-04) and `qa` (stage-06) stages, hosts that declare `capabilities.goalLoop: true` (claude-code and codex) automatically receive `/goal "<condition>"` prepended to the headless prompt. The condition is a workstream-specific exit criterion from `stages.js`; the host loops internally until its stated objective is met rather than running a fixed number of turns.
+`build` (stage-04) and `qa` (stage-06) declare a `goalCondition`: the exit criterion that says "keep going until this holds" rather than "take one pass". It is rendered into the prompt as a `## Done when` section with the workstream's own gate path resolved into it.
 
-- Automatically active when: stage has a `goalCondition`, host declares `goalLoop: true`, and workstream runs headless
-- Antigravity, Gemini CLI, Omnigent, openai-compat, and the generic adapter do not declare `goalLoop: true` — unaffected; receive the prompt unchanged
-- Interactive (non-headless) runs are also unaffected
+- Every host receives it — it is prompt text, not a host directive, so it survives at any prompt size
+- Advisory: it asks the model to converge. Re-dispatching a stage whose gate does not pass is the driver's fix-and-retry loop
+- Non-convergence stages carry no condition and no section
+
+Before [ADR-023](adr/023-goal-condition-in-prompt-body.md) this rode on claude-code's `/goal "<condition>"` slash command, whose 4,000-character handler limit forced the orchestrator to discard the inlined framework from every `build` and `qa` dispatch to make room — and the directive still only survived when few files were dirty.
 
 ### Multi-model peer review — diversity as a correctness strategy
 

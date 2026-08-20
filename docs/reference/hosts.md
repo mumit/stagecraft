@@ -8,15 +8,15 @@ Run `npm run docs:generate` to regenerate after editing capabilities files.
 
 ### Capabilities
 
-| Host          | Display name                           | headless | hooks | subagents | slashCommands | worktrees | goalLoop | telemetry |
-| ------------- | -------------------------------------- | -------- | ----- | --------- | ------------- | --------- | -------- | --------- |
-| acp           | Agent Client Protocol                  | yes      | no    | no        | no            | no        | no       | estimated |
-| antigravity   | Antigravity CLI                        | yes      | no    | no        | no            | yes       | no       | estimated |
-| claude-code   | Claude Code                            | yes      | yes   | yes       | yes           | yes       | yes      | native    |
-| codex         | Codex CLI                              | yes      | no    | no        | no            | yes       | yes      | native    |
-| generic       | Generic CLI (no host integration)      | no       | no    | no        | no            | no        | no       | estimated |
-| omnigent      | Omnigent                               | yes      | no    | no        | no            | no        | no       | estimated |
-| openai-compat | OpenAI-compatible Chat Completions API | yes      | no    | no        | no            | no        | no       | native    |
+| Host          | Display name                           | headless | hooks | subagents | slashCommands | worktrees | telemetry |
+| ------------- | -------------------------------------- | -------- | ----- | --------- | ------------- | --------- | --------- |
+| acp           | Agent Client Protocol                  | yes      | no    | no        | no            | no        | estimated |
+| antigravity   | Antigravity CLI                        | yes      | no    | no        | no            | yes       | estimated |
+| claude-code   | Claude Code                            | yes      | yes   | yes       | yes           | yes       | native    |
+| codex         | Codex CLI                              | yes      | no    | no        | no            | yes       | native    |
+| generic       | Generic CLI (no host integration)      | no       | no    | no        | no            | no        | estimated |
+| omnigent      | Omnigent                               | yes      | no    | no        | no            | no        | estimated |
+| openai-compat | OpenAI-compatible Chat Completions API | yes      | no    | no        | no            | no        | native    |
 
 `telemetry`: `native` — token usage is parsed from the host CLI/API's own output (see docs/cost.md). `estimated` — no native capture; the orchestrator records a promptBytes/4 estimate flagged with `tokens_estimated: true`.
 

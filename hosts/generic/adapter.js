@@ -35,7 +35,7 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? fs.readFileSync(roleBriefPath, "utf8")
     : `(role brief missing at ${roleBriefPath})`;
 
-  const { renderPatchBlock, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderProjectKnowledgePack, renderScopeLine, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderGoalCondition, renderProjectKnowledgePack, renderScopeLine, splitReadFirst, toolBudgetSection } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -69,6 +69,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   lines.push(`## Objective`);
   lines.push(descriptor.objective);
   lines.push("");
+  renderGoalCondition(lines, descriptor);
   lines.push(`## Read first`);
   const { rest } = splitReadFirst(descriptor.readFirst);
   for (const f of rest) lines.push(`- ${f}`);

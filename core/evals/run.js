@@ -235,12 +235,12 @@ function renderForCase(cwd, config, caseEntry, opts = {}) {
     return { error: `prompt render threw: ${err.message}` };
   }
 
-  // Mirrors core/orchestrator.js's invocation-prompt construction (the
-  // /goal prefix for goalLoop-capable hosts) so the replay hash and any
-  // real dispatch match what a live run would actually send.
-  const invocationPrompt = adapter.capabilities && adapter.capabilities.goalLoop && descriptor.goalCondition
-    ? `/goal "${descriptor.goalCondition}"\n\n${prompt}`
-    : prompt;
+  // Mirrors core/orchestrator.js's invocation-prompt construction, so the
+  // replay hash and the bytes an eval sends match what a live run would.
+  // ADR-023: that construction no longer composes a host slash command — the
+  // convergence condition is rendered into the prompt body instead — so the
+  // rendered prompt and the invocation prompt are now the same thing.
+  const invocationPrompt = prompt;
 
   return { stageId, stageName, stageDef, role, hostName, adapter, descriptor, ctx, scratchDir, prompt, invocationPrompt };
 }

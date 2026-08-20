@@ -8,7 +8,6 @@
   "worktrees": false,
   "headless": false,
   "telemetry": "estimated",
-  "goalLoop": false,
   "skillFormat": null,
   "skillsDir": null,
   "commandsDir": null,

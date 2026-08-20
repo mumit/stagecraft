@@ -9,7 +9,6 @@
   "headless": true,
   "headlessCommand": "gemini",
   "telemetry": "estimated",
-  "goalLoop": false,
   "skillFormat": "markdown",
   "rolePromptsDir": ".gemini/prompts/roles",
   "skillsDir": ".gemini/skills",

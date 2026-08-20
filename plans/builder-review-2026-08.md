@@ -66,7 +66,7 @@ of the roadmap.
 
 | ID | Finding | Severity | Status |
 |---|---|---|---|
-| F1 | Goal-loop convergence is dead in production, taking framework inlining and retry guidance with it | Critical | **Open** — needs an ADR |
+| F1 | `build`/`qa` discard the inlined framework and retry guidance on every dispatch to fit a `/goal` directive that only sometimes survives | Critical | ADR-023 proposed |
 | F2 | The changed-file manifest treats Stagecraft's own install as the user's diff | High | Fixed (#431) |
 | F3 | Cost telemetry is structurally impossible, which is what blocks the Phase 41 gates | High | Fixed (#429, #430) |
 | F4 | Prompt budget is ~99% process and ~1% project | Medium | Open — Wave 1 |
@@ -75,7 +75,7 @@ of the roadmap.
 | F7 | CLI vocabulary drifts across commands | Medium | Fixed (#433) |
 | F8 | Track inference promoted every new project to `full` because of the word "authoring" | High | Fixed (#431) |
 
-### F1 — Goal-loop convergence is dead in production (open)
+### F1 — `build` and `qa` lose their framework to a `/goal` directive (ADR-023)
 
 Exactly two stages declare a `goalCondition`: `build` (stage-04) and `qa` (stage-06) — the
 two most expensive and most retry-prone stages in the pipeline. Both primary hosts,
@@ -87,39 +87,42 @@ drop `patchItems` (retry blocker guidance), then drop the inlined framework, the
 `/goal` directive itself. In a real project the prompt never fits, so **all three fire on
 every build and qa dispatch.**
 
-Measured in the best possible case — clean tree, empty manifest, framework inlining already
-off, a one-character feature string, a seven-file project:
+Measured on the actual dispatch path, with `DEVTEAM_HEADLESS_COMMAND=cat` so the log holds
+the exact bytes the host CLI would have received:
 
-```
-build (no framework inline, no manifest noise):  4604 chars  [limit 4000]
-qa    (no framework inline, no manifest noise):  4538 chars  [limit 4000]
+| Dirty files | Bytes sent | Inlined framework | `/goal` survives |
+|---:|---:|:---:|:---:|
+| 3 | 3,848 | ✗ dropped | ✓ |
+| 12 | 4,742 | ✗ dropped | ✗ |
+| 30 | 6,758 | ✗ dropped | ✗ |
 
-# with defaults, same project:
-build, framework inlined, real manifest:        28296 chars
-```
+A with-framework prompt is roughly 21 KB, so step one never suffices and **step two always
+runs: the inlined framework is discarded on every build and qa dispatch.** Whether the
+directive then survives depends on how many files happen to be dirty — at 3 changed files it
+fits, at 12 it does not. The same change, committed or not, converges or does not.
 
-Even after both content fallbacks, the prompt is still 15% over the ceiling. There is no
-project small enough for `/goal` to survive. The consequences compound:
+> **Correction (2026-08-20).** This section originally claimed the `/goal` directive is
+> *always* dropped and the condition therefore reaches no model at all. That was measured on
+> the preview path (`devteam stage`), not the dispatch path, and it is wrong: the directive
+> survives on a sufficiently clean tree. The unconditional cost is the discarded framework,
+> not the discarded directive. See [ADR-023](../docs/adr/023-goal-condition-in-prompt-body.md).
 
-- Goal-loop convergence (backlog E7, marked shipped in v0.6.0) never engages on either
-  primary host.
+The cost of the trade:
+
 - [Phase 37](phase-37-interface-and-token-efficiency.md) item 37.2's inlined cacheable
-  prefix is discarded on exactly the two stages where its ~22 KB would matter most — the
-  agent reverts to reading those files itself, which is the round-trip cost 37.2 existed to
-  remove.
-- Retry blocker guidance is dropped from every repair dispatch.
+  prefix — the ~22 KB that exists so the model stops re-reading those files through tool
+  calls — is thrown away on the two stages where it matters most.
+- `patchItems`, the blocker guidance a fix-and-retry depends on, is dropped first.
 - Each dispatch renders the prompt three times to discover this.
-
-The tests encode the inverted assumption: `tests/orchestrator.test.js` asserts the goal
-directive *must still reach the child*, and passes only because the fixture project is
-small enough to fit. The last-resort path is tested as an edge case; in production it is
-the only path.
+- `codex` declares `goalLoop: true` but `codex exec` has no slash-command layer at all, so
+  it pays the whole cost for a directive it cannot act on.
 
 **Why this is not a patch.** The why-comment at `core/orchestrator.js` already documents
 that `--print` mode measures the combined length and cannot separate the goal from the
-prompt. The choice is between dropping `/goal` from the headless path entirely (and
-deleting the fallback chain) or gating `goalLoop` on a measured prompt size. Either changes
-documented behavior on both primary hosts and belongs in an ADR.
+prompt. Trading ~18 KB of framework context for a 4,000-char directive would be a defensible
+thing to decide — but it was never decided, and it only sometimes buys the directive.
+Resolved by [ADR-023](../docs/adr/023-goal-condition-in-prompt-body.md): the condition moves
+into the prompt body, the fallback chain is removed, and every host receives it.
 
 ### F2 — Framework install read as the operator's diff (fixed, #431)
 
