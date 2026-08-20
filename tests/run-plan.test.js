@@ -68,6 +68,22 @@ describe("materialized run plan (ADR-018)", () => {
     }]);
   });
 
+  it("materializes the optional documentation route only for a docs candidate", () => {
+    const { config } = fixture();
+    const plan = planFor(config, { candidateActiveRoles: ["documentation"] });
+    const build = plan.stages.find((stage) => stage.name === "build");
+    const review = plan.stages.find((stage) => stage.name === "peer-review");
+    assert.deepEqual(build.configured_roles, ["backend"]);
+    assert.deepEqual(build.optional_roles, ["documentation"]);
+    assert.deepEqual(build.dispatches, [{
+      role: "documentation",
+      host: "generic",
+      model: null,
+      status: "candidate",
+    }]);
+    assert.deepEqual(review.dispatches.map((dispatch) => dispatch.role), ["documentation"]);
+  });
+
   it("reuses an identical plan on resume and rejects execution drift", () => {
     const { cwd, config } = fixture();
     const original = planFor(config);

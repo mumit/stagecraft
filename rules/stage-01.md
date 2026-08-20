@@ -29,10 +29,22 @@ Gate file: `pipeline/gates/stage-01.json`.
   "acceptance_criteria_count": 5,
   "out_of_scope_items": [],
   "required_sections_complete": true,
-  "active_roles": null
+  "active_roles": null,
+  "affected_files": []
 }
 ```
 
 `required_sections_complete` must be `true` only when the brief contains all
 sections required for its track (see track rules above). `acceptance_criteria_count`
 is the number of numbered AC items in §3.
+
+### Documentation-only ownership
+
+A documentation-only `loop` change may select the optional documentation
+workstream by setting `active_roles` to exactly `["documentation"]` and
+`affected_files` to a non-empty list of exact, canonical, repo-relative
+documentation files. The list is the shared build/QA/review authority boundary.
+Directories, globs, absolute paths, parent traversal, duplicates, pipeline
+artifacts, non-documentation files, and mixed documentation/code roles are
+invalid. Expanding the list requires a recorded brief/gate update or Principal
+ruling and retry; discovering another document never widens scope implicitly.

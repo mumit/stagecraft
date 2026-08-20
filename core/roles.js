@@ -36,6 +36,7 @@ const ROLE_TOOLS = {
   frontend:   "Read, Write, Edit, Glob, Grep, Bash",
   platform:   "Read, Write, Edit, Glob, Grep, Bash",
   qa:         "Read, Write, Edit, Glob, Grep, Bash",
+  documentation: "Read, Write, Edit, Glob, Grep, Bash",
   auditor:    "Read, Glob, Grep, Bash, Write",
   "red-team": "Read, Glob, Grep, Bash, Write",
   migrations: "Read, Glob, Grep, Bash, Write",

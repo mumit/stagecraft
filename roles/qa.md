@@ -25,6 +25,12 @@ When tests fail, assign the retry to the owning implementation role and record
 the failure clearly enough to reproduce. Maintain an acceptance-criterion-to-test map
 so Stage 7 sign-off can auto-fold when all criteria pass 1:1.
 
+When the prompt contains `Approved affected files (exact scope)` for a
+documentation-only loop, verify every acceptance criterion against that exact
+list. Do not treat a missing design spec as a blocker on this lean track and do
+not silently add another document to the build scope. Report any newly required
+file as an ownership blocker so the brief/gate can be expanded deliberately.
+
 For both the Stage 4 QA gate (`stage-04.qa.json`) and the Stage 6 gate
 (`stage-06.json`), populate `affected_workstreams` as the deduplicated list
 of `assigned_to` values from `failing_tests`. This is the field stage managers

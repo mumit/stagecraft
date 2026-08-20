@@ -51,7 +51,7 @@ test("stage-02 schema declares adrs_consulted, adrs_superseded, and file_ownersh
   assert.ok(schema.properties.adrs_consulted, "stage-02 schema must declare adrs_consulted");
   assert.ok(schema.properties.adrs_superseded, "stage-02 schema must declare adrs_superseded");
   assert.ok(schema.properties.file_ownership, "stage-02 schema must declare file_ownership");
-  assert.deepEqual(schema.properties.file_ownership.additionalProperties.enum, ["backend", "frontend", "platform", "qa"]);
+  assert.deepEqual(schema.properties.file_ownership.additionalProperties.enum, ["backend", "frontend", "platform", "qa", "documentation"]);
   // Optional — not in required[].
   assert.ok(!schema.required.includes("adrs_consulted"));
   assert.ok(!schema.required.includes("adrs_superseded"));

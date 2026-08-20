@@ -100,6 +100,16 @@ pipeline:
   loop_build_role: frontend   # backend (default) | frontend | platform | qa
 ```
 
+For a known documentation-only file set, `devteam assess` recommends `loop`
+and carries `candidate_active_roles: ["documentation"]`. The PM turn must then
+approve the exact files in the Stage 1 gate with
+`active_roles: ["documentation"]` and `affected_files: [...]`. Build and scoped
+peer review use that optional workstream; QA receives the same list for
+verification but remains read-only outside its normal outputs. The configured
+`loop_build_role` is unchanged for every non-documentation run. Directly naming
+the optional role cannot bypass Stage 1 approval, and new files require a
+recorded scope expansion.
+
 `loop` has no design, no red-team, and no sign-off/deploy — `devteam run
 --track loop` ends at `peer-review`. Promoting a change to a deploy-capable
 track is a re-run with `--until` on a bigger track, or a `custom_stages`

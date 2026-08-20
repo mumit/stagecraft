@@ -1,4 +1,4 @@
-# Stage 4 — Build (4 role-owned workstreams)
+# Stage 4 — Build (role-owned workstreams)
 
 The orchestrator dispatches backend, frontend, platform, and QA in parallel.
 They share the checkout by default. When the project opts into
@@ -12,10 +12,16 @@ Invoke in parallel:
   `dev-platform` → `src/infra/` + root toolchain config → `pipeline/pr-platform.md`
   `qa`           → `src/tests/` → `pipeline/pr-qa.md`
 
+For a documentation-only `loop` change, a PASS Stage 1 gate may instead select
+the optional `documentation` workstream. Its write surface is the gate's exact
+`affected_files` list plus `pipeline/pr-documentation.md`, context, build-plan,
+and its workstream gate. It has no `docs/` wildcard and cannot run without that
+prior approval. Mixed code-and-documentation workstreams are not supported.
+
 Gate file per workstream: `pipeline/gates/stage-04.{area}.json`
 Every planned workstream must have `"status": "PASS"` before proceeding.
 
-Pre-review checks (stage-04a) run after the three build gates PASS and
+Pre-review checks (stage-04a) run after all planned build gates PASS and
 before Stage 5 starts. See `stage-04a.md` (lint + dep review + SCA) and
 `stage-04b.md` (security review, conditional).
 
@@ -59,11 +65,11 @@ Merged stage gate: `pipeline/gates/stage-04.json`.
   "track": "full",
   "timestamp": "<ISO 8601>",
   "orchestrator": "devteam@<version>",
-  "workstream": "backend | frontend | platform | qa",
+  "workstream": "backend | frontend | platform | qa | documentation",
   "host": "claude-code",
   "blockers": [],
   "warnings": [],
-  "area": "backend | frontend | platform",
+  "area": "backend | frontend | platform | qa | documentation",
   "files_changed": ["src/backend/foo.js"],
   "pr_summaries_written": ["pipeline/pr-backend.md"],
   "local_verification": ["npm run lint — 0 errors", "npm test — 42 passed"]

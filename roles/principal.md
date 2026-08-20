@@ -72,7 +72,7 @@ Then read `pipeline/brief.md`. Produce `pipeline/design-spec.md` covering:
 2. **Data models** — schemas with field types and constraints
 3. **API contracts** — endpoints, request/response shapes, auth requirements
 4. **Component ownership and file boundaries** — which dev owns which area
-   (backend/frontend/platform/qa), AND a `## File Ownership` table that maps
+   (backend/frontend/platform/qa, or optional exact-file documentation), AND a `## File Ownership` table that maps
    every `src/` subdirectory and every root-level config file to exactly one
    owning workstream. If `package.json bin`, `main`, or `module` points to a
    specific file path, name its owning workstream explicitly.
@@ -97,6 +97,11 @@ Then read `pipeline/brief.md`. Produce `pipeline/design-spec.md` covering:
    | `src/cli.js` ← bin entry | backend | Only this file is the bin target |
    | `package.json` | platform | Authoritative; other workstreams append, do not overwrite |
    | `.eslintrc.js` | platform | Single root config; no per-workstream copies |
+
+   Documentation-only loop work normally skips this stage. If a recorded
+   ruling expands its scope, name each newly authorized documentation file
+   exactly; never grant `docs/**` or assign general documentation ownership to
+   backend as a shortcut.
    ```
 
    If a path is contested between workstreams, rule on it here and write an

@@ -131,6 +131,19 @@ describe("assess() base track selection", () => {
     assert.equal(r.recommendedTrack, "nano");
   });
 
+  test("known documentation-only files → loop with documentation workstream", () => {
+    const r = assess("docs-only update", ["docs/operator-guide.md", "README.md"], { scanContent: false });
+    assert.equal(r.recommendedTrack, "loop");
+    assert.equal(r.confidence, "high");
+    assert.deepEqual(r.candidateActiveRoles, ["documentation"]);
+    assert.ok(r.reasons.some((reason) => reason.includes("exact approved file scope")));
+  });
+
+  test("documentation wording does not override a concrete code file", () => {
+    const r = assess("docs-only cleanup", ["src/backend/app.js"], { scanContent: false });
+    assert.notDeepEqual(r.candidateActiveRoles, ["documentation"]);
+  });
+
   test("quick description → quick track", () => {
     const r = assess("quick fix for the null pointer", [], { scanContent: false });
     assert.equal(r.recommendedTrack, "quick");
@@ -219,6 +232,7 @@ describe("assess() return shape", () => {
     assert.ok(typeof r.securityRequired === "boolean");
     assert.ok(typeof r.migrationRequired === "boolean");
     assert.ok(Array.isArray(r.reasons));
+    assert.ok(Array.isArray(r.candidateActiveRoles));
     assert.ok(r.reasons.length > 0);
   });
 
@@ -425,6 +439,19 @@ describe("devteam assess: pipeline/track.json (ADR-006 §2)", () => {
       assert.ok(fs.existsSync(trackPath), "pipeline/track.json must be written with --confirm");
       const tj = JSON.parse(fs.readFileSync(trackPath, "utf8"));
       assert.equal(tj.source, "human", "--confirm must set source:human");
+    } finally {
+      cleanCwd(dir);
+    }
+  });
+
+  test("docs-only positional files persist the documentation candidate", () => {
+    const dir = makeCwd("routing:\n  default_host: generic\npipeline:\n  default_track: full\n");
+    try {
+      const result = runCLI(["assess", "--cwd", dir, "--no-content", "docs/operator-guide.md", "README.md"], { env: { CI: "" } });
+      assert.equal(result.status, 0, `assess must exit 0 (stderr: ${result.stderr})`);
+      const record = JSON.parse(fs.readFileSync(path.join(dir, "pipeline", "track.json"), "utf8"));
+      assert.equal(record.track, "loop");
+      assert.deepEqual(record.candidate_active_roles, ["documentation"]);
     } finally {
       cleanCwd(dir);
     }

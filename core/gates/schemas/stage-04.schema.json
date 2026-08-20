@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:stagecraft:schema:stage-04",
   "title": "Stage 04 Build Gate",
-  "description": "Stage 4 (Build) gate. Workstream gates land at pipeline/gates/stage-04.<role>.json (one per role: backend, frontend, platform, qa) and the orchestrator merges them into pipeline/gates/stage-04.json with a workstreams[] array. Per-workstream gates carry the stage-specific fields below; the merged gate also conforms to base gate.schema.json.",
+  "description": "Stage 4 (Build) gate. Standard workstream gates land at pipeline/gates/stage-04.<role>.json (backend, frontend, platform, qa). ADR-022 may instead select one documentation workstream bound to exact Stage 1 affected_files. The orchestrator merges multi-workstream results into pipeline/gates/stage-04.json. Per-workstream gates carry the stage-specific fields below; the merged gate also conforms to base gate.schema.json.",
   "type": "object",
   "required": [
     "pr_summaries_written",

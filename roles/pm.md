@@ -46,6 +46,10 @@ the sections below. The first five are required on every track; the
 remaining six are required on the **full** track and hotfix, and optional
 (but encouraged) on the lighter tracks.
 
+Exception: on `loop`, follow the one-screen template supplied in the prompt:
+`## Intent`, numbered `AC-N` acceptance criteria, and `## Affected Files`.
+That track deliberately omits the longer story/out-of-scope/risk structure.
+
 ### Required on every track
 
 1. **Problem statement** — what user need does this address?
@@ -95,7 +99,8 @@ add `"active_roles"` to the gate listing only the in-scope roles:
 "active_roles": ["backend", "platform", "qa"]
 ```
 
-Valid values are `"backend"`, `"frontend"`, `"platform"`, `"qa"`. The
+Valid code-workstream values are `"backend"`, `"frontend"`, `"platform"`,
+`"qa"`. The
 orchestrator uses this field to suppress excluded workstreams from both the
 build (stage-04) and peer-review (stage-05) dispatch — preventing phantom
 reviewers for areas the project never touched.
@@ -103,6 +108,14 @@ reviewers for areas the project never touched.
 When all four workstream areas are in scope (or the brief does not exclude any),
 omit `active_roles` or set it to `null` — the orchestrator defaults to all roles
 active. Do NOT set `active_roles: []` (empty list); use `null` instead.
+
+For a documentation-only `loop` brief, use the special optional ownership
+contract instead: set `active_roles` to exactly `["documentation"]` and copy
+the brief's `## Affected Files` entries into `affected_files`. Every entry must
+be one exact, canonical, repo-relative documentation file—never a directory,
+glob, absolute path, parent traversal, pipeline artifact, or code file. Do not
+mix `documentation` with a code workstream. If another document becomes
+necessary later, record and approve the scope change before updating this list.
 
 ## On an Executable-Spec Request (stage-03b, G2)
 

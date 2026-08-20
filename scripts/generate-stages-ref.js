@@ -66,7 +66,7 @@ function gateFileFor(name, def) {
   }
   // peer-review uses subagent but also has per-area workstream gates
   if (def.subagent && def.roles.length > 1) {
-    const roles = def.roles.join(", ");
+    const roles = [...def.roles, ...((def.optionalRoles) || [])].join(", ");
     return `${id}.json` + ` (merged); ${id}.{${roles}}.json (per-area)`;
   }
   return `${id}.json`;
@@ -82,8 +82,11 @@ function conditionalOnText(def) {
 // Format roles for display, noting mechanical stages
 function rolesText(def) {
   if (!def.roles || def.roles.length === 0) return "*(mechanical — no dispatch)*";
-  if (def.subagent) return `${def.roles.join(", ")} *(dispatched as ${def.subagent})*`;
-  return def.roles.join(", ");
+  const optional = Array.isArray(def.optionalRoles) && def.optionalRoles.length > 0
+    ? `; optional: ${def.optionalRoles.join(", ")}`
+    : "";
+  if (def.subagent) return `${def.roles.join(", ")}${optional} *(dispatched as ${def.subagent})*`;
+  return `${def.roles.join(", ")}${optional}`;
 }
 
 // Pad a string to at least `width` characters

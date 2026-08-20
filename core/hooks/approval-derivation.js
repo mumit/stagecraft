@@ -64,6 +64,7 @@ const REVIEWER_MAP = {
   frontend: "dev-frontend",
   platform: "dev-platform",
   qa:       "dev-qa",
+  documentation: "dev-documentation",
   security: "security-engineer",
   principal: "principal",
   // 31.3: adversarial mode's two workstreams. Their by-*.md files are routed
@@ -75,7 +76,27 @@ const REVIEWER_MAP = {
   critic:   "critic",
 };
 
-const KNOWN_AREAS = new Set(["backend", "frontend", "platform", "qa", "deps"]);
+const KNOWN_AREAS = new Set(["backend", "frontend", "platform", "qa", "documentation", "deps"]);
+
+function projectTrack(cwd, gateDirectory = path.join(cwd, "pipeline", "gates")) {
+  try {
+    const record = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "track.json"), "utf8"));
+    if (record && typeof record.track === "string") return record.track;
+  } catch { /* fall through to project configuration */ }
+  try {
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    if (state && typeof state.resolved_track === "string") return state.resolved_track;
+  } catch { /* fall through to the approved requirements gate */ }
+  try {
+    const gate = JSON.parse(fs.readFileSync(path.join(gateDirectory, "stage-01.json"), "utf8"));
+    if (gate && gate.status === "PASS" && typeof gate.track === "string") return gate.track;
+  } catch { /* fall through to project configuration */ }
+  try { return loadConfig(cwd).pipeline.default_track || "full"; } catch { return "full"; }
+}
+
+function isSingleReviewerTrack(track) {
+  return requiredApprovalsFor(STAGES["peer-review"], track) === 1;
+}
 
 // Host-based filenames trigger fanout-mode gate naming. When the
 // reviewer identifier matches a known host, gates are written to
@@ -407,8 +428,7 @@ function applyVerdict({ area, verdict, blockers, reviewer, host, gatesDir: custo
       // Read the project's track so required_approvals matches the
       // PEER_REVIEW_SIZING table. Nano-track changes need 1 approval
       // (single-reviewer scoped review); full/quick/hotfix/etc need 2.
-      let track = "full";
-      try { track = loadConfig(effectiveCwd).pipeline.default_track || "full"; } catch { /* defaults */ }
+      const track = projectTrack(effectiveCwd, effectiveGatesDir);
       const required = requiredApprovalsFor(STAGES["peer-review"], track) ?? 2;
       gate = {
         stage: "stage-05",
@@ -514,9 +534,8 @@ function applyVerdict({ area, verdict, blockers, reviewer, host, gatesDir: custo
 
 function deriveForProject(filePath, projectCwd) {
   const gatesDir = path.join(projectCwd, "pipeline", "gates");
-  let track = "full";
-  try { track = loadConfig(projectCwd).pipeline.default_track || "full"; } catch { /* defaults */ }
-  const isSingleReviewer = track === "nano";
+  const track = projectTrack(projectCwd, gatesDir);
+  const isSingleReviewer = isSingleReviewerTrack(track);
 
   const reviewer = reviewerNameFromPath(filePath);
   if (!reviewer) return;
@@ -553,9 +572,8 @@ function main() {
 
   // Nano track uses a single reviewer (backend) who reviews the backend
   // workstream — self-review is structural, not a violation.
-  let track = "full";
-  try { track = loadConfig(CWD).pipeline.default_track || "full"; } catch { /* defaults */ }
-  const isSingleReviewer = track === "nano";
+  const track = projectTrack(CWD);
+  const isSingleReviewer = isSingleReviewerTrack(track);
 
   for (const file of reviewFiles) {
     const fullPath = path.join(REVIEW_DIR, file);

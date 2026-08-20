@@ -62,6 +62,9 @@ function run(positional, _flags) {
     const conf = { high: "high ✓", medium: "medium", low: "low" }[result.confidence] || result.confidence;
     console.log(`Recommended track: ${result.recommendedTrack}  (confidence: ${conf})`);
     console.log(`Stages (${result.stages.length}): ${result.stages.join(" → ")}`);
+    if (result.candidateActiveRoles.length > 0) {
+      console.log(`Build workstreams: ${result.candidateActiveRoles.join(", ")}`);
+    }
     console.log("");
     console.log("Reasons:");
     for (const r of result.reasons) console.log(`  • ${r}`);
@@ -98,6 +101,7 @@ function run(positional, _flags) {
       reasons: result.reasons,
       assessed_at: new Date().toISOString(),
       assessed_by: `devteam assess ${version}`,
+      candidate_active_roles: result.candidateActiveRoles,
     };
     try {
       fs.mkdirSync(path.dirname(trackJsonPath), { recursive: true });

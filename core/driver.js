@@ -522,7 +522,12 @@ function resolveTrack(opts, config, cwd, changeId = null) {
       if (fs.existsSync(tjPath)) {
         const tj = JSON.parse(fs.readFileSync(tjPath, "utf8"));
         if (tj && tj.track) {
-          return { track: tj.track, source: tj.source || "inferred", confidence: tj.confidence || null };
+          return {
+            track: tj.track,
+            source: tj.source || "inferred",
+            confidence: tj.confidence || null,
+            candidate_active_roles: Array.isArray(tj.candidate_active_roles) ? tj.candidate_active_roles : [],
+          };
         }
       }
     } catch { /* fall through to lower precedence */ }
@@ -548,7 +553,8 @@ function resolveTrack(opts, config, cwd, changeId = null) {
       track: result.recommendedTrack,
       source: "inferred",
       confidence: result.confidence,
-      assess_inline: { reasons: result.reasons, stages: result.stages },
+      assess_inline: { reasons: result.reasons, stages: result.stages, candidateActiveRoles: result.candidateActiveRoles },
+      candidate_active_roles: result.candidateActiveRoles,
     };
   }
   return { track: config.pipeline.default_track || "full", source: "config", confidence: null };
@@ -915,6 +921,7 @@ async function run(opts = {}) {
     source: trackSource,
     confidence: trackConfidence,
     assess_inline: assessInline,
+    candidate_active_roles: assessedActiveRoles,
   } = resolveTrack(opts, config, cwd, changeId);
   // ADR-016 (Phase 29.2): resolveTrack assessed a track inline (no --track, no
   // pipeline/track.json, no custom_stages). Persist the decision as the same
@@ -932,6 +939,7 @@ async function run(opts = {}) {
         source: "inferred",
         confidence: trackConfidence,
         reasons: assessInline.reasons,
+        candidate_active_roles: assessInline.candidateActiveRoles,
         assessed_at: nowIso(),
         assessed_by: `devteam run ${version} (assess-inline, ADR-016)`,
       }, null, 2) + "\n", "utf8");
@@ -1139,9 +1147,18 @@ async function run(opts = {}) {
     token_basis: null,
     token_coverage_complete: false,
   };
-  const activeRoleCandidates = config.pipeline.right_sizing === false
+  const discoveredActiveRoles = config.pipeline.right_sizing === false
     ? { roles: [], trigger_inputs: {} }
     : candidateActiveRoles(cwd);
+  const activeRoleCandidates = discoveredActiveRoles.roles.length > 0 || !Array.isArray(assessedActiveRoles)
+    ? discoveredActiveRoles
+    : {
+        roles: assessedActiveRoles,
+        trigger_inputs: {
+          ...discoveredActiveRoles.trigger_inputs,
+          source: "pipeline/track.json assessment",
+        },
+      };
   const rightSizedSkips = config.pipeline.right_sizing === false
     ? {}
     : deterministicSkipsForOrder(order, cwd, { changeId });

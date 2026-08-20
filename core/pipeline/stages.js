@@ -81,6 +81,9 @@ const STAGES = {
       // null = all roles active; explicit list suppresses excluded workstreams
       // from both build (stage-04) and peer-review (stage-05) dispatch.
       active_roles: null,
+      // Exact repo-relative paths approved by the brief. Required when the
+      // optional documentation workstream is selected (ADR-022).
+      affected_files: [],
     },
     // 29.1: the `loop` track swaps in a one-screen brief (intent, AC-N list,
     // affected files) instead of the full requirements template. Same stage,
@@ -208,6 +211,7 @@ const STAGES = {
   build: {
     stage: "stage-04",
     roles: ["backend", "frontend", "platform", "qa"],
+    optionalRoles: ["documentation"],
     objective: "Implement the approved design in role-owned workstreams and record local verification.",
     readFirst: ["AGENTS.md", ".devteam/rules/pipeline.md", ".devteam/rules/gates-core.md", "pipeline/context.md", "pipeline/brief.md", "pipeline/design-spec.md"],
     // pipeline/context.md is listed here (and in each role's roleWrites below)
@@ -235,6 +239,7 @@ const STAGES = {
       frontend: ["src/frontend/",               "pipeline/pr-frontend.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.frontend.json"],
       platform: ["src/infra/",                  "pipeline/pr-platform.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.platform.json", "package.json", "package-lock.json", "Dockerfile", "docker-compose.yml", "docker-compose.yaml", "eslint.config.js", "eslint.config.mjs", ".eslintrc.cjs", ".eslintrc.js", ".eslintrc.mjs", ".eslintrc.json", "tsconfig.json", "tsconfig.test.json", "tsconfig.*.json", "README.md", "pyproject.toml", "requirements.txt", "requirements-dev.txt", "setup.py", "setup.cfg", "Pipfile", "Pipfile.lock"],
       qa:       ["src/tests/",                  "pipeline/pr-qa.md",      "pipeline/context.md",     "pipeline/gates/stage-04.qa.json"],
+      documentation: ["pipeline/pr-documentation.md", "pipeline/build-plan.md", "pipeline/context.md", "pipeline/gates/stage-04.documentation.json"],
     },
     artifact: "pipeline/build-plan.md",
     template: "build-template.md",
@@ -439,6 +444,7 @@ const STAGES = {
     // PostToolUse hook fills each area's workstream gate by parsing
     // per-area "## Review of X" sections in by-<reviewer>.md files.
     roles: ["backend", "frontend", "platform", "qa"],
+    optionalRoles: ["documentation"],
     subagent: "reviewer",
     objective: "Review peer implementation per area; record findings in pipeline/code-review/by-<reviewer>.md; the approval-derivation hook fills the per-area workstream gates.",
     // Phase-35 item 35.1: see the why-comment on security-review's readFirst

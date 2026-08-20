@@ -1,6 +1,6 @@
 # Phase 42 — Dogfood Reliability and Recovery Fit
 
-**Status:** in progress from two-project dogfood evidence (2026-08-19); 42.1–42.2
+**Status:** in progress from two-project dogfood evidence (2026-08-19); 42.1–42.3
 implemented and unreleased.
 
 **Goal:** remove the control-plane friction observed while completing a real
@@ -56,6 +56,11 @@ role is compatible; do not spend an agent turn rediscovering the mismatch.
 
 ## 42.3 Documentation-capable build ownership (P0/P1 design)
 
+**Status:** ✅ implemented (unreleased). ADR-022 adds a gate-selected optional
+documentation workstream whose authority is the exact Stage 1
+`affected_files` list. Assess recommends `loop` for docs-only scope; build, QA,
+panel review, isolation reconciliation, and structured retry share that list.
+
 Design the smallest first-class path for documentation-only changes. Preferred
 direction: bind an exact, brief-approved affected-file set into a documentation
 workstream rather than adding all of `docs/` to backend. Decide through an ADR
@@ -70,6 +75,12 @@ because the stage role/write contract is load-bearing.
 - a newly discovered contributor-facing document expands scope only through a
   recorded ruling/retry, not an implicit wildcard;
 - build, QA, and peer review share the same affected-file contract.
+
+**Decision:** Documentation is not a fifth default matrix member and is not
+mixed with code workstreams. A PASS Stage 1 gate must select only
+`documentation` and name a non-empty exact docs-only list. A newly discovered
+file halts ownership routing until the brief/gate is deliberately expanded.
+See [ADR-022](../docs/adr/022-exact-file-documentation-workstream.md).
 
 ## 42.4 Project-layout-aware QA and verification (P1)
 

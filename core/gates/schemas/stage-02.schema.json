@@ -49,9 +49,9 @@
       },
       "additionalProperties": {
         "type": "string",
-        "enum": ["backend", "frontend", "platform", "qa"]
+        "enum": ["backend", "frontend", "platform", "qa", "documentation"]
       },
-      "description": "Optional machine-readable copy of design-spec.md §File Ownership. Keys are repo-relative file paths or glob patterns; values are the owning Stage 4 workstream. Used by driver auto-fix routing to target the workstream that owns a blocker-named file."
+      "description": "Optional machine-readable copy of design-spec.md §File Ownership. Keys are repo-relative file paths or glob patterns; values are the owning Stage 4 workstream. Documentation ownership may name only exact files already approved by the Stage 1 affected_files contract. Used by driver auto-fix routing to target the workstream that owns a blocker-named file."
     }
   },
   "additionalProperties": true

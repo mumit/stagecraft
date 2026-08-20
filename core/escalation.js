@@ -25,6 +25,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { documentationScopeFromGate, loadDocumentationScope } = require("./pipeline/affected-files");
 
 const RULING_PREFIX = "PRINCIPAL-RULING:";
 const CANNOT_DECIDE_PREFIX = "PRINCIPAL-CANNOT-DECIDE:";
@@ -160,7 +161,8 @@ function renderPrincipalRulingPrompt(topic, contextPaths, targetGate) {
     "  correct value (e.g. 'stage-05.frontend.json: change review_shape",
     "  from scoped to matrix, required_approvals to 2, remove self-",
     "  review from approvals[]').",
-    "- **Build fix:** name the workstream (backend / frontend / platform / qa)",
+    "- **Build fix:** name the workstream (backend / frontend / platform / qa,",
+    "  or documentation when the exact Stage 1 scope already authorizes it)",
     "  and the specific file:line to change. The applicator will dispatch",
     "  `devteam stage build --workstream <role>`. Do NOT say",
     "  `devteam restart qa` — that restarts the QA TESTING stage (stage-06),",
@@ -262,7 +264,8 @@ function renderPrincipalRulingPrompt(topic, contextPaths, targetGate) {
 // Read stage-01 gate and return the active build workstreams for this project.
 // Mirrors the inferActiveRoles logic in orchestrator.js but is self-contained
 // here to avoid a circular dependency.
-const BUILD_WORKSTREAMS = ["backend", "frontend", "platform", "qa"];
+const STANDARD_BUILD_WORKSTREAMS = ["backend", "frontend", "platform", "qa"];
+const BUILD_WORKSTREAMS = [...STANDARD_BUILD_WORKSTREAMS, "documentation"];
 const BUILD_OOS_KEYWORDS = {
   frontend: ["frontend", "web ui", "web app", "browser", "ui layer"],
   backend:  ["backend", "api server", "rest api", "server-side"],
@@ -272,12 +275,15 @@ const BUILD_OOS_KEYWORDS = {
 
 function activeWorkstreamsFromStage01(cwd) {
   const s1Path = path.join(cwd, "pipeline", "gates", "stage-01.json");
-  if (!fs.existsSync(s1Path)) return BUILD_WORKSTREAMS;
+  if (!fs.existsSync(s1Path)) return STANDARD_BUILD_WORKSTREAMS;
   try {
     const gate = JSON.parse(fs.readFileSync(s1Path, "utf8"));
     if (Array.isArray(gate.active_roles) && gate.active_roles.length > 0) {
       const filtered = gate.active_roles.filter(r => BUILD_WORKSTREAMS.includes(r));
-      if (filtered.length > 0) return filtered;
+      const docs = documentationScopeFromGate(gate);
+      if (docs.selected) return ["documentation"];
+      const standard = filtered.filter((role) => STANDARD_BUILD_WORKSTREAMS.includes(role));
+      if (standard.length > 0) return standard;
     }
     if (Array.isArray(gate.out_of_scope_items) && gate.out_of_scope_items.length > 0) {
       const suppressed = new Set();
@@ -287,19 +293,21 @@ function activeWorkstreamsFromStage01(cwd) {
           if (kw.some(k => lower.includes(k))) suppressed.add(role);
         }
       }
-      if (suppressed.size > 0) return BUILD_WORKSTREAMS.filter(r => !suppressed.has(r));
+      if (suppressed.size > 0) return STANDARD_BUILD_WORKSTREAMS.filter(r => !suppressed.has(r));
     }
   } catch { /* fall through */ }
-  return BUILD_WORKSTREAMS;
+  return STANDARD_BUILD_WORKSTREAMS;
 }
 
 function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   const activeWorkstreams = activeWorkstreamsFromStage01(cwd);
+  const documentationScope = loadDocumentationScope(cwd);
   const wsLabels = {
     backend:  ["dispatch backend build workstream", "devteam stage build --workstream backend --headless            "],
     frontend: ["dispatch frontend build workstream", "devteam stage build --workstream frontend --headless           "],
     platform: ["dispatch platform build workstream", "devteam stage build --workstream platform --headless           "],
     qa:       ["dispatch QA build workstream / qa build", "devteam stage build --workstream qa --headless                 "],
+    documentation: ["dispatch documentation build workstream", "devteam stage build --workstream documentation --headless      "],
   };
 
   const lines = [
@@ -330,7 +338,12 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("- `pipeline/gates/*.json` — correct a malformed gate (status, shape, fields)");
   lines.push("- `pipeline/code-review/by-*.md` — fix a peer-review document");
   lines.push("- `pipeline/runbook.md` — satisfy or repair the release runbook artifact");
-  lines.push("- `README.md`, `CHANGELOG.md`, `docs/`, `changelog.d/` — satisfy documentation-only rulings");
+  if (documentationScope.selected) {
+    lines.push("- Exact approved documentation files may emerge from the dispatched documentation workstream (do not edit them directly; no directory/glob authority):");
+    for (const file of documentationScope.affectedFiles) lines.push(`  - \`${file}\``);
+  } else {
+    lines.push("- No direct documentation files: update and approve Stage 1 scope before a documentation edit");
+  }
   lines.push("Do NOT write to `pipeline/context.md` — that file is reserved for");
   lines.push("PRINCIPAL-RULING lines written by the ruling agent, not status reports.");
   lines.push("Use bash commands (devteam stage, devteam merge, devteam derive-approvals)");
@@ -372,9 +385,12 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("");
   lines.push("**Build fixes** (test bug, implementation gap):");
   lines.push("  `devteam stage build --workstream <role> --headless`");
-  lines.push("  roles: backend, frontend, platform, qa");
+  lines.push("  roles: backend, frontend, platform, qa, documentation");
   lines.push("If the ruling says a file is owned by a workstream, dispatch that");
-  lines.push("workstream even if it was not part of the original active_roles set.");
+  lines.push("workstream even if it was not part of the original code-role set.");
+  lines.push("Exception: never dispatch documentation unless the current PASS Stage 1");
+  lines.push("gate already selects it and names every exact affected file. A ruling must");
+  lines.push("first update that approval boundary; it cannot imply a docs wildcard.");
   lines.push("Examples:");
   lines.push("- `package.json`, lockfiles, lint/typecheck config, Docker/compose, and");
   lines.push("  root toolchain scripts are platform-owned unless the design says");
@@ -392,7 +408,7 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("  observability-gate, verification-beyond-tests,");
   lines.push("  performance-budget, sign-off, retrospective, deploy");
   lines.push("Valid workstream roles for peer-review and build:");
-  lines.push("  backend, frontend, platform, qa");
+  lines.push("  backend, frontend, platform, qa, documentation");
   lines.push("");
   lines.push("**After all fixes:** run `devteam merge <stage>` to rebuild the");
   lines.push("merged gate, then `devteam validate` to confirm it is valid.");
@@ -539,6 +555,7 @@ function runFixEscalation(cwd, { escalatingGate = null } = {}) {
   const rulings = loadPrincipalRulingLines(cwd);
   if (rulings.length === 0) return Promise.resolve({ exitCode: 2, reason: "no rulings" });
   const beforeGate = readGateIfPresent(escalatingGate);
+  const documentationScope = loadDocumentationScope(cwd);
   const prompt = renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate);
   return dispatchToPrincipal(cwd, prompt, {
     label: "escalation-applicator",
@@ -546,10 +563,7 @@ function runFixEscalation(cwd, { escalatingGate = null } = {}) {
       "pipeline/gates/*.json",
       "pipeline/code-review/by-*.md",
       "pipeline/runbook.md",
-      "README.md",
-      "CHANGELOG.md",
-      "docs/",
-      "changelog.d/",
+      ...documentationScope.affectedFiles,
     ],
   }).then((result) => {
     const violation = guardConvergenceGateResolution(escalatingGate, beforeGate);

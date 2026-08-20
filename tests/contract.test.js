@@ -79,7 +79,7 @@ describe("contract: stages ↔ roles", () => {
     const seen = new Set();
     for (const def of Object.values(STAGES)) {
       if (!def) continue;
-      for (const role of def.roles) seen.add(role);
+      for (const role of [...def.roles, ...((def.optionalRoles) || [])]) seen.add(role);
     }
     for (const role of seen) {
       const briefPath = path.join("roles", `${role}.md`);
@@ -94,9 +94,10 @@ describe("contract: stages ↔ roles", () => {
     for (const [name, def] of Object.entries(STAGES)) {
       if (!def || !def.roleWrites) continue;
       for (const role of Object.keys(def.roleWrites)) {
+        const validRoles = [...def.roles, ...((def.optionalRoles) || [])];
         assert.ok(
-          def.roles.includes(role),
-          `stage "${name}" has roleWrites for "${role}" but it's not in roles[${def.roles.join(", ")}]`,
+          validRoles.includes(role),
+          `stage "${name}" has roleWrites for "${role}" but it's not in roles/optionalRoles[${validRoles.join(", ")}]`,
         );
       }
     }
@@ -130,7 +131,7 @@ describe("contract: stages ↔ roles", () => {
     for (const [name, def] of Object.entries(STAGES)) {
       if (!def || !Array.isArray(def.roles) || def.roles.length < 2) continue;
       const bareGatePath = `pipeline/gates/${def.stage}.json`;
-      for (const role of def.roles) {
+      for (const role of [...def.roles, ...((def.optionalRoles) || [])]) {
         const briefPath = path.join(REPO_ROOT, "roles", `${role}.md`);
         if (!fs.existsSync(briefPath)) continue;
         const content = fs.readFileSync(briefPath, "utf8");

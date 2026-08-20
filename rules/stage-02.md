@@ -45,7 +45,8 @@ Gate file: `pipeline/gates/stage-02.json`.
 that this design explicitly overrides.
 `file_ownership` mirrors `pipeline/design-spec.md` §File Ownership in
 machine-readable form: keys are repo-relative file paths or glob patterns, and
-values are Stage 4 workstreams (`backend`, `frontend`, `platform`, `qa`). This
+values are Stage 4 workstreams (`backend`, `frontend`, `platform`, `qa`, or the
+optional exact-file `documentation` workstream). This
 lets the driver route targeted auto-fix retries to the workstream that owns a
 blocker-named file.
 

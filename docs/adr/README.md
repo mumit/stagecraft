@@ -61,6 +61,7 @@ What else was on the table and why we didn't pick those.
 | [019](019-isolated-build-workstreams.md) | Core-managed Git-worktree isolation and deterministic reconciliation for parallel build roles | Accepted |
 | [020](020-execution-trust-profiles.md) | Explicit trusted/contained/remote profiles; fail-closed Docker containment and worktree reconciliation | Accepted |
 | [021](021-dependency-free-memory-default.md) | Dependency-free feature-hash memory by default; transformer semantics as an explicit opt-in | Accepted |
+| [022](022-exact-file-documentation-workstream.md) | Exact-file documentation build ownership as an optional gate-selected workstream | Accepted |
 
 ### Deferred
 

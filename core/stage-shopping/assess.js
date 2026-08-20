@@ -24,6 +24,7 @@
 const { needsMigrationSafety } = require("../guards/migration-heuristic");
 const { analyze: analyzeSecurityHeuristic } = require("../guards/security-heuristic");
 const { orderedStageNamesForTrack } = require("../pipeline/stages");
+const { DOCUMENTATION_ROLE, isDocumentationPath } = require("../pipeline/affected-files");
 
 const HOTFIX_PATTERN = /\b(hotfix|hot[- ]?fix|critical[- ]?fix|urgent[- ]?fix|emergency[- ]?patch|sev-?[01])\b/i;
 // Note: `bump <word>` is outside the word-boundary group so \b doesn't
@@ -33,6 +34,7 @@ const CONFIG_ONLY_PATTERN = /\b(config(uration)?|env(ironment)?|feature[- ]?flag
 const NANO_PATTERN = /\b(typo|typos?|spelling|trivial|cosmetic|comment|docs?[- ]?only|rename[- ]?only|wording)\b/i;
 const QUICK_PATTERN = /\b(quick|minor|small|simple)\s+(fix|change|update|patch)\b/i;
 const LOOP_PATTERN = /\b(loop|iterate|iteration|iterative)\b/i;
+const DOCS_ONLY_PATTERN = /\b(docs?|documentation)[- ]?only\b/i;
 
 const DEP_FILE_RE = /^(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.ya?ml|bun\.lockb|requirements\.txt|Pipfile(\.lock)?|pyproject\.toml|Cargo(\.lock|\.toml)|go\.(sum|mod)|composer\.lock|Gemfile(\.lock)?|\.npmrc|\.yarnrc(\.yml)?)$/i;
 const CONFIG_FILE_RE = /\.(ya?ml|toml|ini|cfg|conf|env|json)$|^\..*rc(\..*)?$|^Dockerfile(\.|$)/i;
@@ -67,6 +69,8 @@ function assess(description = "", files = [], opts = {}) {
   let confidence = "low";
   const allDep = files.length > 0 && files.every(isDepFile);
   const allConfig = files.length > 0 && files.every(isConfigFile);
+  const allDocumentation = files.length > 0 && files.every(isDocumentationPath);
+  const documentationOnly = allDocumentation || (files.length === 0 && DOCS_ONLY_PATTERN.test(desc));
 
   if (HOTFIX_PATTERN.test(desc)) {
     recommendedTrack = "hotfix";
@@ -84,6 +88,12 @@ function assess(description = "", files = [], opts = {}) {
     reasons.unshift(allConfig
       ? "all changed files are config/non-code files"
       : "description matches config-only keywords");
+  } else if (documentationOnly) {
+    recommendedTrack = "loop";
+    confidence = allDocumentation ? "high" : "medium";
+    reasons.unshift(allDocumentation
+      ? "all changed files are documentation; loop records the exact approved file scope"
+      : "description requests documentation-only work; loop records the exact approved file scope");
   } else if (NANO_PATTERN.test(desc)) {
     recommendedTrack = "nano";
     confidence = "medium";
@@ -120,7 +130,8 @@ function assess(description = "", files = [], opts = {}) {
   }
 
   const stages = orderedStageNamesForTrack(recommendedTrack);
-  return { recommendedTrack, stages, confidence, securityRequired, migrationRequired, reasons };
+  const candidateActiveRoles = documentationOnly ? [DOCUMENTATION_ROLE] : [];
+  return { recommendedTrack, stages, confidence, securityRequired, migrationRequired, reasons, candidateActiveRoles };
 }
 
 module.exports = {
@@ -131,6 +142,7 @@ module.exports = {
   NANO_PATTERN,
   QUICK_PATTERN,
   LOOP_PATTERN,
+  DOCS_ONLY_PATTERN,
   DEP_FILE_RE,
   CONFIG_FILE_RE,
 };

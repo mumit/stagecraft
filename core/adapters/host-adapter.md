@@ -129,6 +129,7 @@ interface StageDescriptor {
   objective: string;
   readFirst: string[];
   allowedWrites: string[];
+  approvedAffectedFiles: string[];       // exact Stage-1-approved docs scope; [] otherwise
   artifact: string;                      // "pipeline/build-plan.md"
   template: string;                      // "build-template.md"
   expectedGate: object;                  // JSON Schema for the gate file
@@ -178,7 +179,7 @@ as unsandboxed.
 
 ## Lifecycle: how a stage actually runs
 
-A stage definition in `core/pipeline/stages.js` carries `roles: string[]` (1+ roles). The orchestrator **decomposes** a stage into one **workstream dispatch** per role. Single-role stages (stage-01: `roles: ["pm"]`) decompose into a single dispatch — same code path as multi-role.
+A stage definition in `core/pipeline/stages.js` carries `roles: string[]` (1+ roles) and may carry `optionalRoles: string[]`. The orchestrator **decomposes** the effective, gate-selected role set into one **workstream dispatch** per role. Optional roles are never part of the default matrix; ADR-022's `documentation` role is selected only by a valid PASS Stage 1 exact-file contract. Single-role stages (stage-01: `roles: ["pm"]`) decompose into a single dispatch — same code path as multi-role.
 
 ```
 devteam stage build               (user types in terminal OR slash-command wrapper)
@@ -186,7 +187,7 @@ devteam stage build               (user types in terminal OR slash-command wrapp
   ├─► core/orchestrator loads stage definition (stage-04, roles=[backend, frontend, platform, qa])
   ├─► core/guards check stoplist, allowed-writes
   │
-  ├─► for each role in stage.roles:                         ◄── per-workstream dispatch
+  ├─► for each role in the effective role set:              ◄── per-workstream dispatch
   │     ├─► core/router picks adapter:
   │     │     routing.stages[stage] → routing.roles[role] → routing.default_host
   │     ├─► build StageDescriptor with role, workstreamId
@@ -211,7 +212,7 @@ Because routing happens per workstream, a single stage can dispatch to multiple 
 
 The orchestrator (not the adapter) owns:
 
-1. **Decomposition.** Iterate `stage.roles`, build one `StageDescriptor` per role.
+1. **Decomposition.** Resolve `stage.roles` plus any gate-selected `optionalRoles`, then build one `StageDescriptor` per effective role. Exact-file scope is carried in `approvedAffectedFiles`; adapters render it but never broaden it.
 2. **Dispatch fan-out.** Decide serial vs parallel based on the dispatched adapters' capabilities. If all roles route to the same host and that host has `subagents: true`, the orchestrator MAY consolidate into a single host invocation that uses subagents. Otherwise each workstream is a separate invocation.
 3. **Gate merge.** Read every `pipeline/gates/<stage>.<role>.json`, merge into `pipeline/gates/<stage>.json` with shape:
    ```json

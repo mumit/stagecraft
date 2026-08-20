@@ -20,36 +20,36 @@ Multi-role stages appear once per dispatched role. The CI advisory
 
 | Stage     | Name                      | Role       | Framework B | Role brief B | Dispatch B | Tokens~ |
 | --------- | ------------------------- | ---------- | ----------- | ------------ | ---------- | ------- |
-| stage-01  | requirements              | pm         | 13,994      | 9,831        | 23,825     | 5957    |
-| stage-02  | design                    | principal  | 13,994      | 14,528       | 28,522     | 7131    |
-| stage-03  | clarification             | pm         | 13,994      | 9,831        | 23,825     | 5957    |
-| stage-03b | executable-spec           | pm         | 13,994      | 9,831        | 23,825     | 5957    |
+| stage-01  | requirements              | pm         | 13,994      | 10,618       | 24,612     | 6153    |
+| stage-02  | design                    | principal  | 13,994      | 14,820       | 28,814     | 7204    |
+| stage-03  | clarification             | pm         | 13,994      | 10,618       | 24,612     | 6153    |
+| stage-03b | executable-spec           | pm         | 13,994      | 10,618       | 24,612     | 6153    |
 | stage-04  | build                     | backend    | 13,994      | 7,817        | 21,811     | 5453    |
 | stage-04  | build                     | frontend   | 13,994      | 6,583        | 20,577     | 5145    |
 | stage-04  | build                     | platform   | 13,994      | 2,400        | 16,394     | 4099    |
-| stage-04  | build                     | qa         | 13,994      | 2,718        | 16,712     | 4178    |
+| stage-04  | build                     | qa         | 13,994      | 3,105        | 17,099     | 4275    |
 | stage-04a | pre-review                | platform   | 13,994      | 2,400        | 16,394     | 4099    |
 | stage-04b | security-review           | security   | 13,994      | 7,303        | 21,297     | 5325    |
 | stage-04c | red-team                  | red-team   | 13,994      | 13,683       | 27,677     | 6920    |
 | stage-04d | migration-safety          | migrations | 13,994      | 8,272        | 22,266     | 5567    |
-| stage-05  | peer-review               | reviewer   | 13,994      | 7,249        | 21,243     | 5311    |
-| stage-06  | qa                        | qa         | 13,994      | 2,718        | 16,712     | 4178    |
-| stage-06b | accessibility-audit       | qa         | 13,994      | 2,718        | 16,712     | 4178    |
+| stage-05  | peer-review               | reviewer   | 13,994      | 7,817        | 21,811     | 5453    |
+| stage-06  | qa                        | qa         | 13,994      | 3,105        | 17,099     | 4275    |
+| stage-06b | accessibility-audit       | qa         | 13,994      | 3,105        | 17,099     | 4275    |
 | stage-06c | observability-gate        | platform   | 13,994      | 2,400        | 16,394     | 4099    |
 | stage-06d | verification-beyond-tests | verifier   | 13,994      | 9,089        | 23,083     | 5771    |
-| stage-06e | performance-budget        | qa         | 13,994      | 2,718        | 16,712     | 4178    |
-| stage-07  | sign-off                  | pm         | 13,994      | 9,831        | 23,825     | 5957    |
+| stage-06e | performance-budget        | qa         | 13,994      | 3,105        | 17,099     | 4275    |
+| stage-07  | sign-off                  | pm         | 13,994      | 10,618       | 24,612     | 6153    |
 | stage-07  | sign-off                  | platform   | 13,994      | 2,400        | 16,394     | 4099    |
 | stage-08  | deploy                    | platform   | 13,994      | 2,400        | 16,394     | 4099    |
-| stage-09  | retrospective             | principal  | 13,994      | 14,528       | 28,522     | 7131    |
+| stage-09  | retrospective             | principal  | 13,994      | 14,820       | 28,814     | 7204    |
 
 ## Top 5 heaviest framework files
 
 | File                | Bytes  | Tokens~ |
 | ------------------- | ------ | ------- |
-| roles/principal.md  | 14,528 | 3632    |
+| roles/principal.md  | 14,820 | 3705    |
 | roles/red-team.md   | 13,683 | 3421    |
-| roles/pm.md         | 9,831  | 2458    |
+| roles/pm.md         | 10,618 | 2655    |
 | roles/verifier.md   | 9,089  | 2273    |
 | roles/migrations.md | 8,272  | 2068    |
 
@@ -78,23 +78,23 @@ This replaces eager changed-file content loading: agents inspect file bodies on 
 when the manifest shows a relevant path or digest change.
 
 <!-- budget-data
-stage-01,23825
-stage-02,28522
-stage-03,23825
-stage-03b,23825
+stage-01,24612
+stage-02,28814
+stage-03,24612
+stage-03b,24612
 stage-04,21811
 stage-04a,16394
 stage-04b,21297
 stage-04c,27677
 stage-04d,22266
-stage-05,21243
-stage-06,16712
-stage-06b,16712
+stage-05,21811
+stage-06,17099
+stage-06b,17099
 stage-06c,16394
 stage-06d,23083
-stage-06e,16712
-stage-07,23825
+stage-06e,17099
+stage-07,24612
 stage-08,16394
-stage-09,28522
+stage-09,28814
 -->
 <!-- /generated -->

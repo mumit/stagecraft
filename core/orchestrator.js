@@ -24,6 +24,13 @@ const { classifyGate, MAX_RETRIES_DEFAULT } = require("./gates/classify");
 const { pricingFor } = require("./pricing");
 const { getRecipe } = require("./pipeline/fix-recipes");
 const { deterministicSkipForStage } = require("./pipeline/right-sizing");
+const {
+  DOCUMENTATION_ROLE,
+  affectedFilesForDescriptor,
+  loadDocumentationScope,
+  loadDocumentationScopeFromGatesDir,
+  rolesWithDocumentationScope,
+} = require("./pipeline/affected-files");
 const { collectChangedFileManifest } = require("./context-manifest");
 const { computeContextDelta } = require("./context-delta");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
@@ -375,6 +382,13 @@ function computeDispatchPlan(stageDef, config, track, opts = {}) {
   // rolesForStage falls back to stageDef.roles for every other stage.
   const effectiveTrack = track || (config && config.pipeline && config.pipeline.default_track) || "full";
   let roles = rolesForStage(stageDef, effectiveTrack, config);
+  const documentationScope = opts.gatesDir
+    ? loadDocumentationScopeFromGatesDir(opts.gatesDir)
+    : { selected: false, affectedFiles: [], error: null };
+  roles = rolesWithDocumentationScope(stageDef, roles, documentationScope, {
+    adversarial: isAdversarialReviewMode(config),
+    includeOptional: opts.includeOptionalRoles === true,
+  });
 
   // Apply active_roles filter from stage-01 gate when gatesDir is available.
   // The filter covers all stages so peer-review areas match the build workstreams
@@ -469,8 +483,21 @@ function buildDescriptor(stageDef, role, opts = {}) {
   const wsId = opts.workstreamId || workstreamId(stageDef.stage, role, stageDef.roles.length);
   const changeId = opts.changeId || null;
   const prefix = (p) => prefixPipelineRelative(p, changeId);
+  const documentationScope = opts.documentationScope
+    || (opts.cwd ? loadDocumentationScope(opts.cwd, changeId) : { selected: false, affectedFiles: [] });
+  if (["stage-04", "stage-05"].includes(stageDef.stage) && role === DOCUMENTATION_ROLE && !documentationScope.selected) {
+    throw new Error(
+      "documentation workstream requires a PASS stage-01 gate with active_roles [\"documentation\"] " +
+      "and exact documentation affected_files",
+    );
+  }
   const allowedWrites = effectiveDef.roleWrites?.[role] ?? effectiveDef.allowedWrites;
   const resolvedAllowedWrites = Array.isArray(allowedWrites) ? allowedWrites.map(prefix) : allowedWrites;
+  if (stageDef.stage === "stage-04" && role === DOCUMENTATION_ROLE) {
+    for (const file of documentationScope.affectedFiles) {
+      if (!resolvedAllowedWrites.includes(file)) resolvedAllowedWrites.push(file);
+    }
+  }
   const dispatchedGate = prefix(`pipeline/gates/${wsId}.json`);
   // active_roles and track overrides can collapse a normally multi-role stage
   // to one dispatch. In that case the workstream id becomes the bare stage id
@@ -484,7 +511,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
     stage: stageDef.stage,
     name: nameForStage(stageDef.stage),
     role,
-    rolesInStage: stageDef.roles,
+    rolesInStage: opts.rolesInStage || stageDef.roles,
     workstreamId: wsId,
     objective: effectiveDef.objective,
     readFirst: Array.isArray(effectiveDef.readFirst)
@@ -496,6 +523,7 @@ function buildDescriptor(stageDef, role, opts = {}) {
           .map((item) => resolveReadFirstItem(item, prefix, opts))
       : effectiveDef.readFirst,
     allowedWrites: resolvedAllowedWrites,
+    approvedAffectedFiles: affectedFilesForDescriptor(stageDef, documentationScope),
     artifact: prefix(effectiveDef.artifact),
     template: effectiveDef.template,
     goalCondition: effectiveDef.goalCondition
@@ -682,6 +710,7 @@ function runStage(stageName, opts = {}) {
   const hasExplicitWorkstreamFilter = Array.isArray(opts.workstream) && opts.workstream.length > 0;
   const plan = computeDispatchPlan(stageDef, config, ctx.track, {
     gatesDir: hasExplicitWorkstreamFilter ? null : gatesDir,
+    includeOptionalRoles: hasExplicitWorkstreamFilter,
   });
 
   // Apply --workstream filter BEFORE rendering prompts so only the requested
@@ -767,7 +796,7 @@ function runStage(stageName, opts = {}) {
       // (ctx.processCwd, 36.1's codeRoot) — see resolveReadFirstItem() above.
       // Unset on every non-review path today, matching ctx.processCwd's own
       // "not set by any orchestrator path yet" state (hosts/acp/adapter.js).
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, projectFacts, reviewMode: config.review && config.review.mode });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, rolesInStage: [...new Set(effectivePlan.map((candidate) => candidate.role))], changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, projectFacts, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature

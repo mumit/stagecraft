@@ -23,20 +23,20 @@ not a dash (`stage-NN-role.json`). See `core/hooks/approval-derivation.js` for t
 
 ### Phase 2 — Build
 
-| Stage ID  | Name             | Roles                           | Conditional on                             | Gate file(s)                                                                             | Artifact                     | Template                     |
-| --------- | ---------------- | ------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------- |
-| stage-04  | build            | backend, frontend, platform, qa | —                                          | stage-04.json (merged); stage-04.{backend, frontend, platform, qa}.json (per-workstream) | pipeline/build-plan.md       | build-template.md            |
-| stage-04a | pre-review       | platform                        | —                                          | stage-04a.json                                                                           | pipeline/pre-review.md       | pre-review-template.md       |
-| stage-04b | security-review  | security                        | stage-04a.security_review_required = true  | stage-04b.json                                                                           | pipeline/security-review.md  | review-template.md           |
-| stage-04c | red-team         | red-team                        | —                                          | stage-04c.json                                                                           | pipeline/red-team-report.md  | red-team-report-template.md  |
-| stage-04d | migration-safety | migrations                      | stage-04a.migration_safety_required = true | stage-04d.json                                                                           | pipeline/migration-safety.md | migration-safety-template.md |
-| stage-04e | preflight        | *(mechanical — no dispatch)*    | —                                          | stage-04e.json                                                                           | —                            | —                            |
+| Stage ID  | Name             | Roles                                                    | Conditional on                             | Gate file(s)                                                                                            | Artifact                     | Template                     |
+| --------- | ---------------- | -------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------- |
+| stage-04  | build            | backend, frontend, platform, qa; optional: documentation | —                                          | stage-04.json (merged); stage-04.{backend, frontend, platform, qa, documentation}.json (per-workstream) | pipeline/build-plan.md       | build-template.md            |
+| stage-04a | pre-review       | platform                                                 | —                                          | stage-04a.json                                                                                          | pipeline/pre-review.md       | pre-review-template.md       |
+| stage-04b | security-review  | security                                                 | stage-04a.security_review_required = true  | stage-04b.json                                                                                          | pipeline/security-review.md  | review-template.md           |
+| stage-04c | red-team         | red-team                                                 | —                                          | stage-04c.json                                                                                          | pipeline/red-team-report.md  | red-team-report-template.md  |
+| stage-04d | migration-safety | migrations                                               | stage-04a.migration_safety_required = true | stage-04d.json                                                                                          | pipeline/migration-safety.md | migration-safety-template.md |
+| stage-04e | preflight        | *(mechanical — no dispatch)*                             | —                                          | stage-04e.json                                                                                          | —                            | —                            |
 
 ### Phase 3 — Peer Review
 
-| Stage ID | Name        | Roles                                                      | Conditional on | Gate file(s)                                                                       | Artifact                              | Template           |
-| -------- | ----------- | ---------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
-| stage-05 | peer-review | backend, frontend, platform, qa *(dispatched as reviewer)* | —              | stage-05.json (merged); stage-05.{backend, frontend, platform, qa}.json (per-area) | pipeline/code-review/by-<reviewer>.md | review-template.md |
+| Stage ID | Name        | Roles                                                                               | Conditional on | Gate file(s)                                                                                      | Artifact                              | Template           |
+| -------- | ----------- | ----------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
+| stage-05 | peer-review | backend, frontend, platform, qa; optional: documentation *(dispatched as reviewer)* | —              | stage-05.json (merged); stage-05.{backend, frontend, platform, qa, documentation}.json (per-area) | pipeline/code-review/by-<reviewer>.md | review-template.md |
 
 ### Phase 4 — Verification
 

@@ -3,12 +3,14 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { assess } = require("../stage-shopping/assess");
 const { STAGES, rolesForStage } = require("./stages");
+const { DOCUMENTATION_ROLE, isDocumentationPath } = require("./affected-files");
 
 const WORKSTREAM_RULES = [
   { role: "backend", patterns: [/^src\/backend\//, /^api\//, /^server\//, /^routes\//, /^core\//, /^bin\//] },
   { role: "frontend", patterns: [/^src\/frontend\//, /^app\//, /^pages\//, /^components\//, /^public\//, /^client\//, /^web\//] },
   { role: "platform", patterns: [/^src\/infra\//, /^infra\//, /^deploy\//, /^k8s\//, /^terraform\//, /^\.github\/workflows\//, /^Dockerfile$/, /^docker-compose\.ya?ml$/] },
   { role: "qa", patterns: [/^src\/tests\//, /^tests\//, /^test\//, /(^|\/)__tests__\//, /\.(test|spec)\.[cm]?[jt]sx?$/] },
+  { role: DOCUMENTATION_ROLE, patterns: [{ test: isDocumentationPath }] },
 ];
 
 const STAGE_TRIGGERS = {
@@ -228,6 +230,14 @@ function deterministicSkipsForOrder(order, cwd, opts = {}) {
 function expectedRolesForStage(stage, track, { activeRoles = [], config } = {}) {
   const active = new Set(activeRoles);
   const roles = rolesForStage(stage, track, config);
+  if (
+    active.size === 1
+    && active.has(DOCUMENTATION_ROLE)
+    && Array.isArray(stage.optionalRoles)
+    && stage.optionalRoles.includes(DOCUMENTATION_ROLE)
+  ) {
+    return [DOCUMENTATION_ROLE];
+  }
   if (active.size === 0) return roles;
   return roles.filter((role) =>
     !WORKSTREAM_RULES.some((rule) => rule.role === role) ||
