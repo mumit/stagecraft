@@ -13,6 +13,14 @@ For escalations (`status: ESCALATE`, `decision_needed`), see [`escalation.md`](e
 - **`external-blocked`** — every fix step is a human/external action with no command (e.g. obtain a sign-off). Do that thing; the pipeline can't self-advance.
 - **`convergence-exhausted`** — the retry budget (`autonomy.max_retries`, default 2) is spent **or** the no-progress breaker fired (blockers identical across the last two archived attempts), so `next` returns `resolve-escalation` instead. See [`escalation.md` § 4c](escalation.md#4c-retry-loop-exhaustion--a-distinct-escalation-shape).
 
+An autonomous run can instead halt with `halt_action: retry-ownership` and
+`failure_class: structural-input`. That means the blocker named target files, but
+none of the candidate build roles' existing `roleWrites` covers every target. The
+driver leaves the gates untouched and invokes no host. Use the returned
+`retry_ownership.target_paths` and `candidate_roles` to fix manually, correct the
+design's `file_ownership`, or introduce a genuinely scoped owner; do not add a broad
+directory to an unrelated role as a recovery shortcut.
+
 ---
 
 - [The general pattern](#the-general-pattern)

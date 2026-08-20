@@ -855,8 +855,9 @@ describe("driver: autonomous fix-and-retry (PR-B)", () => {
     assert.ok(!s.halted, "should not set halted flag");
   });
 
-  it("does not target build when fix-and-retry clears multiple workstream gates", async () => {
+  it("selects the first compatible owner deterministically when multiple workstreams were cleared", async () => {
     const cwd = track(makeTargetProject());
+    fs.writeFileSync(path.join(cwd, "package.json"), "{}\n");
     fs.writeFileSync(path.join(cwd, "pipeline", "gates", "stage-04.backend.json"), "{}");
     fs.writeFileSync(path.join(cwd, "pipeline", "gates", "stage-04.frontend.json"), "{}");
     const dispatchOpts = [];
@@ -879,14 +880,15 @@ describe("driver: autonomous fix-and-retry (PR-B)", () => {
       next: () => nextSeq[n++],
       runStageHeadless: async (_stageName, opts) => {
         dispatchOpts.push(opts);
+        fs.writeFileSync(path.join(cwd, "package.json"), "{\"private\":true}\n");
         return [{ role: "backend", gatePath: "x", exitCode: 0, durationMs: 1 }];
       },
       stallProbe: () => () => {},
     });
 
     assert.equal(s.completed, true);
-    assert.equal(dispatchOpts[0].workstream, undefined);
-    assert.equal(dispatchOpts[0].patchItems, undefined);
+    assert.deepEqual(dispatchOpts[0].workstream, ["backend"]);
+    assert.deepEqual(dispatchOpts[0].patchItems, ["Fix package.json: cross-cutting failure"]);
   });
 
   it("targets a build workstream from stage-02 file_ownership when multiple gates are cleared", async () => {
@@ -935,7 +937,7 @@ describe("driver: autonomous fix-and-retry (PR-B)", () => {
     assert.deepEqual(dispatchOpts[0].patchItems, ["Fix src/backend/api.js: route handler still fails"]);
   });
 
-  it("does not target build when file_ownership infers a workstream that was never dispatched by stage-04", async () => {
+  it("halts when file_ownership names a workstream that was never dispatched by stage-04", async () => {
     // Regression: a post-build stage (e.g. accessibility-audit) can flag a file
     // whose ownership points to "frontend", but the project has no frontend
     // workstream — stage-04 only dispatched backend/platform/qa. The old code
@@ -981,14 +983,14 @@ describe("driver: autonomous fix-and-retry (PR-B)", () => {
       stallProbe: () => () => {},
     });
 
-    assert.equal(s.completed, true);
-    // No targeted workstream or patchItems — ghost "frontend" workstream was rejected
-    assert.equal(dispatchOpts[0].workstream, undefined,
-      "should not target a workstream that was never part of stage-04");
-    assert.equal(dispatchOpts[0].patchItems, undefined);
+    assert.equal(s.halt_action, "retry-ownership");
+    assert.equal(s.halt_failure_class, "structural-input");
+    assert.equal(dispatchOpts.length, 0, "no host is invoked without a compatible owner");
+    assert.deepEqual(s.retry_ownership.candidate_roles, ["backend", "platform", "qa"]);
+    assert.deepEqual(s.retry_ownership.target_paths, ["src/frontend/index.html"]);
   });
 
-  it("does not target build when file_ownership maps blockers to multiple owners", async () => {
+  it("halts when no single candidate owns every blocker path", async () => {
     const cwd = track(makeTargetProject());
     seedGate(cwd, "stage-02", {
       status: "PASS",
@@ -1028,9 +1030,55 @@ describe("driver: autonomous fix-and-retry (PR-B)", () => {
       stallProbe: () => () => {},
     });
 
-    assert.equal(s.completed, true);
-    assert.equal(dispatchOpts[0].workstream, undefined);
-    assert.equal(dispatchOpts[0].patchItems, undefined);
+    assert.equal(s.halt_action, "retry-ownership");
+    assert.equal(s.halt_failure_class, "structural-input");
+    assert.equal(dispatchOpts.length, 0);
+    assert.deepEqual(s.retry_ownership.candidate_roles, ["backend", "frontend"]);
+    assert.deepEqual(s.retry_ownership.target_paths, ["src/backend/api.js", "src/frontend/client.js"]);
+  });
+
+  it("halts a QA documentation retry before dispatch and logs only ownership metadata", async () => {
+    const cwd = track(makeTargetProject());
+    const victim = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
+    fs.writeFileSync(victim, "{}");
+    let dispatched = false;
+    const s = await run({
+      cwd,
+      next: () => ({
+        action: "fix-and-retry",
+        stage: "stage-06",
+        name: "qa",
+        failure_class: "code-defect",
+        blockers: [{
+          text: "SENSITIVE REVIEW DETAIL THAT MUST NOT ENTER THE OWNERSHIP EVENT",
+          file: "docs/operator-guide.md",
+          assigned_to: "backend",
+        }],
+        clear_gates: [
+          "pipeline/gates/stage-04.backend.json",
+          "pipeline/gates/stage-04.json",
+          "pipeline/gates/stage-06.json",
+        ],
+      }),
+      runStageHeadless: async () => {
+        dispatched = true;
+        return [];
+      },
+    });
+
+    assert.equal(s.halt_action, "retry-ownership");
+    assert.equal(s.halt_failure_class, "structural-input");
+    assert.equal(dispatched, false);
+    assert.ok(fs.existsSync(victim), "ownership preflight must run before clearing the build gate");
+    assert.deepEqual(s.retry_ownership, {
+      target_paths: ["docs/operator-guide.md"],
+      candidate_roles: ["backend"],
+      compatible_roles: [],
+    });
+    const log = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8");
+    assert.match(log, /"outcome":"retry-ownership-halt"/);
+    assert.match(log, /"candidate_roles":\["backend"\]/);
+    assert.doesNotMatch(log, /SENSITIVE REVIEW DETAIL/);
   });
 
   it("archives the failed attempt's gate before clearing it", async () => {

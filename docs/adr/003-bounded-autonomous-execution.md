@@ -64,6 +64,13 @@ shipped in that order, with a fourth optional layer:
    it may advance autonomously up to — but not into — the irreversible/outward-facing
    stages **stage-07 sign-off** and **stage-08 deploy**
    (`core/pipeline/stages.js:363,381`), which always require an explicit human grant.
+   Structured retry targets are also consequence-bounded: before clearing gates or
+   invoking a host, the driver compares every target path with each candidate build
+   role's existing `roleWrites`. It prefers a compatible `stage-02.file_ownership`
+   owner, then stable stage order. If no single candidate owns every target, it halts
+   as `retry-ownership` / `structural-input` and records only paths plus role names.
+   Unstructured blockers retain the existing retry path because there is no path claim
+   to prove; the convergence ceilings still bound those attempts.
 
 4. **Recipe factory (optional upside bet).** Persist resolved escalations as
    semantically-indexed fix-recipes via the existing `core/memory/` store, so
@@ -109,6 +116,8 @@ grantor**. Full detail, signal-to-class mapping, and the phased roadmap are in
   on the bare `FAIL` string.
 - `devteam run` never advances into stage-07/08 without an explicit human grant,
   regardless of Principal confidence.
+- A structured retry never widens a role's write surface or falls through to a broad
+  dispatch when no candidate role owns every target path.
 - Every autonomous advance past a judgment gate writes an authority record.
 - Peer-review fanout uses whole-stage retry (correct-but-wasteful) until a
   gate-versioning scheme makes targeted fanout retry consistent.

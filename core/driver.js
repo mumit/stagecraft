@@ -35,6 +35,7 @@ const { loadConfig, changeIdFromFeature, changeIdFromSymptom, resolveRoute } = r
 const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require("./scheduler");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
+const { blockerFiles, normalizeOwnershipPath, resolveRetryOwnership } = require("./retry-ownership");
 const {
   candidateActiveRoles,
   deterministicSkipsForOrder,
@@ -78,6 +79,7 @@ const {
   retryBudgetTransition,
   convergenceTransition,
   blockedFixTransition,
+  retryOwnershipTransition,
   fixRetryTransition,
   nonCodeFixTransition,
   rulingPreflightTransition,
@@ -220,92 +222,6 @@ function dispatchObservation(base, result) {
   return observation;
 }
 
-
-function blockerFiles(blockers) {
-  const files = [];
-  for (const b of blockers || []) {
-    if (!b || typeof b !== "object") continue;
-    const file = b.file || b.path || b.filename;
-    if (file && typeof file === "string" && file.trim()) files.push(file.trim().replace(/:\d+$/, ""));
-  }
-  return [...new Set(files)];
-}
-
-function normalizeOwnershipPath(p) {
-  return String(p || "")
-    .replace(/\\/g, "/")
-    .replace(/^\.\//, "")
-    .replace(/^\/+/, "");
-}
-
-function globPatternToRegExp(pattern) {
-  let out = "^";
-  const s = normalizeOwnershipPath(pattern);
-  for (let i = 0; i < s.length; i += 1) {
-    const ch = s[i];
-    if (ch === "*") {
-      if (s[i + 1] === "*") {
-        out += ".*";
-        i += 1;
-      } else {
-        out += "[^/]*";
-      }
-    } else {
-      out += ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-    }
-  }
-  return new RegExp(`${out}$`);
-}
-
-function ownershipPatternMatches(pattern, file) {
-  const p = normalizeOwnershipPath(pattern);
-  const f = normalizeOwnershipPath(file);
-  if (!p || !f) return false;
-  if (p === f) return true;
-  if (p.endsWith("/")) return f.startsWith(p);
-  if (!p.includes("*")) return f.startsWith(`${p}/`);
-  return globPatternToRegExp(p).test(f);
-}
-
-function loadFileOwnership(cwd, changeId) {
-  try {
-    const gate = JSON.parse(fs.readFileSync(path.join(gatesDir(cwd, changeId), "stage-02.json"), "utf8"));
-    return gate && typeof gate.file_ownership === "object" && !Array.isArray(gate.file_ownership)
-      ? gate.file_ownership
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function workstreamFromFileOwnership(fileOwnership, files) {
-  const owners = new Set();
-  const entries = Object.entries(fileOwnership || {});
-  for (const file of files || []) {
-    for (const [pattern, owner] of entries) {
-      if (ownershipPatternMatches(pattern, file)) owners.add(owner);
-    }
-  }
-  return owners.size === 1 ? [...owners][0] : null;
-}
-
-function blockerPatchItems(blockers) {
-  const items = [];
-  for (const b of blockers || []) {
-    if (typeof b === "string") {
-      if (b.trim()) items.push(b.trim());
-      continue;
-    }
-    if (!b || typeof b !== "object") continue;
-    const file = b.file || b.path || b.filename;
-    const text = b.text || b.summary || b.description || "";
-    if (file && text) items.push(`Fix ${file}: ${text}`);
-    else if (file) items.push(`Fix ${file}`);
-    else if (text) items.push(text);
-  }
-  return [...new Set(items)].filter(Boolean);
-}
-
 function hashTargetedFixFiles(cwd, files) {
   const root = path.resolve(cwd);
   const entries = [];
@@ -342,43 +258,6 @@ function targetedFixChanged(cwd, before) {
 
 function targetedFixNoSourceChangeEvidence(before) {
   return (before || []).map((entry) => entry.file).join(", ");
-}
-
-function targetedBuildFixFromRetry(cwd, changeId, retryAction) {
-  const files = blockerFiles(retryAction.blockers);
-
-  // Collect which stage-04 workstreams were actually cleared. These are the
-  // workstreams that exist in this project's build — file_ownership may name
-  // workstreams (e.g. "frontend") that stage-04 never dispatches.
-  const clearedWorkstreams = new Set();
-  for (const rel of retryAction.clear_gates || []) {
-    const m = String(rel).match(/^pipeline\/gates\/stage-04\.([^./]+)\.json$/);
-    if (m) clearedWorkstreams.add(m[1]);
-  }
-
-  // Single cleared workstream → unambiguous; prefer it without consulting ownership.
-  // Multiple cleared workstreams → consult file ownership, but only accept the
-  // result when that workstream was actually dispatched (gate was cleared). This
-  // prevents targeted fixes for workstreams that appear in file_ownership but were
-  // never part of this project's stage-04 plan.
-  let workstream = clearedWorkstreams.size === 1 ? [...clearedWorkstreams][0] : null;
-  if (!workstream) {
-    const fromOwnership = workstreamFromFileOwnership(loadFileOwnership(cwd, changeId), files);
-    if (fromOwnership && clearedWorkstreams.has(fromOwnership)) workstream = fromOwnership;
-  }
-
-  if (!workstream) return null;
-  const patchItems = blockerPatchItems(retryAction.blockers || []);
-  if (patchItems.length === 0) return null;
-  return {
-    stage: "stage-04",
-    name: "build",
-    workstream,
-    patchItems,
-    files,
-    source_stage: retryAction.stage,
-    source_name: retryAction.name,
-  };
 }
 
 // Sum cost across all stage gates, avoiding double-counting for multi-role
@@ -2073,6 +1952,23 @@ async function run(opts = {}) {
           break;
         }
 
+        const retryOwnership = resolveRetryOwnership({
+          cwd,
+          changeId,
+          retryAction: r,
+          track: effectiveTrack,
+          config,
+        });
+        if (retryOwnership.incompatible) {
+          applyTransition(retryOwnershipTransition({
+            action: r,
+            base,
+            archived,
+            ownership: retryOwnership,
+          }));
+          break;
+        }
+
         // B9 (item 5.4): recipes emit in-place pipeline/ paths; rewrite them
         // through prefixPipelineRelative so bounded runs clear the right gates.
         const toClear = (r.clear_gates || []).map((rel) =>
@@ -2097,7 +1993,7 @@ async function run(opts = {}) {
           break;
         }
         writeRunBlockers(cwd, r.name, r.blockers, changeId);
-        const targetedFix = targetedBuildFixFromRetry(cwd, changeId, r);
+        const targetedFix = retryOwnership.targetedFix;
         const target = targetedFix
           ? { workstream: targetedFix.workstream, patch_items: targetedFix.patchItems.length }
           : null;

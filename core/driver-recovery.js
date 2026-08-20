@@ -82,6 +82,44 @@ function blockedFixTransition({ action, base, archived }) {
   });
 }
 
+function retryOwnershipTransition({ action, base, archived, ownership }) {
+  const targets = ownership.target_paths.join(", ");
+  const candidates = ownership.candidate_roles.join(", ") || "none";
+  const reason =
+    `automatic retry for "${action.name}" targets ${targets}, but no candidate build role ` +
+    `can write every target (considered: ${candidates}). Fix the files manually, correct ` +
+    `stage-02 file_ownership, or add a narrowly scoped owner before resuming; no host was invoked.`;
+  const evidence = {
+    target_paths: ownership.target_paths,
+    candidate_roles: ownership.candidate_roles,
+    compatible_roles: [],
+  };
+  return transitionResult(TRANSITION_CONTROLS.HALT, {
+    summaryPatch: {
+      halted: true,
+      halt_action: "retry-ownership",
+      halt_failure_class: "structural-input",
+      halt_reason: reason,
+      retry_ownership: evidence,
+      blockers: action.blockers || [],
+    },
+    logEvents: [{
+      ...base,
+      outcome: "retry-ownership-halt",
+      archived: archived || null,
+      ...evidence,
+    }],
+    emittedEvents: [{
+      type: "halt",
+      ...base,
+      action: "retry-ownership",
+      failure_class: "structural-input",
+      reason,
+      retry_ownership: evidence,
+    }],
+  });
+}
+
 function fixRetryTransition({
   action,
   base,
@@ -276,6 +314,7 @@ module.exports = {
   retryBudgetTransition,
   convergenceTransition,
   blockedFixTransition,
+  retryOwnershipTransition,
   fixRetryTransition,
   nonCodeFixTransition,
   rulingPreflightTransition,
