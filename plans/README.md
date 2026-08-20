@@ -108,6 +108,7 @@ They document why certain capability gates remain shut and what would open them.
 | [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md) | End-to-end pipeline critical path and safe acceleration roadmap | Proposed; no implementation authorized — items #1/#5/#10 superseded by phase-32 |
 | [landscape-review-2026-07.md](landscape-review-2026-07.md) | Full competitive review vs the mid-2026 coding-agent landscape; strategy ("the auditable agent SDLC that learns") and the phase 28–34 roadmap | Largely delivered — phases 28–31, 33–36 shipped |
 | [experience-review-2026-08.md](experience-review-2026-08.md) | Developer experience, productivity, and token cost measured by running the CLI after phases 28–36. Finds capability strong and the interface lagging: 44 commands, 244 flags, a 343-line help with no per-command help, and a 268-byte cacheable prompt prefix against ~22 KB re-read per dispatch | Proposed; produced [phase-37](phase-37-interface-and-token-efficiency.md) |
+| [builder-review-2026-08.md](builder-review-2026-08.md) | Architecture, implementation, and roadmap review at Phase 42.2, measured by running the CLI. Eight findings (F1–F8): goal-loop convergence dropped on every build/qa dispatch, a stale pricing table blocking the Phase 41 evidence gates rather than thin collection, and Stagecraft's own install read as the operator's diff by three subsystems — inflating a trivial change from `loop` to `full` | Wave 0 delivered (PRs #429–#433); F1/F4/F5 open, roadmap in §6 |
 
 ---
 
