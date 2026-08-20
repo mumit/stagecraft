@@ -507,7 +507,21 @@ function renderDefaultConfig(hosts, opts = {}) {
   lines.push(`  #   ${list[0]}: 1`);
   lines.push("");
   lines.push("pipeline:");
-  lines.push("  default_track: full");
+  // ADR-016/ADR-018 already make `loop` the track `devteam run` infers for a
+  // generic change, and docs/tracks.md tells operators to pick it for
+  // day-to-day work and reserve `full` for changes worth the audit trail. A
+  // written `full` here contradicted both: an operator who followed the
+  // quickstart and never ran `assess` paid 23-25 dispatches where 4 was the
+  // documented answer. Lighter tracks are still stoplist-guarded, so a change
+  // touching auth, payments, crypto, or migrations refuses to run here and
+  // says to use `full`.
+  //
+  // Only the value written into a NEW project changes. DEFAULTS.pipeline
+  // .default_track above stays "full": that is the fallback for a config file
+  // that does not say, and silently reducing rigor for an existing project
+  // that never chose is a different decision from picking a default for a
+  // fresh one.
+  lines.push("  default_track: loop   # day-to-day default; use `full` for audited/high-stakes changes");
   lines.push("  isolation: in-place");
   lines.push("  workstream_isolation: shared  # opt in: git-worktree (parallel build roles only)");
   lines.push("  # require_signed_gates: false  # requires DEVTEAM_SIGNING_SECRET when true");

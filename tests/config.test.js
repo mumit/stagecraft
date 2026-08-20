@@ -403,7 +403,7 @@ describe("config: renderDefaultConfig + writeConfigIfAbsent", () => {
   it("renders parseable YAML for single host", () => {
     const text = renderDefaultConfig(["claude-code"]);
     assert.match(text, /default_host: claude-code/);
-    assert.match(text, /default_track: full/);
+    assert.match(text, /default_track: loop/);
     assert.match(text, /workstream_isolation: shared/);
     assert.match(text, /require_signed_gates: false/);
     assert.match(text, /force_stages: \[\]/);
@@ -565,5 +565,22 @@ describe("config: clearConfigCache invalidates in-process reads", () => {
     const stale = loadConfig(cwd);
     assert.equal(stale.pipeline.custom_stages, null, "stale cache should still return null");
     clearConfigCache(); // clean up for subsequent tests
+  });
+});
+
+describe("config: the written default track vs the silent-config fallback", () => {
+  it("writes `loop` into a new project, matching ADR-018 and docs/tracks.md", () => {
+    // A quickstart operator who never runs `assess` should land on the track
+    // the docs recommend, not on 23-25 dispatches of full ceremony.
+    const text = renderDefaultConfig(["claude-code"]);
+    assert.match(text, /^\s*default_track: loop\b/m);
+    assert.doesNotMatch(text, /^\s*default_track: full\b/m);
+  });
+
+  it("still falls back to `full` when a config file does not name a track", () => {
+    // Deliberately NOT changed alongside the template above: an existing
+    // project that never chose a track must not silently lose rigor.
+    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: generic\n" }));
+    assert.equal(loadConfig(cwd).pipeline.default_track, "full");
   });
 });
