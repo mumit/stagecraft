@@ -8,7 +8,13 @@ const name = "assess";
 
 const flags = {
   cwd:          { type: "string",  description: "Target project directory" },
-  description:  { type: "string",  description: "Change description for heuristics" },
+  // `run` and `stage` both name this string --feature, and assess is usually
+  // the first command an operator types after init — accepting only
+  // --description here made the documented quickstart fail on an unknown-flag
+  // exit. Both spellings resolve to the same dest key; --description stays
+  // supported so existing scripts keep working.
+  feature:      { type: "string",  key: "description", description: "Change description for heuristics" },
+  description:  { type: "string",  description: "Alias for --feature" },
   json:         { type: "boolean", description: "JSON output" },
   apply:        { type: "boolean", description: "Write inferred track to .devteam/config.yml as custom_stages (project-wide)" },
   confirm:      { type: "boolean", description: "Write pipeline/track.json with source:human (operator-confirmed)" },
