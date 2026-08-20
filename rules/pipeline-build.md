@@ -18,13 +18,13 @@ in `pipeline-tracks.md`. The full index is in `pipeline.md`. Gate schemas
 
 | Stage | File | Role | Summary |
 |---|---|---|---|
-| 4 | [`stage-04.md`](stage-04.md) | backend, frontend, platform, qa | Parallel build across workstreams. Each role writes a per-area PR summary + gate. |
+| 4 | [`stage-04.md`](stage-04.md) | backend, frontend, platform, qa; optional documentation | Parallel build across code workstreams, or an exact-file documentation-only workstream. Each role writes a per-area PR summary + gate. |
 | 4a | [`stage-04a.md`](stage-04a.md) | platform | Pre-review: lint + dep review + SCA + security/migration-safety trigger heuristics. |
 | 4b | [`stage-04b.md`](stage-04b.md) | security | Security review — conditional on stage-04a's `security_review_required`. Has veto. |
 | 4c | [`stage-04c.md`](stage-04c.md) | red-team | Adversarial review. Unconditional on full + hotfix. Blocking findings must be addressed before Stage 5. |
 | 4d | [`stage-04d.md`](stage-04d.md) | migrations | Migration safety — conditional on stage-04a's `migration_safety_required`. Has veto. |
 | 4e | [`stage-04e.md`](stage-04e.md) | (script) | Mechanical pre-peer-review preflight: git hygiene, import paths, deferred red-team count. |
-| 5 | [`stage-05.md`](stage-05.md) | reviewer × 4 areas | Peer code review. Matrix or scoped shape; per-area gates merged by the orchestrator. |
+| 5 | [`stage-05.md`](stage-05.md) | reviewer × active areas | Peer review. Matrix or scoped shape, including exact-file documentation-only review; per-area gates merged by the orchestrator. |
 | 6 | [`stage-06.md`](stage-06.md) | qa | Test execution. Every acceptance criterion maps 1:1 to a test. |
 | 6b | [`stage-06b.md`](stage-06b.md) | qa | Accessibility audit. Tracks: full, quick, hotfix. |
 | 6c | [`stage-06c.md`](stage-06c.md) | platform | Observability gate — verify brief §9 signals actually emit. Tracks: full, hotfix. |

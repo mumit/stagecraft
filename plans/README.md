@@ -8,7 +8,7 @@ written to be executed one item at a time.
 Phase 32 is mostly complete with one open item (32.4, deferred). Phase 41.1
 completed a two-project no-go review; activation remains evidence-gated. Phase
 42 is in progress from the independently observed dogfood reliability findings;
-42.1–42.2 are implemented and unreleased.
+42.1–42.3 are implemented and unreleased.
 Phases 21 and 25 are proposed or parked; Phase
 26's still-useful measurement work shipped through Phase 39. See
 [What is not delivered yet](#what-is-not-delivered-yet) for the full list of open work.
@@ -58,7 +58,7 @@ listed under [Evidence reviews](#evidence-reviews).
 | 39 | [phase-39-evidence-performance-calibration.md](phase-39-evidence-performance-calibration.md) | — | Cross-run latency/cost calibration, usefulness signals, right-sizing feedback, bottleneck timeline | ✅ complete (PR #414) |
 | 40 | [phase-40-conversational-artifact-refinement.md](phase-40-conversational-artifact-refinement.md) | — | Proposal-first requirements/design conversation with exact diff, explicit apply, and deterministic invalidation | ✅ complete (PR #415) |
 | 41 | [phase-41-evidence-gated-learning-routing.md](phase-41-evidence-gated-learning-routing.md) | — | Shadow routing and controlled recipe candidates after explicit multi-project thresholds | ⛔ 41.1 no-go review complete; activation stays gated |
-| 42 | [phase-42-dogfood-reliability.md](phase-42-dogfood-reliability.md) | — | Resume safety, compatible retry routing, docs ownership, layout-aware QA, and evidence semantics from real dogfood | 🚧 42.1–42.2 implemented; 42.3 next |
+| 42 | [phase-42-dogfood-reliability.md](phase-42-dogfood-reliability.md) | — | Resume safety, compatible retry routing, docs ownership, layout-aware QA, and evidence semantics from real dogfood | 🚧 42.1–42.3 implemented; 42.4 next |
 
 **Execution format:** older phases with prompt packs retain their paste-ready prompts for
 historical use. Phases 38–41 use the plan itself as the contract and deliberately avoid
@@ -79,7 +79,7 @@ reconciled against upstream on 2026-08-19.
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Superseded as an execution plan. Phases 28, 32, 37, and 39 shipped its useful measurement and live-timeline scope. |
 | **Phase 41 — learning/routing activation** | [phase-41](phase-41-evidence-gated-learning-routing.md) | Blocked until the plan's per-route and cross-project evidence thresholds are met. Test fixtures do not count. |
-| **Phase 42 — dogfood reliability** | [phase-42](phase-42-dogfood-reliability.md) | 42.1–42.2 implemented; 42.3–42.6 remain and do not depend on opening Phase 41. |
+| **Phase 42 — dogfood reliability** | [phase-42](phase-42-dogfood-reliability.md) | 42.1–42.3 implemented; 42.4–42.6 remain and do not depend on opening Phase 41. |
 
 Capability gates that stay shut for lack of real-project data — not for lack of code —
 are listed under [Evidence reviews](#evidence-reviews). Phase 28 removed the telemetry

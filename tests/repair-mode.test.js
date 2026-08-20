@@ -322,8 +322,8 @@ describe("repair mode 10.2: stage-01 produces a diagnosis artifact when intent=r
     const descriptor = buildDescriptor(stageDef, "pm", { intent: "feature" });
     assert.ok(descriptor.artifact.endsWith("brief.md"),
       `artifact must be brief.md, got: ${descriptor.artifact}`);
-    assert.ok(!("affected_files" in descriptor.expectedGate),
-      "feature gate must not have affected_files");
+    assert.deepEqual(descriptor.expectedGate.affected_files, [],
+      "feature gate keeps an inert affected_files list for optional documentation ownership");
     assert.ok(!("escalation_reason" in descriptor.expectedGate),
       "feature gate must not have ESCALATE fields");
   });

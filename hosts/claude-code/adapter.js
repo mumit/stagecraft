@@ -90,6 +90,12 @@ const ROLE_FRONTMATTER = {
     model: "sonnet",
     permissionMode: "acceptEdits",
   },
+  documentation: {
+    name: "dev-documentation",
+    description: "Documentation implementer. Writes only the exact brief-approved documentation files plus its Stage 4 pipeline artifacts; never expands scope implicitly.",
+    model: "sonnet",
+    permissionMode: "acceptEdits",
+  },
   auditor: {
     name: "auditor",
     description: "Codebase auditor. Read-only by design — analyzes architecture, health, security, performance, code quality; produces docs/audit/00–10 outputs and a prioritized roadmap. Used by the /audit and /audit-quick slash commands. Never writes source code.",
@@ -360,7 +366,7 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? ROLE_FRONTMATTER[descriptor.subagent]
     : ROLE_FRONTMATTER[descriptor.role];
   const agentName = fm ? fm.name : (descriptor.subagent || descriptor.role);
-  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, splitReadFirst } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, splitReadFirst } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -386,6 +392,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   if (ctx.feature) lines.push(`Feature: ${ctx.feature}`);
   renderScopeLine(ctx, lines);
   renderPatchBlock(ctx, lines);
+  renderApprovedAffectedFiles(lines, descriptor);
   lines.push("");
   lines.push(`## Objective`);
   lines.push(descriptor.objective);

@@ -62,6 +62,9 @@ function _wsFromText(text) {
   if (/src[/\\]backend[/\\]|\/api\/|\/routes\/|\/controller/i.test(text)) ws.add("backend");
   if (/src[/\\]frontend[/\\]|\/components?\//i.test(text)) ws.add("frontend");
   if (/src[/\\]infra[/\\]|Dockerfile|docker-compose/i.test(text)) ws.add("platform");
+  if (/(^|[/\\])(docs|changelog\.d)[/\\]|(^|[/\\])(README|CHANGELOG|CONTRIBUTING)(\.[A-Za-z0-9_-]+)?\b/i.test(text)) {
+    ws.add("documentation");
+  }
   return [...ws];
 }
 
@@ -69,7 +72,7 @@ function _wsFromText(text) {
 function _buildRoles() {
   const buildStage = getStage("build");
   return (buildStage && Array.isArray(buildStage.roles) && buildStage.roles.length)
-    ? buildStage.roles
+    ? [...buildStage.roles, ...((buildStage.optionalRoles) || [])]
     : ["backend", "frontend", "platform", "qa"];
 }
 

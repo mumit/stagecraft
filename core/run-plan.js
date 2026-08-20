@@ -126,7 +126,8 @@ function buildRunPlan({
     const stage = STAGES[name];
     const selection = stageSelection(name, configSkipStages, rightSizedSkips);
     const configuredRoles = stage ? rolesForStage(stage, track, config) : [];
-    const configuredRoutes = stage ? configuredRoles.map((role) => {
+    const optionalRoles = stage && Array.isArray(stage.optionalRoles) ? stage.optionalRoles : [];
+    const configuredRoutes = stage ? [...new Set([...configuredRoles, ...optionalRoles])].map((role) => {
       const route = resolveRoute(config, stage.stage, role);
       return { role, host: route.hostName, model: route.model || null };
     }) : [];
@@ -148,6 +149,7 @@ function buildRunPlan({
       stage: stage ? stage.stage : null,
       ...selection,
       configured_roles: configuredRoles,
+      optional_roles: optionalRoles,
       configured_routes: configuredRoutes,
       dispatches,
     };

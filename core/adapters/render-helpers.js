@@ -54,6 +54,16 @@ function renderPatchBlock(ctx, lines) {
   }
 }
 
+function renderApprovedAffectedFiles(lines, descriptor) {
+  const files = descriptor.approvedAffectedFiles;
+  if (!Array.isArray(files) || files.length === 0) return;
+  lines.push("");
+  lines.push("## Approved affected files (exact scope contract)");
+  lines.push("");
+  lines.push("Build, QA, and peer review share this Stage 1-approved list. Treat every path as exact; no parent directory, sibling, or wildcard is implied.");
+  for (const file of files) lines.push(`- ${file}`);
+}
+
 // Caption for the "Allowed writes" section. The wording reflects
 // how the host *actually* enforces the list at runtime — tool-call-
 // time (hooks block writes) vs prompt-only (advisory; gate validator
@@ -455,4 +465,4 @@ function shrinkComposedPrompt({ adapter, descriptor, ctx, basePrompt, compose, l
   return { base, composed };
 }
 
-module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, shrinkComposedPrompt, splitReadFirst, toolBudgetSection };
+module.exports = { allowedWritesCaption, appendGateFooter, readFrameworkFileContent, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderKnownPatterns, renderPatchBlock, renderPriorKnowledge, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, shouldInlineFramework, shrinkComposedPrompt, splitReadFirst, toolBudgetSection };

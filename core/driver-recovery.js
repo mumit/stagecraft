@@ -268,7 +268,7 @@ function rulingAppliedTransition({ base, applyResult, latest }) {
 }
 
 function rulingDispatchVerificationTransition({ base, latest, buildGateUpdated }) {
-  const rulingMentionsBuild = /dispatch\s+(backend|frontend|platform|qa)\s+build\s+workstream/i
+  const rulingMentionsBuild = /dispatch\s+(backend|frontend|platform|qa|documentation)\s+build\s+workstream/i
     .test(latest.decision || "");
   if (!rulingMentionsBuild) return null;
   if (buildGateUpdated) {

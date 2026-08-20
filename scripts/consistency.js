@@ -215,7 +215,7 @@ function checkStagesToRoles() {
   const seen = new Set();
   for (const def of Object.values(STAGES)) {
     if (!def) continue;
-    for (const role of def.roles) seen.add(role);
+    for (const role of [...def.roles, ...((def.optionalRoles) || [])]) seen.add(role);
   }
   for (const role of seen) {
     if (exists(`roles/${role}.md`)) pass(`role "${role}" has brief`);
@@ -226,11 +226,12 @@ function checkStagesToRoles() {
 function checkRoleWritesValid() {
   for (const [name, def] of Object.entries(STAGES)) {
     if (!def || !def.roleWrites) continue;
+    const validRoles = [...def.roles, ...((def.optionalRoles) || [])];
     for (const role of Object.keys(def.roleWrites)) {
-      if (def.roles.includes(role)) {
+      if (validRoles.includes(role)) {
         pass(`stage "${name}" roleWrites["${role}"] valid`);
       } else {
-        fail(`stage "${name}" roleWrites`, `role "${role}" not in roles[${def.roles.join(", ")}]`);
+        fail(`stage "${name}" roleWrites`, `role "${role}" not in roles/optionalRoles[${validRoles.join(", ")}]`);
       }
     }
   }

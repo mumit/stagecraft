@@ -40,6 +40,10 @@ Reading order:
   4. Other reviewer's file if it exists (don't duplicate their points)
   5. The changed source files (you will be given one or two areas to review)
 
+On a lean track such as `loop`, `pipeline/design-spec.md` and `pipeline/adr/`
+may not exist because those stages did not run. Review against the brief and
+the exact dispatch scope; missing full-track artifacts are not blockers.
+
 ### Review file format
 
 Write to `pipeline/code-review/by-<your-role>.md` using one section per area
@@ -64,7 +68,12 @@ REVIEW: APPROVED
 The `approval-derivation.js` script parses each `## Review of <area>` section
 plus its trailing `REVIEW:` marker and updates the corresponding
 `stage-05.<area>.json` gate. Known areas: `backend`, `frontend`, `platform`,
-`qa`, `deps`.
+`qa`, `documentation`, `deps`.
+
+For a documentation-only assignment, write one `## Review of documentation`
+section to `pipeline/code-review/by-documentation.md`. Review only the exact
+approved affected-file list in the prompt. Treat an additional document as a
+scope-expansion concern, not as implicit review or edit authority.
 
 In **scoped** review mode (`review_shape: "scoped"` on the gate, set by the
 orchestrator when the diff is area-contained), write one section.
@@ -174,7 +183,7 @@ The pipeline uses the following stage numbering:
 - Stage 1: Requirements (PM)
 - Stage 2: Design (Principal)
 - Stage 3: Clarification (PM)
-- Stage 4: Build (Backend | Frontend | Platform | QA)
+- Stage 4: Build (Backend | Frontend | Platform | QA; optional Documentation)
 - Stage 4a: Pre-review (Platform) — lint, tests, dep review, security heuristic
 - Stage 4b: Security review (Security) — triggered by heuristic
 - Stage 5: Peer review (Reviewer) — this stage

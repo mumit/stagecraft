@@ -33,6 +33,7 @@ const { TRACKS } = require("../pipeline/stages.js");
 const { stripSection, upsertSection } = require("../markers.js");
 const { logContextSectionEvent } = require("../context-log.js");
 const { enforceContextBudget } = require("../context-budget.js");
+const { documentationScopeError } = require("../pipeline/affected-files.js");
 
 // --strict mode: the validator exits 1 on unknown internal errors instead of
 // treating them as PASS. Also activated when the CI=true env var is set.
@@ -684,6 +685,15 @@ function main() {
     console.error(`[gate-validator] INVALID GATE ${latest.name}: ${deployCostErr}`);
     console.error(
       `[gate-validator] See .devteam/rules/stage-08.md §Cost Gate`,
+    );
+    process.exit(1);
+  }
+
+  const documentationScopeErr = documentationScopeError(gate);
+  if (documentationScopeErr) {
+    console.error(`[gate-validator] INVALID GATE ${latest.name}: ${documentationScopeErr}`);
+    console.error(
+      `[gate-validator] See .devteam/rules/stage-01.md §Documentation-only ownership`,
     );
     process.exit(1);
   }

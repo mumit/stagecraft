@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:stagecraft:schema:stage-05",
   "title": "Stage 05 Peer Review Gate",
-  "description": "Stage 5 (Peer Code Review) gate. review.mode: panel (default) — workstream gates land at pipeline/gates/stage-05.<area>.json (one per area: backend, frontend, platform, qa) and the orchestrator merges them into pipeline/gates/stage-05.json. WRITTEN BY THE approval-derivation HOOK ONLY — never authored by an agent. The hook parses pipeline/code-review/by-<reviewer>.md for REVIEW: APPROVED / REVIEW: CHANGES REQUESTED markers and reconciles approvals/changes_requested on every save. PASS when approvals.length >= required_approvals AND changes_requested is empty. review.mode: adversarial (31.3, opt-in) — two workstream gates instead: pipeline/gates/stage-05.reviewer.json (from by-reviewer.md, all areas rolled into one gate — required[] below does not apply to it, it carries areas_reviewed/approved_areas/changes_requested instead) and pipeline/gates/stage-05.critic.json (from by-critic.md — carries mode/challenges/challenges_resolved, see properties below). The merged stage-05.json additionally surfaces challenges/challenges_resolved from the critic gate; PASS requires the reviewer gate PASS AND challenges_resolved.",
+  "description": "Stage 5 (Peer Code Review) gate. review.mode: panel (default) — workstream gates land at pipeline/gates/stage-05.<area>.json (one per active area: backend, frontend, platform, qa, or ADR-022's optional exact-file documentation area) and the orchestrator merges them into pipeline/gates/stage-05.json. WRITTEN BY THE approval-derivation HOOK ONLY — never authored by an agent. The hook parses pipeline/code-review/by-<reviewer>.md for REVIEW: APPROVED / REVIEW: CHANGES REQUESTED markers and reconciles approvals/changes_requested on every save. PASS when approvals.length >= required_approvals AND changes_requested is empty. review.mode: adversarial (31.3, opt-in) — two workstream gates instead: pipeline/gates/stage-05.reviewer.json (from by-reviewer.md, all areas rolled into one gate — required[] below does not apply to it, it carries areas_reviewed/approved_areas/changes_requested instead) and pipeline/gates/stage-05.critic.json (from by-critic.md — carries mode/challenges/challenges_resolved, see properties below). The merged stage-05.json additionally surfaces challenges/challenges_resolved from the critic gate; PASS requires the reviewer gate PASS AND challenges_resolved.",
   "type": "object",
   "required": [
     "review_shape",
@@ -27,7 +27,7 @@
     },
     "area": {
       "type": "string",
-      "enum": ["backend", "frontend", "platform", "qa", "security", "deps"],
+      "enum": ["backend", "frontend", "platform", "qa", "documentation", "security", "deps"],
       "description": "Owning area for this review gate. Same value as the gate's workstream field; kept for backwards-compat with consumers that read 'area'. Reviewers must come from a different area; see .devteam/rules/pipeline.md §Stage 5."
     },
     "review_shape": {

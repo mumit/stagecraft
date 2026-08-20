@@ -110,6 +110,25 @@ describe("gate-validator: exit codes", () => {
   });
 });
 
+describe("gate-validator: ADR-022 documentation scope", () => {
+  it("rejects wildcard documentation authority before dispatch", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      stage: "stage-01",
+      status: "PASS",
+      track: "loop",
+      acceptance_criteria_count: 1,
+      out_of_scope_items: [],
+      required_sections_complete: true,
+      active_roles: ["documentation"],
+      affected_files: ["docs/**"],
+    });
+    const result = runValidator(cwd);
+    assert.equal(result.status, 1);
+    assert.match(`${result.stdout}\n${result.stderr}`, /exact canonical repo-relative file paths/);
+  });
+});
+
 describe("gate-validator: stage-08 cost gate", () => {
   it("rejects a PASS deploy gate when the cost estimate is missing", () => {
     const cwd = track(makeTargetProject());

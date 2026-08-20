@@ -5,7 +5,7 @@ Host-neutral context for any LLM working on the **Stagecraft** codebase itself. 
 ## Start here (in order)
 
 1. [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, recipes for common changes, conventions, and the doc-update checklist.
-2. [`ARCHITECTURE.md`](ARCHITECTURE.md) — 14 locked design decisions. Do not break these casually.
+2. [`ARCHITECTURE.md`](ARCHITECTURE.md) — 15 locked design decisions. Do not break these casually.
 3. [`core/adapters/host-adapter.md`](core/adapters/host-adapter.md) — the contract every adapter must satisfy.
 4. [`docs/walkthroughs/stage-04-split-host.md`](docs/walkthroughs/stage-04-split-host.md) — stress-test trace that locked the multi-workstream dispatch contract. Read before touching dispatch logic.
 

@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { REPO_ROOT, makeTargetProject, cleanup } = require("./_helpers");
+const { REPO_ROOT, makeTargetProject, seedGate, cleanup } = require("./_helpers");
 const { parseReviewFile, reviewerNameFromPath } =
   require(path.join(REPO_ROOT, "core", "hooks", "approval-derivation"));
 
@@ -73,6 +73,7 @@ describe("approval-derivation: parser", () => {
     assert.equal(reviewerNameFromPath("/p/by-frontend.md"), "dev-frontend");
     assert.equal(reviewerNameFromPath("/p/by-platform.md"), "dev-platform");
     assert.equal(reviewerNameFromPath("/p/by-qa.md"), "dev-qa");
+    assert.equal(reviewerNameFromPath("/p/by-documentation.md"), "dev-documentation");
     assert.equal(reviewerNameFromPath("/p/by-security.md"), "security-engineer");
     assert.equal(reviewerNameFromPath("/p/by-principal.md"), "principal");
     assert.equal(reviewerNameFromPath("/p/notamatch.md"), null);
@@ -205,5 +206,26 @@ describe("approval-derivation: gate upsert (end-to-end)", () => {
     assert.equal(g.required_approvals, 2);
     assert.equal(g.review_shape, "matrix");
     assert.equal(g.status, "FAIL", "1 approval is not enough on full");
+  });
+
+  it("uses an approved Stage 1 loop track for documentation review when config defaults to full", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      stage: "stage-01",
+      status: "PASS",
+      track: "loop",
+      active_roles: ["documentation"],
+      affected_files: ["docs/guide.md"],
+      acceptance_criteria_count: 1,
+      out_of_scope_items: [],
+      required_sections_complete: true,
+    });
+    writeReview(cwd, "by-documentation.md", "## Review of documentation\nLGTM\nREVIEW: APPROVED\n");
+    runHook(cwd);
+    const gate = readGate(cwd, "stage-05.documentation");
+    assert.ok(gate, "documentation gate not written");
+    assert.equal(gate.track, "loop");
+    assert.equal(gate.required_approvals, 1);
+    assert.equal(gate.status, "PASS");
   });
 });

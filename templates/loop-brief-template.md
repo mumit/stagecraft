@@ -20,3 +20,9 @@
 - AC-2:
 
 ## Affected Files
+
+<!--
+  List exact, canonical, repo-relative file paths. For documentation-only work,
+  these entries become the Stage 1 gate's affected_files allowlist; do not use
+  directories or globs. Scope expansion requires a recorded decision.
+-->

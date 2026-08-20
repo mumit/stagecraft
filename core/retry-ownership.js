@@ -4,6 +4,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { gatesDir } = require("./paths");
 const { rolesForStage, STAGES } = require("./pipeline/stages");
+const {
+  DOCUMENTATION_ROLE,
+  loadDocumentationScope,
+  rolesWithDocumentationScope,
+} = require("./pipeline/affected-files");
 
 function normalizeOwnershipPath(value) {
   return String(value || "")
@@ -127,7 +132,12 @@ function resolveRetryOwnership({ cwd, changeId, retryAction, track, config }) {
   }
   if (!clearsBuild || targetPaths.length === 0) return { evaluated: false, targetedFix: null };
 
-  const activeRoles = rolesForStage(buildStage, track, config);
+  const documentationScope = loadDocumentationScope(cwd, changeId);
+  const activeRoles = rolesWithDocumentationScope(
+    buildStage,
+    rolesForStage(buildStage, track, config),
+    documentationScope,
+  );
   const candidateSet = clearedWorkstreams.size > 0
     ? clearedWorkstreams
     : new Set(activeRoles);
@@ -136,7 +146,10 @@ function resolveRetryOwnership({ cwd, changeId, retryAction, track, config }) {
     ...[...candidateSet].filter((role) => !buildStage.roles.includes(role)).sort(),
   ];
   const compatibleRoles = candidateRoles.filter((role) => {
-    const allowedWrites = buildStage.roleWrites && buildStage.roleWrites[role];
+    const staticWrites = buildStage.roleWrites && buildStage.roleWrites[role];
+    const allowedWrites = role === DOCUMENTATION_ROLE && documentationScope.selected
+      ? [...(staticWrites || []), ...documentationScope.affectedFiles]
+      : staticWrites;
     return Array.isArray(allowedWrites)
       && targetPaths.every((file) =>
         allowedWrites.some((pattern) => ownershipPatternMatches(pattern, file)));

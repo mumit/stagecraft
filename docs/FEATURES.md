@@ -44,6 +44,13 @@ For longer briefs, use `--feature-file <path>` with `devteam stage` or `devteam 
 
 Build and peer-review can run parallel workstreams — frontend, backend, and infra simultaneously — within a single stage. Each workstream writes its own gate; they merge into one stage-level gate.
 
+Documentation-only `loop` changes use an optional exact-file workstream
+([ADR-022](adr/022-exact-file-documentation-workstream.md)). A PASS Stage 1 gate
+must select only `documentation` and name every approved repo-relative document
+in `affected_files`. Those exact paths—not a `docs/` wildcard—are carried to
+build, QA, scoped peer review, isolated-worktree reconciliation, and retry
+ownership. Normal loop and four-area matrices keep their existing role count.
+
 Sign-off is also multi-role: PM owns product/docs approval and the deploy request, while platform owns runbook readiness. The merged Stage 7 gate preserves those semantic fields explicitly because Stage 8 consumes them as authorization; a merged PASS is never treated as deploy permission by itself.
 
 ### License compatibility gate — dependency licenses checked at pre-review
@@ -198,7 +205,7 @@ Current budgets by role (higher-trust roles get broader surfaces):
 | pm | Read, Write, Glob |
 | reviewer | Read, Write, Glob, Grep |
 | principal | Read, Write, Glob, Grep, Bash |
-| backend / frontend / platform / qa | Read, Write, Edit, Glob, Grep, Bash |
+| backend / frontend / platform / qa / documentation | Read, Write, Edit, Glob, Grep, Bash |
 | auditor / red-team / migrations / verifier | Read, Glob, Grep, Bash, Write |
 
 ### Capability-required permissions — stages declare what they need; adapters declare what they have

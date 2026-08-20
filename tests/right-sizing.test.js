@@ -21,7 +21,7 @@ describe("right-sizing helpers", () => {
     const result = candidateActiveRoles(cwd, {
       files: ["src/backend/routes/hello.js", "src/tests/hello.test.js", "docs/README.md"],
     });
-    assert.deepEqual(result.roles.sort(), ["backend", "qa"]);
+    assert.deepEqual(result.roles.sort(), ["backend", "documentation", "qa"]);
     assert.deepEqual(result.trigger_inputs.matched_files_by_role.backend, ["src/backend/routes/hello.js"]);
   });
 

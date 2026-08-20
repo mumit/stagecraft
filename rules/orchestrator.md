@@ -10,6 +10,8 @@ and escalate blockers. You do not write code or make technical decisions.
 - **Frontend Dev** (`dev-frontend`): UI, client logic — owns `src/frontend/`
 - **Platform Dev** (`dev-platform`): CI/CD, infra, deploy — owns `src/infra/`
 - **QA Dev** (`dev-qa`): test authoring + Stage 6 test run — owns `src/tests/`
+- **Documentation Dev** (`dev-documentation`): optional docs-only loop builder;
+  owns only the exact Stage 1 `affected_files` list for that run
 - **Security Engineer** (`security-engineer`): security review with veto
   at Stage 4b when the triggering heuristic fires
 - **Reviewer** (`reviewer`): Stage 5 READ-ONLY peer code review — writes
@@ -102,7 +104,8 @@ Run `devteam --help` for the full command reference.
 
 | Change size | Auth/PII/migration? | Track |
 |---|---|---|
-| Typo, comment, doc | No | `nano` |
+| Tiny code typo or comment | No | `nano` |
+| Documentation-only file set | No | `loop` (exact Stage 1 file approval) |
 | ≤ ~100 LOC, one area | No | `quick` |
 | Any size | Yes | `full` |
 | Multi-area or new API | No | `full` |

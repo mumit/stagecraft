@@ -27,9 +27,14 @@
       "type": ["array", "null"],
       "items": {
         "type": "string",
-        "enum": ["backend", "frontend", "platform", "qa"]
+        "enum": ["backend", "frontend", "platform", "qa", "documentation"]
       },
-      "description": "Explicit list of build workstream roles that are in scope for this project. null (or absent) means all roles are active. Set by the PM agent when the brief's Out of Scope section excludes a workstream area. The orchestrator filters both build (stage-04) and peer-review (stage-05) dispatch against this list. When absent, the orchestrator falls back to keyword inference from out_of_scope_items."
+      "description": "Explicit list of build workstream roles that are in scope for this project. null (or absent) means all standard roles are active. The optional documentation role is valid only as the sole role for a documentation-only change with exact affected_files. The orchestrator filters both build (stage-04) and peer-review (stage-05) dispatch against this list."
+    },
+    "affected_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Exact repo-relative files approved by the brief. Required and semantically validated when active_roles selects the optional documentation workstream; globs and directories are forbidden."
     }
   },
   "additionalProperties": true

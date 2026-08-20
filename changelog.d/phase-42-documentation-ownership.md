@@ -1,0 +1,1 @@
+- Add ADR-022's optional documentation-only `loop` workstream: Stage 1 approves an exact docs file list that is carried unchanged through build, QA, scoped peer review, worktree reconciliation, and retry ownership; `devteam assess` recommends the route without widening any coding role or default matrix.

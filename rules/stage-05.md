@@ -13,11 +13,12 @@ one of `src/backend/`, `src/frontend/`, `src/infra/`, or `src/tests/`,
 with no cross-area edits. One reviewer from a different area is
 sufficient. The pairing uses the same cross-area convention as the `quick` track.
 
-**Gate pre-creation (required for scoped reviews).** The orchestrator must
-write `pipeline/gates/stage-05.{area}.json` with `"required_approvals": 1`
-and `"review_shape": "scoped"` before invoking the reviewer. The hook
-defaults new gates to `required_approvals: 2`; if the gate doesn't pre-exist
-with the correct value, a single approval never flips the status to PASS.
+Docs-only `loop` uses area `documentation`; reviewer gets
+the exact Stage 1 file list; an unapproved file requires scope expansion.
+
+**Gate pre-creation is required.** Before any scoped review, the orchestrator
+writes `stage-05.{area}.json` with `required_approvals: 1` and scoped shape;
+otherwise the hook defaults to 2 and one approval cannot PASS.
 
 | Owning area    | Default reviewer     |
 |----------------|----------------------|
@@ -174,11 +175,11 @@ Merged stage gate: `pipeline/gates/stage-05.json`.
   "track": "full",
   "timestamp": "<ISO 8601>",
   "orchestrator": "devteam@<version>",
-  "workstream": "backend | frontend | platform | qa",
+  "workstream": "backend | frontend | platform | qa | documentation",
   "host": "claude-code",
   "blockers": [],
   "warnings": [],
-  "area": "backend | frontend | platform | qa",
+  "area": "backend | frontend | platform | qa | documentation",
   "review_shape": "scoped | matrix",
   "required_approvals": 2,
   "approvals": ["dev-frontend", "security-engineer"],
