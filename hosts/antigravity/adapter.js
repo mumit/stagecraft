@@ -35,9 +35,6 @@
 //                           --agent flag / native agent concept, but
 //                           Stagecraft doesn't dispatch to it — same
 //                           stance as the codex adapter)
-//   - goalLoop: false     → agy has no documented `/goal` convergence
-//                           directive (that's a claude-code/codex-only
-//                           slash command Stagecraft prepends itself)
 //   - telemetry: estimated → agy's print/JSON output was not parsed for
 //                           usage in this item; native capture is
 //                           tracked separately under item 28.3

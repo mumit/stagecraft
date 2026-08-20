@@ -9,7 +9,6 @@
   "headless": true,
   "headlessCommand": "omnigent run .omnigent/stagecraft/agent --no-session",
   "telemetry": "estimated",
-  "goalLoop": false,
   "skillFormat": "markdown",
   "rolePromptsDir": ".omnigent/stagecraft/roles",
   "skillsDir": ".omnigent/stagecraft/skills",

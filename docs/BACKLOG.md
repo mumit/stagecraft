@@ -57,7 +57,7 @@ Completed backlog items are preserved here so the active backlog tables stay sca
 | E | E4 | Live streaming output | 3 | 2 | landed in shared headless invoke helper · [CHANGELOG](../CHANGELOG.md#unreleased) |
 | E | E5 | Pre-flight check (`devteam doctor`) | 3 | 1 | v0.1.0 plus Phase 14.2-14.3 updates · [CHANGELOG](../CHANGELOG.md#010--2026-05-26) |
 | E | E6 | `devteam replay <stage-id>` | 3 | 3 | v0.4.0 · [CHANGELOG](../CHANGELOG.md#040--2026-05-28) |
-| E | E7 | `/goal` integration for convergence-shaped stages | 3 | 2 | v0.6.0 · [CHANGELOG](../CHANGELOG.md#060--2026-06-11) |
+| E | E7 | `/goal` integration for convergence-shaped stages | 3 | 2 | v0.6.0 · [CHANGELOG](../CHANGELOG.md#060--2026-06-11); delivery moved into the prompt body by [ADR-023](adr/023-goal-condition-in-prompt-body.md) |
 | E | E8 | Codebase audit feature | 5 | 3 | v0.3.0 · [CHANGELOG](../CHANGELOG.md#030--2026-05-29) |
 | E | E10 | Autonomous run watch mode | 3 | 1 | PR #268 · Phase 20 |
 | E | E11 | Prototype mode | 4 | 2 | Unreleased · pre-SDLC packet for fast learning, optional host-run builds, feedback, and explicit promotion into a normal delivery track. See [Phase 23 plan](../plans/phase-23-prototype-mode.md). |

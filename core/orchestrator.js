@@ -1185,48 +1185,14 @@ async function runStageHeadless(stageName, opts = {}) {
         workstreamId: ws.descriptor.workstreamId,
         patterns: ws.descriptor.knownPatterns,
       });
-      const composeInvocationPrompt = (promptText) =>
-        ws.adapter.capabilities.goalLoop && ws.descriptor.goalCondition
-          ? `/goal "${ws.descriptor.goalCondition}"\n\n${promptText}`
-          : promptText;
-      let invocationPrompt = composeInvocationPrompt(ws.prompt);
-      // C2 (core/adapters/headless.js): claude-code's own `/goal` slash
-      // command rejects anything over capabilities.promptCharLimit chars
-      // with "Goal condition is limited to N characters" and exits 0 — no
-      // gate written, no error surfaced. The check lives *only* inside that
-      // one command's handler, keyed off however much text follows "/goal ".
-      // In `--print` mode the whole piped stdin is one message with no way
-      // to separate "the goal" from "the rest of the prompt" the way an
-      // interactive session's per-keystroke dispatch would — confirmed
-      // empirically: piping `/goal "x"` followed by a filler blob reports
-      // the *combined* length, not the short condition's own; the identical
-      // filler with no `/goal` prefix dispatches fine at any size. So this
-      // is purely a consequence of the prefix above, never of prompt size on
-      // its own — skip entirely when there's no goalCondition to prefix, and
-      // once the prefix is dropped as a last resort there is nothing left to
-      // check (a goal-free prompt has no such ceiling, so this always
-      // resolves it — no further fallback or rejection needed).
-      const promptCharLimit = ws.adapter.capabilities && ws.adapter.capabilities.promptCharLimit;
-      if (promptCharLimit && ws.descriptor.goalCondition && invocationPrompt.length > promptCharLimit) {
-        const { shrinkComposedPrompt } = require("./adapters/render-helpers");
-        const shrunk = shrinkComposedPrompt({
-          adapter: ws.adapter, descriptor: ws.descriptor, ctx: plan.ctx,
-          basePrompt: ws.prompt, compose: composeInvocationPrompt, limit: promptCharLimit,
-          onWarn: (msg) => process.stderr.write(`[devteam] warn: ${ws.descriptor.workstreamId} ${msg}\n`),
-        });
-        invocationPrompt = shrunk.composed;
-        if (invocationPrompt.length > promptCharLimit) {
-          // Last resort: drop the /goal directive itself for this one
-          // dispatch — losing goal-loop convergence beats a rejected (pre-
-          // fix, silently stalled) dispatch. Always resolves it.
-          const before = invocationPrompt.length;
-          invocationPrompt = shrunk.base;
-          process.stderr.write(
-            `[devteam] warn: ${ws.descriptor.workstreamId} prompt ${before} chars still exceeds ${promptCharLimit}-char limit; ` +
-            `dropped the /goal directive for this dispatch (no goal-loop convergence this attempt)\n`,
-          );
-        }
-      }
+      // ADR-023: no host slash command is composed here any more. The
+      // convergence condition that used to ride on claude-code's `/goal`
+      // prefix is rendered into the prompt body by
+      // render-helpers.js#renderGoalCondition, so it survives at any prompt
+      // size and reaches every host — and the three-step shrink fallback that
+      // existed only to make room for that prefix is gone with it, which is
+      // what restores the inlined framework and patchItems on build and qa.
+      const invocationPrompt = ws.prompt;
       const telemetry = promptTelemetry(invocationPrompt, ws.descriptor);
       // 28.5: hashed (never raw) so the corpus record identifies repeated
       // prompts without persisting prompt content.

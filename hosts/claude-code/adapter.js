@@ -366,7 +366,7 @@ function renderStagePromptLayers(descriptor, ctx) {
     ? ROLE_FRONTMATTER[descriptor.subagent]
     : ROLE_FRONTMATTER[descriptor.role];
   const agentName = fm ? fm.name : (descriptor.subagent || descriptor.role);
-  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, splitReadFirst } = require("../../core/adapters/render-helpers");
+  const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderGoalCondition, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, splitReadFirst } = require("../../core/adapters/render-helpers");
   const lines = [];
 
   // --- Layer 1: framework preamble/rules (constant per version) ---
@@ -397,6 +397,7 @@ function renderStagePromptLayers(descriptor, ctx) {
   lines.push(`## Objective`);
   lines.push(descriptor.objective);
   lines.push("");
+  renderGoalCondition(lines, descriptor);
   lines.push(`## Read first`);
   const { rest } = splitReadFirst(descriptor.readFirst);
   for (const f of rest) lines.push(`- ${f}`);

@@ -76,7 +76,7 @@ function renderTable(caps) {
 
   const capHeaders = [
     "Host", "Display name", "headless", "hooks", "subagents",
-    "slashCommands", "worktrees", "goalLoop", "telemetry",
+    "slashCommands", "worktrees", "telemetry",
   ];
 
   const capRows = caps.map(c => [
@@ -87,7 +87,6 @@ function renderTable(caps) {
     yesNo(c.subagents),
     yesNo(c.slashCommands),
     yesNo(c.worktrees),
-    yesNo(c.goalLoop != null ? c.goalLoop : null),
     c.telemetry || "—",
   ]);
 

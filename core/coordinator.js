@@ -25,6 +25,14 @@ const {
   parseReplacementOutput,
 } = require("./artifact-proposals");
 
+// ADR-023: these used to read capabilities.promptCharLimit, which described
+// claude-code's `/goal` slash-command handler rather than any host property —
+// so chat on a CLI host was budgeted at 4,000 chars for a limit that never
+// applied to it. Prompts are piped to stdin; the real bound is the model's
+// context window, and these are conservative fractions of it.
+const COORDINATOR_PROMPT_MAX_CHARS = 32000;
+const REFINEMENT_PROMPT_MAX_CHARS = 120000;
+
 const MAX_TEXT = 600;
 const MAX_HISTORY_TURNS = 8;
 const MAX_HISTORY_TEXT = 2000;
@@ -362,7 +370,7 @@ async function coordinatorTurn({ cwd, question, history, feature, host, model, t
     snapshot,
     question,
     history,
-    maxChars: route.adapter.capabilities?.promptCharLimit || 32000,
+    maxChars: COORDINATOR_PROMPT_MAX_CHARS,
   });
   const temp = prepareDisposableWorkspace(config, route);
   try {
@@ -433,7 +441,7 @@ async function refinementTurn({ cwd, kind, instruction, feature, host, model, ti
     .slice(0, 6).map((fact) => safeText(fact.text, 320));
   const context = { snapshot: snapshotForPrompt(snapshot), project_facts: projectFacts };
   const route = dryRun ? null : routeForCoordinator(config, host, model);
-  const maxChars = route?.adapter?.capabilities?.promptCharLimit || 120000;
+  const maxChars = REFINEMENT_PROMPT_MAX_CHARS;
   const prompt = renderRefinementPrompt({ kind, artifact, instruction, context, maxChars });
   if (dryRun) return { prompt, proposal: null, host: null, model: null, usage: null };
   if (!route.adapter.capabilities?.headless || typeof route.adapter.invoke !== "function") {

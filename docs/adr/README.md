@@ -62,6 +62,7 @@ What else was on the table and why we didn't pick those.
 | [020](020-execution-trust-profiles.md) | Explicit trusted/contained/remote profiles; fail-closed Docker containment and worktree reconciliation | Accepted |
 | [021](021-dependency-free-memory-default.md) | Dependency-free feature-hash memory by default; transformer semantics as an explicit opt-in | Accepted |
 | [022](022-exact-file-documentation-workstream.md) | Exact-file documentation build ownership as an optional gate-selected workstream | Accepted |
+| [023](023-goal-condition-in-prompt-body.md) | Convergence conditions are stated in the prompt body; no host slash command is composed | Proposed |
 
 ### Deferred
 

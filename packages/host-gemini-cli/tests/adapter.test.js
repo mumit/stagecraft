@@ -38,13 +38,6 @@ describe("capabilities.json", () => {
     assert.equal(capabilities.name, "gemini-cli");
   });
 
-  it("declares goalLoop: false (no /goal directive support in gemini CLI)", () => {
-    // The /goal directive is a Claude Code session-level feature; Gemini
-    // CLI has no equivalent convergence directive (phase-1-trust-
-    // consolidation.md §1.5) — explicitly false so absence is never
-    // ambiguous.
-    assert.strictEqual(capabilities.goalLoop, false);
-  });
 
   it("declares enforces.allowed_writes: post-hoc-audit", () => {
     assert.equal(capabilities.enforces.allowed_writes, "post-hoc-audit");

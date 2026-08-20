@@ -667,120 +667,22 @@ process.stdin.on("end", () => {
 // Once the `/goal` prefix is dropped there is nothing left to enforce; the
 // dispatch proceeds (losing goal-loop convergence for that one attempt)
 // rather than being rejected.
-describe("orchestrator: composed /goal-prefixed invocation prompt respects capabilities.promptCharLimit (C2)", () => {
-  it("drops patchItems from the composed prompt when they alone push the /goal-prefixed total over the limit", async () => {
+describe("orchestrator: ADR-023 — no slash command is composed", () => {
+  it("dispatches the rendered prompt verbatim, with no /goal prefix and nothing dropped", async () => {
+    // Replaces the C2 shrink-chain suite. The chain dropped patchItems and the
+    // inlined framework to fit a /goal prefix under a 4,000-char limit; since
+    // a real prompt never fit, it always ran and always dropped both anyway.
     const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
-    // build's goalCondition guarantees the /goal prefix is present — this
-    // patchItems payload alone is well over capabilities.promptCharLimit.
     const bigPatchItems = [{ file: "src/frontend/big.js", note: "X".repeat(4500) }];
     const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
-    // `cat` echoes whatever's piped to stdin — the transcript log then holds
-    // the exact bytes the (real) claude-code CLI would have received.
     process.env.DEVTEAM_HEADLESS_COMMAND = "cat";
     try {
       const result = await runStageHeadless("build", { cwd, workstream: ["frontend"], patchItems: bigPatchItems });
-      assert.equal(result.results.length, 1);
       assert.equal(result.results[0].exitCode, 0);
-
       const sent = fs.readFileSync(path.join(cwd, "pipeline", "logs", "stage-04.frontend.log"), "utf8");
-      assert.match(sent, /\/goal "/, "goal directive must still reach the child");
-      assert.doesNotMatch(sent, /XXXX/, "the oversized patchItems block must not reach the child");
-    } finally {
-      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
-      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
-    }
-  });
-
-  it("drops the /goal directive itself as a last resort and still dispatches, when the base prompt alone is already over the limit", async () => {
-    const cwd = track(makeTargetProject({ config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n" }));
-    // The `Feature: ...` line comes straight from --feature and isn't
-    // touched by either fallback (it's neither patchItems nor inlined
-    // framework content) — an irreducibly large one keeps the /goal-prefixed
-    // composed prompt over the limit no matter what gets dropped first. A
-    // goal-free prompt of any size dispatches fine (verified against the
-    // real claude-code binary), so this must still succeed, just without
-    // the /goal directive — not be rejected.
-    const hugeFeature = "X".repeat(6000);
-    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
-    process.env.DEVTEAM_HEADLESS_COMMAND = "cat";
-    try {
-      const result = await runStageHeadless("build", { cwd, workstream: ["frontend"], feature: hugeFeature });
-      assert.equal(result.results.length, 1);
-      assert.equal(result.results[0].exitCode, 0);
-
-      const sent = fs.readFileSync(path.join(cwd, "pipeline", "logs", "stage-04.frontend.log"), "utf8");
-      assert.doesNotMatch(sent, /\/goal "/, "the /goal directive must have been dropped");
-      assert.match(sent, /XXXX/, "the huge Feature line (which no fallback touches) still reaches the child");
-    } finally {
-      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
-      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
-    }
-  });
-});
-
-// ─── 31.1: per-role orchestrator stamping wired into the real headless dispatch ──
-// Mirrors the stub pattern in tests/patterns.test.js (makeHeadlessStub): filter to a
-// single --workstream so a single global DEVTEAM_HEADLESS_COMMAND stub unambiguously
-// knows which role's gate to write.
-describe("orchestrator: runStageHeadless stamps a stage-04 workstream gate as it completes (31.1)", () => {
-  function makeBackendStub(cwd) {
-    const script = path.join(cwd, "backend-stub.js");
-    fs.writeFileSync(script, `const fs = require("node:fs");
-const path = require("node:path");
-const gatesDir = path.join(process.cwd(), "pipeline", "gates");
-fs.mkdirSync(gatesDir, { recursive: true });
-fs.writeFileSync(path.join(gatesDir, "stage-04.backend.json"), JSON.stringify({
-  stage: "stage-04", workstream: "backend", host: "claude-code", status: "PASS",
-  track: "full", blockers: [], warnings: [], orchestrator: "devteam@test",
-  timestamp: "2026-07-31T00:00:00.000Z",
-  pr_summaries_written: ["pipeline/pr-backend.md"], local_verification: ["npm test"],
-  lint_passed: true
-}, null, 2) + "\\n");
-`, "utf8");
-    return script;
-  }
-
-  it("stamps lint_passed on stage-04.backend.json using the role's own allowedWrites surface", async () => {
-    const cwd = track(makeTargetProject({
-      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n  verify:\n    lint_command: \"false\"\n",
-    }));
-    const script = makeBackendStub(cwd);
-    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
-    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script}`;
-    try {
-      const result = await runStageHeadless("build", { cwd, workstream: ["backend"] });
-      assert.equal(result.results.length, 1);
-      assert.equal(result.results[0].exitCode, 0);
-
-      const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
-      const gate = JSON.parse(fs.readFileSync(gatePath, "utf8"));
-      assert.ok(gate._orchestrator_stamped, "workstream gate must carry an orchestrator stamp");
-      assert.equal(gate._orchestrator_stamped.scope, "workstream");
-      assert.equal(gate._orchestrator_stamped.role, "backend");
-      // Model claimed lint_passed:true; the configured lint command ("false")
-      // actually fails — orchestrator's truth wins, flipping status to FAIL.
-      assert.equal(gate.lint_passed, false);
-      assert.equal(gate.status, "FAIL");
-    } finally {
-      if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
-      else process.env.DEVTEAM_HEADLESS_COMMAND = previous;
-    }
-  });
-
-  it("stamp: false disables workstream stamping (used by tests that don't want real lint/test commands)", async () => {
-    const cwd = track(makeTargetProject({
-      config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n  verify:\n    lint_command: \"false\"\n",
-    }));
-    const script = makeBackendStub(cwd);
-    const previous = process.env.DEVTEAM_HEADLESS_COMMAND;
-    process.env.DEVTEAM_HEADLESS_COMMAND = `${process.execPath} ${script}`;
-    try {
-      const result = await runStageHeadless("build", { cwd, workstream: ["backend"], stamp: false });
-      assert.equal(result.results[0].exitCode, 0);
-      const gatePath = path.join(cwd, "pipeline", "gates", "stage-04.backend.json");
-      const gate = JSON.parse(fs.readFileSync(gatePath, "utf8"));
-      assert.equal("_orchestrator_stamped" in gate, false);
-      assert.equal(gate.status, "PASS", "model's self-report is untouched when stamping is disabled");
+      assert.doesNotMatch(sent, /\/goal "/, "no slash command may be composed");
+      assert.match(sent, /XXXX/, "patchItems must reach the child — the old chain dropped them");
+      assert.match(sent, /## Done when/, "the convergence condition must reach the child");
     } finally {
       if (previous === undefined) delete process.env.DEVTEAM_HEADLESS_COMMAND;
       else process.env.DEVTEAM_HEADLESS_COMMAND = previous;

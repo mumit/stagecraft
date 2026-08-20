@@ -1,53 +1,22 @@
-// E7 — /goal integration for convergence-shaped stages.
+// E7 / ADR-023 — convergence conditions for build and qa.
+//
+// E7 originally delivered the condition as claude-code's `/goal "<condition>"`
+// slash command. Its handler rejects input over 4,000 characters and a real
+// dispatch prompt never fits, so the directive was always dropped and the
+// condition reached no model at all. ADR-023 moved it into the prompt body.
 //
 // Verifies that:
-//   1. goalLoop capability is declared correctly on each adapter.
-//   2. Convergence-shaped stages (build, qa) carry goalCondition templates.
-//   3. buildDescriptor interpolates {workstreamId} in the condition.
-//   4. runStageHeadless prepends /goal "..." to the prompt when the adapter
-//      supports goal loops and the stage has a goalCondition.
-//   5. Non-goal stages (requirements, design, etc.) are never prefixed.
+//   1. Convergence-shaped stages (build, qa) still carry goalCondition templates.
+//   2. buildDescriptor interpolates {workstreamId} in the condition.
+//   3. The resolved condition is rendered into the prompt body, on every host.
+//   4. Non-convergence stages never carry one.
+//   5. No host slash command is composed, and no capability claims one.
 
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { REPO_ROOT, makeTargetProject, cleanup, runCLI, installGeminiCliPluginFixture } = require("./_helpers");
+const { REPO_ROOT, makeTargetProject, cleanup, runCLI } = require("./_helpers");
 const { getStage } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
-
-// ---------------------------------------------------------------------------
-// Adapter declarations
-// ---------------------------------------------------------------------------
-
-describe("goalLoop capability declarations", () => {
-  it("claude-code declares goalLoop: true", () => {
-    const caps = require(path.join(REPO_ROOT, "hosts", "claude-code", "capabilities.json"));
-    assert.strictEqual(caps.goalLoop, true);
-  });
-
-  it("codex declares goalLoop: true", () => {
-    const caps = require(path.join(REPO_ROOT, "hosts", "codex", "capabilities.json"));
-    assert.strictEqual(caps.goalLoop, true);
-  });
-
-  it("gemini-cli declares goalLoop: false (no /goal directive support in gemini CLI)", () => {
-    // The /goal directive is a Claude Code session-level feature; Gemini CLI
-    // has no equivalent convergence directive. goalLoop is explicitly false
-    // (phase-1-trust-consolidation.md §1.5) so absence is never ambiguous.
-    // 34.4: gemini-cli moved out of hosts/ into packages/host-gemini-cli/
-    // (plugin package) — path updated, capability value unchanged.
-    const caps = require(path.join(REPO_ROOT, "packages", "host-gemini-cli", "capabilities.json"));
-    assert.strictEqual(caps.goalLoop, false, "gemini-cli.goalLoop must be explicitly false");
-  });
-
-  it("generic declares goalLoop: false (explicit, never ambiguous)", () => {
-    const caps = require(path.join(REPO_ROOT, "hosts", "generic", "capabilities.json"));
-    assert.strictEqual(caps.goalLoop, false, "generic.goalLoop must be explicitly false");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Stage goalCondition templates
-// ---------------------------------------------------------------------------
 
 describe("stage goalCondition fields", () => {
   const goalStages = ["build", "qa"];
@@ -115,116 +84,165 @@ describe("buildDescriptor interpolates {workstreamId}", () => {
 });
 
 // ---------------------------------------------------------------------------
-// /goal injection in headless prompt — CLI integration
+// ADR-023: the condition is delivered in the prompt body
 // ---------------------------------------------------------------------------
 
-describe("/goal injection in headless mode", () => {
-  // DEVTEAM_HEADLESS_COMMAND=cat echoes the full prompt to stdout,
-  // letting us assert on the rendered prompt content.
+// Hosts that can actually run `stage --headless` (generic declares
+// headless: false; it is covered by the every-adapter render test below).
+const HEADLESS_HOSTS = ["claude-code", "codex", "antigravity"];
 
-  it("headless build prompt starts with /goal when host supports goalLoop", () => {
+function headlessPrompt(cwd, stage) {
+  // DEVTEAM_HEADLESS_COMMAND=cat echoes the full prompt to stdout, so this is
+  // the exact byte stream the host CLI would have received.
+  return runCLI(["stage", stage, "--headless", "--feature", "test"], {
+    cwd,
+    env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" },
+  }).stdout;
+}
+
+describe("goal condition reaches the prompt body", () => {
+  for (const host of HEADLESS_HOSTS) {
+    it(`build prompt states the condition on ${host}`, () => {
+      const cwd = makeTargetProject({
+        config: `routing:\n  default_host: ${host}\npipeline:\n  default_track: full\n`,
+      });
+      try {
+        const out = headlessPrompt(cwd, "build");
+        assert.match(out, /## Done when/, `no Done-when section for ${host}`);
+        assert.match(out, /lint_passed/, `build condition missing for ${host}`);
+      } finally {
+        cleanup(cwd);
+      }
+    });
+  }
+
+  it("qa prompt states the qa condition", () => {
     const cwd = makeTargetProject({
       config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n",
     });
     try {
-      const r = runCLI(["stage", "build", "--headless", "--feature", "test"], {
-        cwd,
-        env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" },
-      });
-      // cat echoes the prompt; first workstream should have /goal prefix
-      assert.ok(
-        r.stdout.includes('/goal "'),
-        `expected /goal in stdout, got:\n${r.stdout.slice(0, 500)}`,
-      );
-      assert.ok(
-        r.stdout.includes("lint_passed"),
-        `expected build goal condition in stdout, got:\n${r.stdout.slice(0, 500)}`,
-      );
+      const out = headlessPrompt(cwd, "qa");
+      assert.match(out, /## Done when/);
+      assert.match(out, /all_acceptance_criteria_met/);
     } finally {
       cleanup(cwd);
     }
   });
 
-  it("headless qa prompt starts with /goal when host supports goalLoop", () => {
+  it("the rendered condition carries the resolved workstreamId, not the placeholder", () => {
     const cwd = makeTargetProject({
       config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n",
     });
     try {
-      const r = runCLI(["stage", "qa", "--headless", "--feature", "test"], {
-        cwd,
-        env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" },
-      });
-      assert.ok(
-        r.stdout.includes('/goal "'),
-        `expected /goal in stdout, got:\n${r.stdout.slice(0, 500)}`,
-      );
-      assert.ok(
-        r.stdout.includes("all_acceptance_criteria_met"),
-        `expected qa goal condition in stdout, got:\n${r.stdout.slice(0, 500)}`,
-      );
+      const out = headlessPrompt(cwd, "build");
+      assert.match(out, /stage-04\.backend/);
+      assert.doesNotMatch(out, /\{workstreamId\}/);
     } finally {
       cleanup(cwd);
     }
   });
 
-  it("headless requirements prompt does NOT have /goal (no goalCondition)", () => {
+  it("a non-convergence stage gets no Done-when section", () => {
     const cwd = makeTargetProject({
       config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n",
     });
     try {
-      const r = runCLI(["stage", "requirements", "--headless", "--feature", "test"], {
-        cwd,
-        env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" },
-      });
-      assert.ok(
-        !r.stdout.startsWith('/goal'),
-        `requirements prompt should not start with /goal, got:\n${r.stdout.slice(0, 200)}`,
-      );
+      assert.doesNotMatch(headlessPrompt(cwd, "requirements"), /## Done when/);
     } finally {
       cleanup(cwd);
     }
   });
+});
 
-  it("headless build on gemini-cli (no goalLoop) does NOT inject /goal", () => {
-    const cwd = makeTargetProject({
-      config: "routing:\n  default_host: gemini-cli\npipeline:\n  default_track: full\n",
+describe("ADR-023: no host slash command is composed", () => {
+  for (const host of HEADLESS_HOSTS) {
+    it(`${host} receives no /goal directive`, () => {
+      const cwd = makeTargetProject({
+        config: `routing:\n  default_host: ${host}\npipeline:\n  default_track: full\n`,
+      });
+      try {
+        assert.doesNotMatch(headlessPrompt(cwd, "build"), /\/goal "/,
+          `${host} still receives a /goal prefix`);
+      } finally {
+        cleanup(cwd);
+      }
     });
-    // 34.4: gemini-cli is a plugin now (packages/host-gemini-cli/), not a
-    // first-party host under hosts/ — install the real plugin into this
-    // project's node_modules so the dispatch resolves exactly as it would
-    // for a consumer who ran `npm install @devteam/host-gemini-cli`.
-    installGeminiCliPluginFixture(cwd);
-    try {
-      const r = runCLI(["stage", "build", "--headless", "--feature", "test"], {
-        cwd,
-        env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" },
-      });
-      assert.ok(
-        !r.stdout.includes('/goal "'),
-        `gemini-cli build should not inject /goal, got:\n${r.stdout.slice(0, 300)}`,
-      );
-    } finally {
-      cleanup(cwd);
-    }
-  });
+  }
 
-  it("/goal line references the correct workstreamId for a build workstream", () => {
+  it("no adapter declares goalLoop or promptCharLimit any more", () => {
+    // Both described claude-code's /goal handler rather than a host property.
+    // Leaving either in place would reintroduce the shrink fallbacks that
+    // stripped the inlined framework and patchItems from build and qa.
+    const fs = require("node:fs");
+    const roots = [path.join(REPO_ROOT, "hosts"), path.join(REPO_ROOT, "packages")];
+    const offenders = [];
+    for (const root of roots) {
+      if (!fs.existsSync(root)) continue;
+      for (const entry of fs.readdirSync(root)) {
+        const capFile = path.join(root, entry, "capabilities.json");
+        if (!fs.existsSync(capFile)) continue;
+        const caps = JSON.parse(fs.readFileSync(capFile, "utf8"));
+        for (const key of ["goalLoop", "promptCharLimit"]) {
+          if (key in caps) offenders.push(`${entry}.${key}`);
+        }
+      }
+    }
+    assert.deepEqual(offenders, []);
+  });
+});
+
+describe("ADR-023 regression: build and qa keep their full prompt", () => {
+  // The bug this ADR fixes: to make room for a /goal prefix that could never
+  // fit, the shrink chain dropped patchItems and the inlined framework from
+  // exactly these two stages. Both must survive now.
+  it("build keeps the inlined framework and its patch items", () => {
     const cwd = makeTargetProject({
       config: "routing:\n  default_host: claude-code\npipeline:\n  default_track: full\n",
     });
     try {
-      const r = runCLI(["stage", "build", "--headless", "--feature", "test"], {
-        cwd,
-        env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" },
-      });
-      // Build has 4 roles; each should have a /goal referencing stage-04.<role>
-      assert.ok(
-        r.stdout.includes("stage-04.backend") || r.stdout.includes("stage-04.frontend") ||
-        r.stdout.includes("stage-04.platform") || r.stdout.includes("stage-04.qa"),
-        `expected a stage-04.* workstreamId in output, got:\n${r.stdout.slice(0, 500)}`,
-      );
+      const out = runCLI(
+        ["stage", "build", "--headless", "--feature", "test", "--patch", "--from", "qa"],
+        { cwd, env: { DEVTEAM_HEADLESS_COMMAND: "cat", DEVTEAM_NO_LOG: "1" } },
+      ).stdout;
+      assert.match(out, /## Framework \(inlined below/, "inlined framework was dropped");
+      assert.match(out, /## Done when/, "condition missing");
     } finally {
       cleanup(cwd);
     }
   });
+});
+
+describe("every adapter renders the condition, not just the headless ones", () => {
+  // Stronger than the CLI tests above: exercises each adapter's own
+  // renderStagePrompt directly, so a host with its own renderer (claude-code,
+  // generic) cannot quietly skip the section.
+  const fs = require("node:fs");
+  const descriptor = {
+    stage: "stage-04", name: "build", workstreamId: "stage-04.backend", role: "backend",
+    objective: "Implement it.",
+    goalCondition: 'pipeline/gates/stage-04.backend.json exists with status: "PASS", lint_passed: true',
+    readFirst: ["AGENTS.md"], allowedWrites: ["src/"], artifact: "a.md", template: "t.md",
+    toolBudget: null,
+  };
+
+  const adapterDirs = [];
+  for (const root of [path.join(REPO_ROOT, "hosts"), path.join(REPO_ROOT, "packages")]) {
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root)) {
+      if (fs.existsSync(path.join(root, entry, "adapter.js"))) adapterDirs.push([entry, path.join(root, entry, "adapter.js")]);
+    }
+  }
+
+  for (const [name, file] of adapterDirs) {
+    it(`${name} renders the Done-when section`, () => {
+      const adapter = require(file);
+      if (typeof adapter.renderStagePrompt !== "function") return;
+      const out = adapter.renderStagePrompt(descriptor, {
+        cwd: REPO_ROOT, track: "full", feature: "f", orchestrator: "test",
+      });
+      assert.match(out, /## Done when/, `${name} drops the convergence condition`);
+      assert.match(out, /lint_passed/, `${name} drops the condition text`);
+      assert.doesNotMatch(out, /\/goal "/, `${name} still composes a /goal directive`);
+    });
+  }
 });
