@@ -280,6 +280,28 @@ describe("detectNaming", () => {
   it("returns unknown for empty filenames array", () => {
     assert.equal(detectNaming([]).file_style, "unknown");
   });
+
+  it("does not call a bare lowercase word camelCase", () => {
+    // The old pattern was /^[a-z][a-zA-Z0-9]+$/, which matches any single
+    // lowercase word — so a project of calc.py / utils.js / main.go was told
+    // its convention was camelCase, and an agent would write myNewModule.py
+    // into a snake_case codebase.
+    assert.equal(classifyFilename("calc.py"), "lowercase");
+    assert.equal(classifyFilename("utils.js"), "lowercase");
+    assert.equal(classifyFilename("main.go"), "lowercase");
+    // A real hump is still camelCase.
+    assert.equal(classifyFilename("apiClient.ts"), "camelCase");
+  });
+
+  it("reports lowercase for a uniformly single-word project", () => {
+    const n = detectNaming(["calc.py", "utils.py", "main.py"]);
+    assert.equal(n.file_style, "lowercase");
+  });
+
+  it("still prefers snake_case over lowercase when the underscore is present", () => {
+    const n = detectNaming(["test_calc.py", "user_profile.py", "api_client.py"]);
+    assert.equal(n.file_style, "snake_case");
+  });
 });
 
 // ─── 5. detectTooling ────────────────────────────────────────────────────────
@@ -585,5 +607,78 @@ describe("CLI: devteam standards discover", () => {
     const cwd = track(makeTargetProject());
     const r = runCLI(["standards", "unknown-sub"], { cwd });
     assert.equal(r.status, 2);
+  });
+});
+
+// ─── Polyglot discovery (Phase 42.4) ────────────────────────────────────────
+
+describe("polyglot project discovery", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const pathMod = require("node:path");
+
+  function pythonProject({ withPipeline = true } = {}) {
+    const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "devteam-test-pydiscover-"));
+    fs.mkdirSync(pathMod.join(dir, "app"), { recursive: true });
+    fs.mkdirSync(pathMod.join(dir, "tests"), { recursive: true });
+    if (withPipeline) fs.mkdirSync(pathMod.join(dir, "pipeline", "gates"), { recursive: true });
+    fs.writeFileSync(pathMod.join(dir, "pyproject.toml"), '[project]\nname = "demo"\n');
+    fs.writeFileSync(pathMod.join(dir, "app", "calc.py"), "def add(a, b):\n    return a + b\n");
+    fs.writeFileSync(pathMod.join(dir, "tests", "test_calc.py"), "def test_add():\n    assert True\n");
+    return dir;
+  }
+
+  it("detects pytest and pip for a Python project with a tests/ directory", () => {
+    // Previously test_runner was found only by grepping requirements.txt for
+    // "pytest", so this project reported no runner at all. Discovery now reuses
+    // the verify runner's own detector, so it reports the tests that will
+    // actually be executed.
+    const dir = pythonProject();
+    try {
+      const stack = detectTechStack(dir);
+      assert.deepEqual(stack.languages, ["Python"]);
+      assert.equal(stack.test_runner, "pytest");
+      assert.equal(stack.package_manager, "pip");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Stagecraft's own directories out of the project's reported structure", () => {
+    // pipeline/ was being listed as a top-level directory of the project it
+    // was orchestrating. Same reader class as the changed-file manifest.
+    const dir = pythonProject({ withPipeline: true });
+    try {
+      const layout = detectFileLayout(dir);
+      assert.ok(layout.topLevel.includes("app"), "real source dirs must survive");
+      assert.ok(layout.topLevel.includes("tests"));
+      assert.equal(layout.topLevel.includes("pipeline"), false, "pipeline/ is framework state, not project structure");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers a declared package manager over the pip fallback", () => {
+    const dir = pythonProject();
+    try {
+      fs.writeFileSync(pathMod.join(dir, "poetry.lock"), "");
+      assert.equal(detectTechStack(dir).package_manager, "poetry");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a JavaScript project's package manager alone", () => {
+    const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "devteam-test-jsdiscover-"));
+    try {
+      fs.writeFileSync(pathMod.join(dir, "package.json"), JSON.stringify({ name: "d", version: "1.0.0" }));
+      fs.writeFileSync(pathMod.join(dir, "pnpm-lock.yaml"), "");
+      // A repo carrying both manifests must not have its JS package manager
+      // overwritten by the Python branch.
+      fs.writeFileSync(pathMod.join(dir, "requirements.txt"), "requests\n");
+      assert.equal(detectTechStack(dir).package_manager, "pnpm");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

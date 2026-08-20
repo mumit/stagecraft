@@ -416,6 +416,10 @@ async function runTestCommands(commands, opts = {}) {
 
 module.exports = {
   runCommand,
+  // Exported for core/standards/discover.js: project discovery must report the
+  // same Python test story the verify runner will actually execute, rather
+  // than carrying a second, weaker heuristic of its own.
+  hasPythonTests,
   runCommandWithReceipt,
   discoverScripts,
   discoverTestCommands,

@@ -23,10 +23,21 @@ without that file persists it on its first headless dispatch; preview-only
 planning computes facts in memory and remains read-only. The file is operational
 state and is included in Stagecraft's managed `.gitignore` block.
 
+Discovery is polyglot: the Python test story is read through the same detector
+`devteam verify` uses to actually run the suite (`hasPythonTests` in
+`core/verify/runner.js`), so the pack reports the tests that will run rather
+than a second, weaker heuristic. Stagecraft's own directories are excluded from
+the project's reported structure — see `isFrameworkOwnedPath` in
+[`core/paths.js`](../core/paths.js).
+
 The generator scans at most 50 source files and emits a compact subset only:
 
-- language, allow-listed frameworks, package manager, and bundler;
-- module system and dominant filename style;
+- language, allow-listed frameworks, package manager (npm/yarn/pnpm/bun, or
+  pip/poetry/uv/pipenv), and bundler;
+- module system and dominant filename style (`kebab-case`, `PascalCase`,
+  `camelCase`, `snake_case`, `lowercase`, `mixed`, or `unknown` — a bare
+  single-word name is reported as `lowercase` rather than claimed by a
+  convention it does not demonstrate);
 - test runner, test-file pattern, and co-location;
 - detected tooling;
 - canonical commands derived from known package scripts (`test`, `lint`,
