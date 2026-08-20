@@ -2715,3 +2715,62 @@ describe("run CLI: assess-inline recommendation output (Phase 29.2, ADR-016)", (
     assert.ok(!fs.existsSync(path.join(cwd, "pipeline", "track.json")));
   });
 });
+
+// ─── --plan-only: materialize the ADR-018 run plan without dispatching ────
+describe("driver: --plan-only (run-plan preview)", () => {
+  it("writes run-plan.json, halts as plan-only, and dispatches nothing", async () => {
+    const cwd = track(makeTargetProject());
+    const s = await run({
+      cwd,
+      feature: "add a subtract helper",
+      track: "loop",
+      planOnly: true,
+      runStageHeadless: () => { throw new Error("--plan-only must not dispatch"); },
+      next: () => ({ action: "run-stage", stage: "stage-01", name: "requirements", reason: "test" }),
+    });
+    assert.equal(s.halt_action, "plan-only");
+    assert.equal(s.iterations, 0);
+    assert.equal(s.plan_path, "pipeline/run-plan.json");
+    const plan = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"));
+    assert.equal(plan.track, "loop");
+    assert.ok(plan.execution_fingerprint, "the previewed plan must carry the same fingerprint a real run would");
+  });
+
+  it("leaves a plan a subsequent --resume can execute", async () => {
+    // The point of previewing: approve the plan, then run it. --resume must
+    // reuse the reviewed plan rather than rejecting it as drift.
+    const cwd = track(makeTargetProject());
+    await run({
+      cwd, feature: "add a subtract helper", track: "loop", planOnly: true,
+      next: () => ({ action: "run-stage", stage: "stage-01", name: "requirements", reason: "test" }),
+    });
+    const before = fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8");
+    const s = await run({
+      cwd, resume: true,
+      next: () => ({ action: "pipeline-complete", reason: "test" }),
+    });
+    assert.equal(s.completed, true);
+    assert.equal(
+      fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"), before,
+      "resume must reuse the reviewed plan byte-for-byte, not rewrite it",
+    );
+  });
+
+  it("does not mask an unconfirmed-track halt", async () => {
+    // --plan-only is a preview, not a bypass: a track the operator was
+    // supposed to confirm must still surface as its own typed halt.
+    const cwd = track(makeTargetProject({
+      config: "routing:\n  default_host: generic\nautonomy:\n  require_confirmed_track: true\n",
+    }));
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "track.json"), JSON.stringify({
+      track: "quick", source: "inferred", confidence: "low", reasons: [],
+    }));
+    const s = await run({
+      cwd, feature: "something",
+      next: () => ({ action: "run-stage", stage: "stage-01", name: "requirements", reason: "test" }),
+      planOnly: true,
+    });
+    assert.equal(s.halt_action, "unconfirmed-track");
+  });
+});

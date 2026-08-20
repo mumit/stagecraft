@@ -1423,6 +1423,33 @@ async function run(opts = {}) {
       onEvent({ type: "track-confidence-check", source: trackSource, confidence: trackConfidence, bypassed: "force" });
     }
 
+    // ADR-018 calls run-plan.json "an inspectable execution contract", but the
+    // only way to inspect it was to start the run it contracts. --plan-only
+    // stops here: the plan above is already built, fingerprinted, and persisted
+    // by the same code path a real run uses, so what the operator reads is the
+    // plan that would execute, not a parallel estimate that can drift from it.
+    // Nothing has dispatched yet.
+    //
+    // Placed after the track-confidence checks, not inside them, so the halt is
+    // independent of how the track was chosen — and so an unconfirmed-track
+    // halt still wins: --plan-only must not paper over a track the operator was
+    // supposed to confirm.
+    //
+    // The run-state left behind is the ordinary "interrupted before the first
+    // dispatch" state (a Ctrl-C one iteration earlier produces the same thing),
+    // so `devteam run --resume` picks the reviewed plan up and proceeds —
+    // approving a plan and running it are the same two commands.
+    if (opts.planOnly && !trackHalted) {
+      const reason = `plan materialized at ${planPath}; no stage dispatched (--plan-only)`;
+      logEvent(cwd, changeId, { outcome: "plan-only-halt", plan_path: planPath });
+      onEvent({ type: "plan-only", plan_path: planPath });
+      summary.halted = true;
+      summary.halt_action = "plan-only";
+      summary.halt_reason = reason;
+      summary.plan_path = planPath;
+      trackHalted = true;
+    }
+
     // ADR-017 (32.6): dispatch one wave member. Mirrors the run-stage/
     // continue-stage handling in the single-action loop below exactly (guard
     // checks, stall probe, _runStageHeadless call, dispatch classification,

@@ -69,7 +69,13 @@ plan fingerprint binds that policy to the execution fingerprint.
 
 The file is written atomically before the first model dispatch. It is an
 inspectable execution contract, not gate evidence: a plan says what Stagecraft
-intends to ask for, not that the work passed. Conditional stages stay labelled
+intends to ask for, not that the work passed. `devteam run --plan-only` stops
+immediately after that write, so the contract can be read before the run it
+governs begins; because it halts after the same build/persist path a real run
+uses, the previewed plan is the plan that would execute rather than a parallel
+estimate that could drift from it. The halt leaves the ordinary
+interrupted-before-first-dispatch state, so `devteam run --resume` executes the
+reviewed plan unchanged. Conditional stages stay labelled
 conditional until their upstream gate exists, and routes stay labelled
 candidate until runtime discovery confirms the workstream. Right-sized skips
 are explicitly marked as preflight snapshots and reevaluated when their stage

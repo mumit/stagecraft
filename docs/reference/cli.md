@@ -93,6 +93,7 @@ Bounded autonomous driver with optional TTY watch mode: loop next â†’ dispatch â
 | --retry-delay-ms   | number | Backoff delay between transient retries (ms)                                                         |
 | --auto-rule        | list   | Auto-apply Principal rulings of these classes (comma-separated)                                      |
 | --allow-stage      | list   | Grant consequence-ceiling approval for this stage (repeatable, comma-separated)                      |
+| --plan-only        | bool   | Materialize pipeline/run-plan.json and stop before the first dispatch                                |
 | --resume           | bool   | Resume an interrupted run                                                                            |
 | --force            | bool   | Force-unlock a stale run.lock or authorize a scoped stoplist bypass                                  |
 | --json             | bool   | JSON summary on stdout                                                                               |
@@ -472,7 +473,8 @@ Infer the best pipeline track for the current change from file paths, content, a
 | Flag          | Type   | Description                                                                 |
 | ------------- | ------ | --------------------------------------------------------------------------- |
 | --cwd         | string | Target project directory                                                    |
-| --description | string | Change description for heuristics                                           |
+| --feature     | string | Change description for heuristics                                           |
+| --description | string | Alias for --feature                                                         |
 | --json        | bool   | JSON output                                                                 |
 | --apply       | bool   | Write inferred track to .devteam/config.yml as custom_stages (project-wide) |
 | --confirm     | bool   | Write pipeline/track.json with source:human (operator-confirmed)            |
