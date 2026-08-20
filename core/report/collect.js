@@ -447,6 +447,9 @@ function collectReport(cwd, opts = {}) {
       costUsd: runState ? (runState.cost_usd || null) : null,
       // Phase-28 item 28.4: "observed" / "model-asserted" / "mixed" / null.
       costBasis: runState ? (runState.cost_basis || null) : null,
+      tokensUsed: runState && typeof runState.tokens_used === "number" ? runState.tokens_used : null,
+      tokenBasis: runState ? (runState.token_basis || null) : null,
+      tokenCoverageComplete: runState ? runState.token_coverage_complete === true : false,
       finalStatus: status,
       haltReason,
       haltType,

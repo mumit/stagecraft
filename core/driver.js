@@ -30,6 +30,7 @@ const { next, nextWave, runStageHeadless, mergeWorkstreamGates } = require("./or
 const { collect: collectPatterns } = require("./patterns");
 const { runReflector } = require("./learning/reflector");
 const { ingest: ingestMemory } = require("./memory");
+const { readCorpus } = require("./corpus");
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom, resolveRoute } = require("./config");
 const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require("./scheduler");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
@@ -447,6 +448,160 @@ function totalCostUsd(cwd, changeId) {
   return costUsdDetail(cwd, changeId).total;
 }
 
+function tokenEntryForGate(gate) {
+  const observed = gate && gate._orchestrator_observed;
+  const input = nonNegativeNumber(observed && observed.tokens_in);
+  const output = nonNegativeNumber(observed && observed.tokens_out);
+  if (input !== null && output !== null) {
+    return { input, output, basis: "observed" };
+  }
+  const estimatedInput = observed && observed.tokens_estimated === true
+    ? nonNegativeNumber(observed.tokens_in_estimate)
+    : null;
+  if (estimatedInput !== null) {
+    return { input: estimatedInput, output: 0, basis: "estimated" };
+  }
+  return null;
+}
+
+// Subscription-backed hosts such as Codex can report tokens without reporting
+// billable USD. Sum orchestrator-owned usage as a provider-neutral budget floor.
+// For multi-role stages, workstream gates are authoritative because the merged
+// gate does not roll up `_orchestrator_observed`; never count both surfaces.
+function tokenUsageDetail(cwd, changeId) {
+  const mergedGateRe = /^(stage-\d{2}[a-z]?)\.json$/;
+  const wsGateRe = /^(stage-\d{2}[a-z]?)\.[^.]+\.json$/;
+  const groups = new Map();
+  let files = [];
+  try { files = fs.readdirSync(gatesDir(cwd, changeId)); } catch {
+    return { total: 0, input: 0, output: 0, basis: null, observations: 0, missing: 0, coverage_complete: false };
+  }
+
+  for (const file of files) {
+    const merged = file.match(mergedGateRe);
+    const workstream = file.match(wsGateRe);
+    const prefix = merged?.[1] || workstream?.[1];
+    if (!prefix) continue;
+    try {
+      const gate = JSON.parse(fs.readFileSync(path.join(gatesDir(cwd, changeId), file), "utf8"));
+      if (!groups.has(prefix)) groups.set(prefix, { merged: null, workstreams: [] });
+      if (workstream) groups.get(prefix).workstreams.push(gate);
+      else groups.get(prefix).merged = gate;
+    } catch { /* unreadable gates contribute no trusted usage */ }
+  }
+
+  let input = 0;
+  let output = 0;
+  let observations = 0;
+  let missing = 0;
+  let sawObserved = false;
+  let sawEstimated = false;
+  for (const group of groups.values()) {
+    const selected = group.workstreams.length > 0
+      ? group.workstreams
+      : (group.merged ? [group.merged] : []);
+    for (const gate of selected) {
+      const entry = tokenEntryForGate(gate);
+      if (!entry) {
+        missing++;
+        continue;
+      }
+      input += entry.input;
+      output += entry.output;
+      observations++;
+      if (entry.basis === "observed") sawObserved = true;
+      else sawEstimated = true;
+    }
+  }
+  const basis = sawObserved && sawEstimated ? "mixed"
+    : sawObserved ? "observed"
+      : sawEstimated ? "estimated"
+        : null;
+  return {
+    total: input + output,
+    input,
+    output,
+    basis,
+    observations,
+    missing,
+    coverage_complete: observations > 0 && missing === 0,
+  };
+}
+
+function combineTokenUsage(...details) {
+  let input = 0;
+  let output = 0;
+  let observations = 0;
+  let missing = 0;
+  let sawObserved = false;
+  let sawEstimated = false;
+  for (const detail of details.filter(Boolean)) {
+    input += nonNegativeNumber(detail.input) || 0;
+    output += nonNegativeNumber(detail.output) || 0;
+    observations += nonNegativeNumber(detail.observations) || 0;
+    missing += nonNegativeNumber(detail.missing) || 0;
+    if (detail.basis === "observed" || detail.basis === "mixed") sawObserved = true;
+    if (detail.basis === "estimated" || detail.basis === "mixed") sawEstimated = true;
+  }
+  const basis = sawObserved && sawEstimated ? "mixed"
+    : sawObserved ? "observed"
+      : sawEstimated ? "estimated"
+        : null;
+  return {
+    total: input + output,
+    input,
+    output,
+    basis,
+    observations,
+    missing,
+    coverage_complete: observations > 0 && missing === 0,
+  };
+}
+
+// The run corpus is append-only, so unlike live gates it retains every retry.
+// Only orchestrator-observed or explicitly estimated rows are budget-eligible;
+// older/model-asserted rows remain useful analytics but count as missing here.
+function tokenUsageForRunIds(cwd, runIds, expectedDispatches = 0) {
+  const selected = new Set((runIds || []).filter(Boolean));
+  let input = 0;
+  let output = 0;
+  let observations = 0;
+  let missing = 0;
+  let sawObserved = false;
+  let sawEstimated = false;
+  let matchedDispatches = 0;
+  for (const row of readCorpus(cwd)) {
+    if (!selected.has(row.run_id)) continue;
+    matchedDispatches++;
+    if (row.token_basis !== "observed" && row.token_basis !== "estimated") {
+      missing++;
+      continue;
+    }
+    const rowInput = nonNegativeNumber(row.tokens_in);
+    const rowOutput = nonNegativeNumber(row.tokens_out);
+    if (rowInput === null || rowOutput === null) {
+      missing++;
+      continue;
+    }
+    input += rowInput;
+    output += rowOutput;
+    observations++;
+    if (row.token_basis === "observed") sawObserved = true;
+    else sawEstimated = true;
+  }
+  missing += Math.max(0, expectedDispatches - matchedDispatches);
+  return combineTokenUsage({
+    input,
+    output,
+    observations,
+    missing,
+    basis: sawObserved && sawEstimated ? "mixed"
+      : sawObserved ? "observed"
+        : sawEstimated ? "estimated"
+          : null,
+  });
+}
+
 // ADR-006 / ADR-016: resolveTrack returns {track, source, confidence} so callers can
 // apply the confidence guard without a second file read. Source values:
 //   "human"   — --track CLI flag or pipeline/track.json with source:"human"
@@ -812,6 +967,7 @@ function defaultCheckScopeGate(cwd, affectedFiles) {
  * @param {string} [opts.until]          stop after this stage (inclusive)
  * @param {number} [opts.maxIterations]  loop guard (default 100)
  * @param {number} [opts.budgetUsd]      halt before a dispatch once spend ≥ cap
+ * @param {number} [opts.budgetTokens]   halt before a dispatch once observed/estimated tokens ≥ cap
  * @param {number} [opts.timeoutMs]      per-stage dispatch wall-clock
  * @param {string} [opts.trustProfile]   trusted or contained execution boundary
  * @param {string[]} [opts.allowStages]  consequence-ceiling grants (sign-off/deploy)
@@ -841,6 +997,8 @@ async function run(opts = {}) {
       iterations: 0,
       cost_usd: 0,
       cost_basis: null,
+      tokens_used: 0,
+      token_basis: null,
     };
   }
 
@@ -925,10 +1083,11 @@ async function run(opts = {}) {
   const _ingestMemory = opts.ingestMemory || ingestMemory;
   const maxIterations = Number.isInteger(opts.maxIterations) ? opts.maxIterations : DEFAULT_MAX_ITERATIONS;
   const budgetUsd = typeof opts.budgetUsd === "number" ? opts.budgetUsd : null;
-  if (budgetUsd === null) {
+  const budgetTokens = typeof opts.budgetTokens === "number" ? opts.budgetTokens : null;
+  if (budgetUsd === null && budgetTokens === null) {
     process.stderr.write(
-      "[devteam run] Warning: no --budget-usd cap set. The run will not halt on spend.\n" +
-      "              Use --budget-usd <amount> to prevent runaway cost.\n"
+      "[devteam run] Warning: no usage cap set. The run will not halt on spend or tokens.\n" +
+      "              Use --budget-usd <amount> and/or --budget-tokens <count>.\n"
     );
   }
   // Phase-28 item 28.4: warn at most once per run when the cost total includes
@@ -936,6 +1095,7 @@ async function run(opts = {}) {
   // adapter didn't produce orchestrator-observed usage. Doesn't affect halt
   // semantics; purely an audit-trail signal (trust boundary, item 10).
   let assertedCostWarned = false;
+  let incompleteTokenCoverageWarned = false;
   const timeoutMs = typeof opts.timeoutMs === "number" ? opts.timeoutMs : undefined;
   const allowStages = new Set(opts.allowStages || []);
   const onEvent = typeof opts.onEvent === "function" ? opts.onEvent : () => {};
@@ -1042,6 +1202,21 @@ async function run(opts = {}) {
   // counters above so it survives `devteam run --resume` instead of
   // restarting at 1 and colliding with wave_ids already in run-log.jsonl.
   state.wave_id_counter = Number.isInteger(state.wave_id_counter) ? state.wave_id_counter : 0;
+  // Token budgets are cumulative across retries and resumes. Live gates only
+  // retain the latest attempt, so freeze their trusted usage as the baseline
+  // and add every dispatch from the append-only corpus for this run lineage.
+  if (!state.token_usage_baseline || typeof state.token_usage_baseline !== "object") {
+    state.token_usage_baseline = tokenUsageDetail(cwd, changeId);
+  }
+  if (!Array.isArray(state.token_run_ids)) state.token_run_ids = [];
+  if (!state.token_run_ids.includes(state.started_at)) state.token_run_ids.push(state.started_at);
+  state.token_dispatches_expected = Number.isInteger(state.token_dispatches_expected)
+    ? state.token_dispatches_expected
+    : 0;
+  const currentTokenUsage = () => combineTokenUsage(
+    state.token_usage_baseline,
+    tokenUsageForRunIds(cwd, state.token_run_ids, state.token_dispatches_expected),
+  );
   // Phase 12.2: commit-cursor fields (resilient to resumed pre-12.2 states).
   if (!Array.isArray(state.stages_advanced)) state.stages_advanced = [];
   if (!("last_committed_stage_index" in state)) state.last_committed_stage_index = null;
@@ -1056,6 +1231,11 @@ async function run(opts = {}) {
     iterations: 0,
     cost_usd: 0,
     cost_basis: null,
+    tokens_used: 0,
+    tokens_in: 0,
+    tokens_out: 0,
+    token_basis: null,
+    token_coverage_complete: false,
   };
   const activeRoleCandidates = config.pipeline.right_sizing === false
     ? { roles: [], trigger_inputs: {} }
@@ -1306,6 +1486,11 @@ async function run(opts = {}) {
         until: opts.until,
         budgetUsd,
         spent: budgetUsd == null ? 0 : totalCostUsd(cwd, changeId),
+        budgetTokens,
+        ...(() => {
+          const usage = budgetTokens == null ? null : currentTokenUsage();
+          return { tokensUsed: usage ? usage.total : 0, tokenBasis: usage ? usage.basis : null };
+        })(),
       });
       if (guardTransition) {
         applyTransition(guardTransition);
@@ -1449,6 +1634,7 @@ async function run(opts = {}) {
       }
       const dispatch = normalizeDispatchResults(runResult);
       const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs } = dispatch;
+      state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
       const durationMs = Date.now() - t0;
       for (const result of results) {
         const observation = dispatchObservation(base, result);
@@ -1562,6 +1748,7 @@ async function run(opts = {}) {
       // bounded last-event age regardless of dispatch duration. Cheap: no fs scans.
       const heartbeatIteration = (state.iterations || 0) + 1;
       const heartbeatCost = costUsdDetail(cwd, changeId);
+      const heartbeatTokens = currentTokenUsage();
       logEvent(cwd, changeId, {
         outcome: "heartbeat",
         iteration: heartbeatIteration,
@@ -1569,6 +1756,8 @@ async function run(opts = {}) {
         action: state.last_action || null,
         run_state_path: runStatePath(cwd, changeId),
         cost_usd_so_far: heartbeatCost.total,
+        tokens_so_far: heartbeatTokens.total,
+        token_basis: heartbeatTokens.basis,
       });
       onEvent({
         type: "heartbeat",
@@ -1576,12 +1765,24 @@ async function run(opts = {}) {
         stage: state.current_stage || null,
         action: state.last_action || null,
         cost_usd: heartbeatCost.total,
+        tokens_used: heartbeatTokens.total,
+        token_basis: heartbeatTokens.basis,
       });
       if (!assertedCostWarned && (heartbeatCost.basis === "model-asserted" || heartbeatCost.basis === "mixed")) {
         assertedCostWarned = true;
         const msg = `cost total includes model-asserted (self-reported) cost_usd, not just orchestrator-observed usage (cost_basis: "${heartbeatCost.basis}")`;
         logEvent(cwd, changeId, { outcome: "cost-basis-warning", cost_basis: heartbeatCost.basis, message: msg });
         onEvent({ type: "cost-basis-warning", cost_basis: heartbeatCost.basis });
+        process.stderr.write(`[devteam run] note: ${msg}\n`);
+      }
+      if (
+        budgetTokens !== null && !incompleteTokenCoverageWarned &&
+        heartbeatTokens.missing > 0
+      ) {
+        incompleteTokenCoverageWarned = true;
+        const msg = `token budget coverage is partial: ${heartbeatTokens.missing} gate(s) lack orchestrator-observed or estimated usage`;
+        logEvent(cwd, changeId, { outcome: "token-coverage-warning", message: msg });
+        onEvent({ type: "token-coverage-warning", missing: heartbeatTokens.missing });
         process.stderr.write(`[devteam run] note: ${msg}\n`);
       }
 
@@ -1961,6 +2162,11 @@ async function run(opts = {}) {
           until: opts.until,
           budgetUsd,
           spent: budgetUsd == null ? 0 : totalCostUsd(cwd, changeId),
+          budgetTokens,
+          ...(() => {
+            const usage = budgetTokens == null ? null : currentTokenUsage();
+            return { tokensUsed: usage ? usage.total : 0, tokenBasis: usage ? usage.basis : null };
+          })(),
         });
         if (guardTransition) {
           applyTransition(guardTransition);
@@ -2132,6 +2338,7 @@ async function run(opts = {}) {
         }
         const dispatch = normalizeDispatchResults(runResult);
         const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs } = dispatch;
+        state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
         const durationMs = Date.now() - t0;
         for (const result of results) {
           const observation = dispatchObservation(base, result);
@@ -2320,6 +2527,19 @@ async function run(opts = {}) {
     summary.cost_basis = finalCost.basis;
     state.cost_usd = finalCost.total;
     state.cost_basis = finalCost.basis;
+    const finalTokens = currentTokenUsage();
+    summary.tokens_used = finalTokens.total;
+    summary.tokens_in = finalTokens.input;
+    summary.tokens_out = finalTokens.output;
+    summary.token_basis = finalTokens.basis;
+    summary.token_coverage_complete = finalTokens.coverage_complete;
+    state.tokens_used = finalTokens.total;
+    state.tokens_in = finalTokens.input;
+    state.tokens_out = finalTokens.output;
+    state.token_basis = finalTokens.basis;
+    state.token_coverage_complete = finalTokens.coverage_complete;
+    state.token_observations = finalTokens.observations;
+    state.token_missing = finalTokens.missing;
     if (!assertedCostWarned && (finalCost.basis === "model-asserted" || finalCost.basis === "mixed")) {
       assertedCostWarned = true;
       const msg = `cost total includes model-asserted (self-reported) cost_usd, not just orchestrator-observed usage (cost_basis: "${finalCost.basis}")`;
@@ -2413,4 +2633,4 @@ async function run(opts = {}) {
   return summary;
 }
 
-module.exports = { run, CONSEQUENCE_CEILING, DEFAULT_MAX_ITERATIONS, totalCostUsd, costUsdDetail, runStatePath, runLogPath, seedDeployContext, blockerFiles };
+module.exports = { run, CONSEQUENCE_CEILING, DEFAULT_MAX_ITERATIONS, totalCostUsd, costUsdDetail, tokenUsageDetail, runStatePath, runLogPath, seedDeployContext, blockerFiles };

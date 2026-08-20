@@ -87,6 +87,7 @@ Bounded autonomous driver with optional TTY watch mode: loop next â†’ dispatch â
 | --until            | string | Stop before this stage                                                                               |
 | --max-iterations   | number | Iteration cap                                                                                        |
 | --budget-usd       | number | Cost cap in USD                                                                                      |
+| --budget-tokens    | number | Observed/estimated token cap (not provider quota)                                                    |
 | --timeout-ms       | number | Per-dispatch timeout (ms)                                                                            |
 | --trust-profile    | string | Execution boundary: trusted or contained (fail-closed)                                               |
 | --retry-delay-ms   | number | Backoff delay between transient retries (ms)                                                         |

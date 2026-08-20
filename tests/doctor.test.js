@@ -228,7 +228,7 @@ describe("devteam doctor — dogfood mode section", () => {
     assert.ok(r.stdout.includes("double-check you are in the right project"), r.stdout);
   });
 
-  it("always shows budget-usd reminder as info", () => {
+  it("always shows usage-budget reminder as info", () => {
     const cwd = makeDogfoodProject({
       hookContent: `#!/bin/bash\n${GUARD_MARKER}\n`,
       gitignoreContent: `${DOGFOOD_BLOCK}\n# END stagecraft-dogfood\n`,
@@ -237,8 +237,8 @@ describe("devteam doctor — dogfood mode section", () => {
 
     const r = runCLI(["doctor", "--cwd", cwd]);
 
-    assert.ok(r.stdout.includes("ℹ budget-usd reminder"), r.stdout);
-    assert.ok(r.stdout.includes("always use --budget-usd"), r.stdout);
+    assert.ok(r.stdout.includes("ℹ usage-budget reminder"), r.stdout);
+    assert.ok(r.stdout.includes("use --budget-usd and/or --budget-tokens"), r.stdout);
   });
 });
 

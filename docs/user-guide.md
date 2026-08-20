@@ -1208,6 +1208,7 @@ devteam run                       # drive the configured track to completion
 devteam run --watch               # rolling liveness status on an interactive terminal
 devteam run --until peer-review   # stop after a specific stage
 devteam run --budget-usd 10       # stop before a dispatch once spend ≥ $10
+devteam run --budget-tokens 5000000  # stop on trusted observed/estimated token usage
 devteam run --allow-stage sign-off --allow-stage deploy   # grant the consequence ceiling
 devteam run --auto-rule formatting-only,doc-only          # auto-resolve bounded escalation classes
 devteam status --verbose                                  # inspect active/last workstream details

@@ -187,8 +187,8 @@ function run(positional, _flags) {
     }
 
     // 6. Budget reminder (advisory — always shown in dogfood mode)
-    check("budget-usd reminder", "info",
-      "always use --budget-usd with devteam run to cap spend");
+    check("usage-budget reminder", "info",
+      "use --budget-usd and/or --budget-tokens with devteam run to cap usage");
   }
 
   console.log("");

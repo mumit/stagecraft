@@ -113,6 +113,8 @@ function run(positional, _flags) {
   // per run onto run-state.json by core/driver.js. null before any dispatch
   // has recorded a cost, or for a run predating this field.
   const costBasis = runState ? (runState.cost_basis || null) : null;
+  const tokensUsed = runState ? runState.tokens_used : null;
+  const tokenBasis = runState ? (runState.token_basis || null) : null;
   const activeWorkstreams = runState && runState.active_workstreams
     ? Object.values(runState.active_workstreams)
     : [];
@@ -124,6 +126,9 @@ function run(positional, _flags) {
     iterations: runState ? (runState.iterations || 0) : 0,
     cost_usd: typeof costUsd === "number" ? costUsd : null,
     cost_basis: costBasis,
+    tokens_used: typeof tokensUsed === "number" ? tokensUsed : null,
+    token_basis: tokenBasis,
+    token_coverage_complete: runState ? runState.token_coverage_complete === true : false,
     last_heartbeat_age_ms: lastHeartbeatAgeMs,
     last_event_age_ms: lastEventAgeMs,
     stall_detected: stallDetected,
@@ -143,6 +148,9 @@ function run(positional, _flags) {
   process.stdout.write(`  iterations:       ${output.iterations}\n`);
   process.stdout.write(`  cost_usd:         ${output.cost_usd != null ? `$${output.cost_usd.toFixed(4)}` : "—"}\n`);
   process.stdout.write(`  cost_basis:       ${output.cost_basis || "—"}\n`);
+  process.stdout.write(`  tokens_used:      ${output.tokens_used != null ? output.tokens_used.toLocaleString("en-US") : "—"}\n`);
+  process.stdout.write(`  token_basis:      ${output.token_basis || "—"}\n`);
+  process.stdout.write(`  token_coverage:   ${output.token_coverage_complete ? "complete" : "partial/unavailable"}\n`);
   process.stdout.write(`  active_streams:   ${output.active_workstreams.length}\n`);
   process.stdout.write(`  heartbeat_age:    ${ageStr(output.last_heartbeat_age_ms)}\n`);
   process.stdout.write(`  last_event_age:   ${ageStr(output.last_event_age_ms)}\n`);

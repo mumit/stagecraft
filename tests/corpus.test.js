@@ -120,6 +120,7 @@ describe("corpus: recordDispatch via runStageHeadless (28.5)", () => {
     assert.ok(Number.isInteger(req.prompt_bytes) && req.prompt_bytes > 0);
     assert.equal(req.tokens_in, 222);
     assert.equal(req.tokens_out, 33);
+    assert.equal(req.token_basis, "observed");
     assert.equal(req.cost_usd, null, "codex reports no dollar cost natively");
     assert.equal(req.cost_basis, null);
     assert.ok(Number.isInteger(req.duration_ms) && req.duration_ms >= 0);
@@ -144,6 +145,7 @@ describe("corpus: recordDispatch via runStageHeadless (28.5)", () => {
     assert.equal(design.host, "codex");
     assert.equal(design.tokens_in, 800);
     assert.equal(design.tokens_out, 120);
+    assert.equal(design.token_basis, "model-asserted");
     assert.equal(design.cost_usd, 0.05);
     assert.equal(design.cost_basis, "model-asserted");
     assert.equal(design.gate_status, "PASS");

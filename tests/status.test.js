@@ -236,6 +236,32 @@ describe("devteam status — cost_basis (28.4)", () => {
   });
 });
 
+describe("devteam status — token usage", () => {
+  it("reports token count, basis, and coverage from run-state.json", () => {
+    const cwd = track(makeTargetProject());
+    writeRunState(cwd, {
+      track: "full", intent: "feature", iterations: 2,
+      tokens_used: 1234567, token_basis: "mixed", token_coverage_complete: false,
+      started_at: new Date().toISOString(),
+    });
+    writeRunLog(cwd, [
+      { ts: new Date().toISOString(), outcome: "heartbeat", iteration: 2, stage: "build" },
+    ]);
+
+    const json = runCLI(["status", "--json", "--cwd", cwd]);
+    assert.equal(json.status, 0);
+    const out = JSON.parse(json.stdout);
+    assert.equal(out.tokens_used, 1234567);
+    assert.equal(out.token_basis, "mixed");
+    assert.equal(out.token_coverage_complete, false);
+
+    const human = runCLI(["status", "--cwd", cwd]);
+    assert.match(human.stdout, /tokens_used:\s+1,234,567/);
+    assert.match(human.stdout, /token_basis:\s+mixed/);
+    assert.match(human.stdout, /token_coverage:\s+partial\/unavailable/);
+  });
+});
+
 describe("devteam status — completed/halted states", () => {
   it("reports completed when last log event is complete", () => {
     const cwd = track(makeTargetProject());

@@ -46,7 +46,7 @@ For each Stagecraft feature or fix you want to dogfood:
 git checkout -b feat/my-new-feature
 
 # 2. Run the pipeline with a budget cap (required in dogfood mode)
-devteam run --feature "describe the feature" --budget-usd 15
+devteam run --feature "describe the feature" --budget-usd 15 --budget-tokens 50000000
 
 # 3. When the pipeline completes or halts for sign-off, review pipeline/gates/
 devteam summary
@@ -90,7 +90,7 @@ git commit
 |---|---|
 | Agent tries to commit `pipeline/brief.md` | Normal — pre-commit hook blocks it; pipeline continues |
 | Run stalls after sign-off | Use `--allow-stage sign-off` if intentional |
-| Budget exhausted before design | Raise `--budget-usd`; start from `devteam restart stage-01 --cascade` |
+| Budget exhausted before design | Raise `--budget-usd` or `--budget-tokens`, as applicable; start from `devteam restart stage-01 --cascade` |
 | Pipeline artifacts appear in PR | `git restore --staged pipeline/` before pushing |
 
 ## Re-running doctor after setup
@@ -108,7 +108,7 @@ Dogfood mode
   ✓ .gitignore dogfood block present
   ✓ .git/info/exclude: deploy.md entry
   ✓ no npm publish script
-  ℹ budget-usd reminder  — always use --budget-usd with devteam run to cap spend
+  ℹ usage-budget reminder  — use --budget-usd and/or --budget-tokens with devteam run to cap usage
 ```
 
 ## Two-project calibration protocol

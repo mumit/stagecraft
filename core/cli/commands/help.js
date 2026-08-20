@@ -127,6 +127,8 @@ Commands:
       [--track <t>] [--until <s>]  bug fixes (ADR-009, hotfix depth default;
       [--max-iterations N]          diagnosis stage + PATCH-MODE-scoped build
       [--budget-usd X]              + failing-first reproduction). --repair-at
+      [--budget-tokens N]           Token cap uses trusted observed/estimated
+                                   usage; it is not a provider quota predictor.
       [--timeout-ms N]              skips diagnosis, seeds affected-files.
       [--retry-delay-ms N]          Auto-fixes code-defect FAILs and retries
       [--auto-rule <classes>]       transient failures. With --auto-rule,

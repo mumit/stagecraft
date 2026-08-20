@@ -51,6 +51,7 @@ const flags = {
   until:             { type: "string",  description: "Stop before this stage" },
   "max-iterations":  { type: "number",  description: "Iteration cap" },
   "budget-usd":      { type: "number",  description: "Cost cap in USD" },
+  "budget-tokens":   { type: "number",  description: "Observed/estimated token cap (not provider quota)" },
   "timeout-ms":      { type: "number",  description: "Per-dispatch timeout (ms)" },
   "trust-profile":   { type: "string",  description: "Execution boundary: trusted or contained (fail-closed)" },
   "retry-delay-ms":  { type: "number",  description: "Backoff delay between transient retries (ms)" },
@@ -152,7 +153,11 @@ function run(positional, _flags) {
       case "complete":     process.stderr.write(`🎉 pipeline-complete\n`); break;
       case "halt":         process.stderr.write(`⏸  halt — ${ev.action}${tag}: ${ev.reason}\n`); break;
       case "ceiling":      process.stderr.write(`🛑 consequence ceiling — "${ev.name}" needs a human grant (re-run with --allow-stage ${ev.name})\n`); break;
-      case "budget":       process.stderr.write(`💰 budget cap reached — halting before "${ev.name}"\n`); break;
+      case "budget": {
+        const label = ev.budget_kind === "tokens" ? "token budget" : "dollar budget";
+        process.stderr.write(`💰 ${label} cap reached — halting before "${ev.name}"\n`);
+        break;
+      }
       case "until":        process.stderr.write(`⏹  reached --until boundary\n`); break;
       case "auto-rule-dispatch": process.stderr.write(`⚖  ${ev.name} — escalation; dispatching Principal for a ruling…\n`); break;
       case "auto-ruled":   process.stderr.write(`⚖  ${ev.name} — auto-ruled [class: ${ev.grant_class}] under ${ev.authority}: ${ev.ruling}\n`); break;
@@ -175,6 +180,7 @@ function run(positional, _flags) {
     until: _flags.until,
     maxIterations: Number.isFinite(_flags.maxIterations) ? _flags.maxIterations : undefined,
     budgetUsd: Number.isFinite(_flags.budgetUsd) ? _flags.budgetUsd : undefined,
+    budgetTokens: Number.isFinite(_flags.budgetTokens) ? _flags.budgetTokens : undefined,
     timeoutMs: Number.isFinite(_flags.timeoutMs) ? _flags.timeoutMs : undefined,
     trustProfile: _flags.trustProfile,
     retryDelayMs: Number.isFinite(_flags.retryDelayMs) ? _flags.retryDelayMs : undefined,
@@ -191,7 +197,9 @@ function run(positional, _flags) {
       const status = summary.completed ? "complete" : `halted (${summary.halt_action})`;
       process.stderr.write(
         `\n[devteam run] ${status} — ${summary.iterations} iteration(s), ` +
-        `$${summary.cost_usd.toFixed(2)} spent, ${summary.stages_advanced.length} stage(s) advanced\n`,
+        `${summary.cost_basis ? `$${summary.cost_usd.toFixed(2)} spent` : "cost unavailable"}, ` +
+        `${summary.tokens_used.toLocaleString("en-US")} token(s) counted, ` +
+        `${summary.stages_advanced.length} stage(s) advanced\n`,
       );
       if (summary.halted && summary.halt_reason) process.stderr.write(`  reason: ${summary.halt_reason}\n`);
       if (summary.halt_action === "fix-and-retry" || summary.halt_action === "resolve-escalation") {
