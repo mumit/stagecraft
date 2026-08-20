@@ -5,6 +5,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { hasPythonTests } = require("../verify/runner");
+const { isFrameworkOwnedPath } = require("../paths");
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -195,9 +197,17 @@ function detectTechStack(cwd) {
       fs.existsSync(path.join(cwd, "setup.cfg")) ||
       fs.existsSync(path.join(cwd, "requirements.txt"))) {
     if (!stack.languages.includes("Python")) stack.languages.push("Python");
-    if (!stack.test_runner) {
-      const req = readFileSafe(path.join(cwd, "requirements.txt")) || "";
-      if (/pytest/.test(req)) stack.test_runner = "pytest";
+    // Reuse the verify runner's own detector rather than a second, weaker
+    // heuristic: discovery must report the test story that will actually be
+    // executed. It covers pytest.ini, [tool.pytest], [tool:pytest], and a
+    // bounded walk for test_*.py / *_test.py, where this previously looked
+    // only for the string "pytest" inside requirements.txt.
+    if (!stack.test_runner && hasPythonTests(cwd)) stack.test_runner = "pytest";
+    if (!stack.package_manager) {
+      if (fs.existsSync(path.join(cwd, "poetry.lock"))) stack.package_manager = "poetry";
+      else if (fs.existsSync(path.join(cwd, "uv.lock"))) stack.package_manager = "uv";
+      else if (fs.existsSync(path.join(cwd, "Pipfile.lock")) || fs.existsSync(path.join(cwd, "Pipfile"))) stack.package_manager = "pipenv";
+      else if (fs.existsSync(path.join(cwd, "requirements.txt")) || fs.existsSync(path.join(cwd, "pyproject.toml"))) stack.package_manager = "pip";
     }
   }
 
@@ -254,7 +264,13 @@ function detectFileLayout(cwd) {
   const sampledFileNames = [];
 
   for (const entry of listDir(cwd)) {
-    if (entry.isDirectory() && !SKIP_DIRS.has(entry.name) && !entry.name.startsWith(".")) {
+    // isFrameworkOwnedPath keeps Stagecraft's own directories out of the
+    // project's reported structure — `pipeline/` was being listed as a
+    // top-level source directory of the project it was orchestrating. Same
+    // reader class as the changed-file manifest and right-sizing; see
+    // core/paths.js.
+    if (entry.isDirectory() && !SKIP_DIRS.has(entry.name) && !entry.name.startsWith(".")
+        && !isFrameworkOwnedPath(`${entry.name}/`)) {
       topLevel.push(entry.name);
     }
   }
@@ -309,13 +325,23 @@ function classifyFilename(name) {
   if (!base) return null;
   if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(base)) return "kebab-case";
   if (/^[A-Z][a-zA-Z0-9]+$/.test(base)) return "PascalCase";
-  if (/^[a-z][a-zA-Z0-9]+$/.test(base)) return "camelCase";
   if (/^[a-z][a-z0-9]*(_[a-z0-9]+)+$/.test(base)) return "snake_case";
+  // camelCase requires an actual hump. The previous pattern here was
+  // /^[a-z][a-zA-Z0-9]+$/, which matches any single lowercase word — so
+  // `calc.py`, `utils.js`, `main.go` all counted as camelCase, and a project
+  // whose files are uniformly single-word lowercase was told its convention
+  // was camelCase. That is worse than saying nothing: the agent writes
+  // `myNewModule.py` into a snake_case codebase.
+  if (/^[a-z][a-z0-9]*[A-Z][a-zA-Z0-9]*$/.test(base)) return "camelCase";
+  // A bare lowercase word is consistent with kebab, snake, and lowercase
+  // conventions alike, so it gets its own bucket rather than being claimed
+  // by one of them.
+  if (/^[a-z][a-z0-9]*$/.test(base)) return "lowercase";
   return null;
 }
 
 function detectNaming(filenames) {
-  const counts = { "kebab-case": 0, "PascalCase": 0, "camelCase": 0, "snake_case": 0 };
+  const counts = { "kebab-case": 0, "PascalCase": 0, "camelCase": 0, "snake_case": 0, "lowercase": 0 };
   let classified = 0;
   for (const name of filenames) {
     const style = classifyFilename(name);

@@ -4,7 +4,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const SCHEMA_VERSION = "1.0";
+// Bumped to 1.1 when project discovery was corrected for non-JavaScript
+// projects. The stored fingerprint only covers the project's own files, so an
+// existing pack would otherwise keep serving facts produced by the older
+// detector — including the misclassified naming convention it is the point of
+// this bump to replace. A version change forces one regeneration per project.
+const SCHEMA_VERSION = "1.1";
 const KNOWLEDGE_DIR = path.join(".devteam", "knowledge");
 const PROJECT_FILE = "project.json";
 const MAX_FACTS = 6;
