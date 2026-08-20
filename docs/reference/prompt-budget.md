@@ -77,6 +77,11 @@ because it is project/runtime dependent, but it is bounded and measurable.
 This replaces eager changed-file content loading: agents inspect file bodies on demand
 when the manifest shows a relevant path or digest change.
 
+Framework-owned paths never enter it: Stagecraft's own state and every host install
+surface `devteam init` writes. The same predicate filters right-sizing's role
+inference and the file list `assess` scores a track from — see
+`FRAMEWORK_OWNED_PREFIXES` in [`core/paths.js`](../../core/paths.js).
+
 <!-- budget-data
 stage-01,24612
 stage-02,28814

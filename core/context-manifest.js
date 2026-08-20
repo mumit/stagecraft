@@ -3,15 +3,9 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
+const { isFrameworkOwnedPath } = require("./paths");
+
 const DEFAULT_LIMIT = 40;
-const IGNORED_PREFIXES = [
-  ".git/",
-  ".devteam/",
-  ".codex/",
-  ".codex-tmp/",
-  ".devteam-tmp/",
-  "pipeline/",
-];
 
 function normalizeRel(file) {
   return String(file || "").replace(/\\/g, "/").replace(/^\/+/, "");
@@ -20,7 +14,9 @@ function normalizeRel(file) {
 function isManifestInputPath(file) {
   const rel = normalizeRel(file);
   if (!rel || rel.includes("\0")) return false;
-  return !IGNORED_PREFIXES.some((prefix) => rel === prefix.slice(0, -1) || rel.startsWith(prefix));
+  // The manifest describes the change under review — never Stagecraft's own
+  // state or the host surface `devteam init` wrote (core/paths.js).
+  return !isFrameworkOwnedPath(rel);
 }
 
 function parsePorcelainStatus(stdout) {

@@ -475,3 +475,43 @@ describe("devteam assess: pipeline/track.json (ADR-006 §2)", () => {
     }
   });
 });
+
+describe("assess: Stagecraft's own install never inflates the track", () => {
+  const { isFrameworkOwnedPath } = require("../core/paths");
+
+  test("a freshly initialized claude-code project does not promote a trivial change", () => {
+    // `.claude/skills/qa-test-authoring/SKILL.md` matches the security
+    // heuristic's /auth/i on the word "authoring", and `devteam init --host
+    // claude-code` writes 68 such files. Before the shared filter that promoted
+    // a one-function change from loop (4 dispatches) to full (20+) on the first
+    // run of every new project.
+    const frameworkFiles = [
+      ".claude/skills/qa-test-authoring/SKILL.md",
+      ".claude/skills/spec-authoring/SKILL.md",
+      ".claude/agents/security-engineer.md",
+      ".claude/skills/migration-safety/SKILL.md",
+      ".devteam/rules/stage-04b.md",
+    ];
+    const projectFiles = ["src/index.js"];
+
+    const leaked = assess("add a subtract function", [...frameworkFiles, ...projectFiles]);
+    assert.equal(leaked.securityRequired, true,
+      "precondition: unfiltered framework paths do trip the security heuristic");
+
+    const filtered = assess(
+      "add a subtract function",
+      [...frameworkFiles, ...projectFiles].filter((f) => !isFrameworkOwnedPath(f)),
+    );
+    assert.equal(filtered.securityRequired, false);
+    assert.equal(filtered.migrationRequired, false);
+    assert.equal(filtered.recommendedTrack, "loop");
+  });
+
+  test("still flags a real security-relevant file in the project itself", () => {
+    // The filter removes Stagecraft's own paths; it must not blunt the
+    // heuristic for the repository's own code.
+    const r = assess("add a subtract function", ["src/auth/session.js"]);
+    assert.equal(r.securityRequired, true);
+    assert.equal(r.recommendedTrack, "full");
+  });
+});

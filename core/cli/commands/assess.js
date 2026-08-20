@@ -34,6 +34,12 @@ function run(positional, _flags) {
       files = fs.readFileSync(changedFilesPath, "utf8").split(/\r?\n/).filter(Boolean);
     }
   }
+  // Stagecraft's own install is not the change being assessed. Filtering here
+  // as well as in gitChangedFiles covers the paths a caller supplies directly
+  // — `devteam assess $(git status --porcelain | ...)` is a documented habit,
+  // and an unfiltered `.claude/` in that list promotes the track (core/paths.js).
+  const { isFrameworkOwnedPath } = require(path.join(__dirname, "..", "..", "paths"));
+  files = files.filter((file) => !isFrameworkOwnedPath(file));
 
   const description = _flags.description || "";
   const result = assess(description, files, { scanContent: !_flags.noContent });
