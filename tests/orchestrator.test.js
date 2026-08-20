@@ -1200,6 +1200,73 @@ describe("orchestrator: patchGateForObservedUsage (phase 28.1)", () => {
     assert.ok(typeof gate._orchestrator_observed.at === "string" && gate._orchestrator_observed.at.length > 0);
   });
 
+  it("derives a cost from observed tokens when the host reports none", () => {
+    // codex's exec --json stream carries tokens but neither a cost nor a model
+    // (core/adapters/codex-exec-json.js). Without a derived figure --budget-usd
+    // enforces nothing on that host. gpt-4o: $2.50/$10.00 per Mtok →
+    // 0.1 * 2.50 + 0.05 * 10.00 = 0.75.
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(
+      gateFile,
+      { tokensIn: 100_000, tokensOut: 50_000, costUsd: null, model: null, source: "codex:exec-json" },
+      "gpt-4o",
+    );
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    // The derived figure never occupies cost_usd — an arithmetic product of
+    // observed tokens and our own table is a different evidence class than a
+    // cost the host reported.
+    assert.equal(observed.cost_usd, null);
+    assert.equal(observed.cost_usd_derived, 0.75);
+    assert.equal(observed.cost_model, "gpt-4o");
+  });
+
+  it("prefers the host-reported model over the routed pin when pricing a derived cost", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(
+      gateFile,
+      { tokensIn: 100_000, tokensOut: 50_000, costUsd: null, model: "gpt-4o-mini" },
+      "gpt-4o",
+    );
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    assert.equal(observed.cost_model, "gpt-4o-mini");
+  });
+
+  it("never derives a cost when the host already reported one", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(
+      gateFile,
+      { tokensIn: 100_000, tokensOut: 50_000, costUsd: 0.42, model: "gpt-4o" },
+      "gpt-4o",
+    );
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    assert.equal(observed.cost_usd, 0.42);
+    assert.equal("cost_usd_derived" in observed, false);
+  });
+
+  it("leaves cost absent rather than guessing when no model id is available", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(gateFile, { tokensIn: 1000, tokensOut: 100, costUsd: null, model: null }, null);
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    assert.equal("cost_usd_derived" in observed, false);
+    assert.equal("cost_model" in observed, false);
+  });
+
+  it("leaves cost absent rather than guessing when the model has no pricing entry", () => {
+    const cwd = track(makeTargetProject());
+    const gateFile = seedGate(cwd, "stage-01", { status: "PASS" });
+    patchGateForObservedUsage(
+      gateFile,
+      { tokensIn: 1000, tokensOut: 100, costUsd: null, model: null },
+      "some-unlisted-model-xyzzy",
+    );
+    const observed = JSON.parse(fs.readFileSync(gateFile, "utf8"))._orchestrator_observed;
+    assert.equal("cost_usd_derived" in observed, false);
+  });
+
   it("fire-and-forget: never throws when the gate file does not exist", () => {
     const cwd = track(makeTargetProject());
     const missing = path.join(cwd, "pipeline", "gates", "stage-99.json");

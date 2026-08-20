@@ -177,10 +177,18 @@ function nonNegativeNumber(value) {
 // what the orchestrator actually saw. Returns null when neither is a valid
 // non-negative number (e.g. a tokens-estimated-only gate with no cost_usd
 // at all — patchGateForEstimatedUsage never writes one).
+// Precedence, strongest evidence first: a cost the host itself reported, then
+// one derived from host-observed tokens times core/pricing.js (written by
+// patchGateForObservedUsage for hosts like codex that report tokens and no
+// dollars), then the model's own claim. Each carries its source so
+// costUsdDetail can report an honest basis rather than presenting all three
+// as one number.
 function costEntryForGate(gate) {
   const observed = gate && gate._orchestrator_observed;
   const observedCost = nonNegativeNumber(observed && observed.cost_usd);
   if (observedCost !== null) return { cost: observedCost, source: "observed" };
+  const derivedCost = nonNegativeNumber(observed && observed.cost_usd_derived);
+  if (derivedCost !== null) return { cost: derivedCost, source: "derived" };
   const assertedCost = nonNegativeNumber(gate && gate.cost_usd);
   if (assertedCost !== null) return { cost: assertedCost, source: "asserted" };
   return null;
@@ -276,9 +284,12 @@ function targetedFixNoSourceChangeEvidence(before) {
 //
 // Best-effort: unreadable or cost-less gates contribute 0 and don't affect
 // the basis. `basis` is "observed" (every contributing gate was
-// orchestrator-observed), "model-asserted" (every contributing gate fell
-// back to the model's self-report), "mixed" (both), or null (no gate
-// contributed a cost at all).
+// orchestrator-observed), "derived" (every contributing gate was priced from
+// observed tokens via core/pricing.js — see costEntryForGate),
+// "model-asserted" (every contributing gate fell back to the model's
+// self-report), "mixed" (more than one of those), or null (no gate contributed
+// a cost at all). Any mixture reports "mixed" so a caller never reads a
+// single-source label off a total that isn't single-source.
 function costUsdDetail(cwd, changeId) {
   // stage-NN[a].json   — merged gate (letters a-z suffix for overflow stages)
   const mergedGateRe = /^(stage-\d{2}[a-z]?)\.json$/;
@@ -298,6 +309,7 @@ function costUsdDetail(cwd, changeId) {
 
   let total = 0;
   let sawObserved = false;
+  let sawDerived = false;
   let sawAsserted = false;
   for (const f of allFiles) {
     let prefix = null;
@@ -322,11 +334,17 @@ function costUsdDetail(cwd, changeId) {
       if (entry) {
         total += entry.cost;
         if (entry.source === "observed") sawObserved = true;
+        else if (entry.source === "derived") sawDerived = true;
         else sawAsserted = true;
       }
     } catch { /* skip */ }
   }
-  const basis = sawObserved && sawAsserted ? "mixed" : sawObserved ? "observed" : sawAsserted ? "model-asserted" : null;
+  const sources = [
+    sawObserved ? "observed" : null,
+    sawDerived ? "derived" : null,
+    sawAsserted ? "model-asserted" : null,
+  ].filter(Boolean);
+  const basis = sources.length === 0 ? null : sources.length === 1 ? sources[0] : "mixed";
   return { total, basis };
 }
 

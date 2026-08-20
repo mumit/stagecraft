@@ -1806,6 +1806,75 @@ describe("driver: --budget-usd prefers orchestrator-observed cost (28.4)", () =>
     assert.equal(s.cost_basis, null);
   });
 
+  it("counts a token-derived cost and reports cost_basis 'derived'", async () => {
+    // A host that reports tokens but no dollars (codex) gets a cost derived
+    // from core/pricing.js. It must reach the budget total — otherwise
+    // --budget-usd silently enforces nothing on that host — while still being
+    // labelled as its own evidence class, never as "observed".
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: {
+        tokens_in: 100_000, tokens_out: 50_000, cost_usd: null,
+        cost_usd_derived: 0.75, cost_model: "gpt-4o",
+        source: "codex:exec-json", at: "2026-08-20T00:00:00Z",
+      },
+    });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 0.75);
+    assert.equal(s.cost_basis, "derived");
+  });
+
+  it("a host-reported cost still outranks a derived one on the same gate", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      cost_usd: 999,
+      _orchestrator_observed: {
+        cost_usd: 2, cost_usd_derived: 0.75, cost_model: "gpt-4o",
+        source: "claude-code:stream-json", at: "2026-08-20T00:00:00Z",
+      },
+    });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 2);
+    assert.equal(s.cost_basis, "observed");
+  });
+
+  it("reports cost_basis 'mixed' across derived and asserted gates", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: {
+        cost_usd: null, cost_usd_derived: 1, cost_model: "gpt-4o",
+        source: "codex:exec-json", at: "2026-08-20T00:00:00Z",
+      },
+    });
+    seedGate(cwd, "stage-02", { status: "PASS", cost_usd: 4 });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.cost_usd, 5);
+    assert.equal(s.cost_basis, "mixed");
+  });
+
+  it("halts on --budget-usd using a derived cost", async () => {
+    // The point of deriving at all: a cap must actually bind on a host that
+    // reports no dollars of its own.
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: {
+        cost_usd: null, cost_usd_derived: 12, cost_model: "gpt-4o",
+        source: "codex:exec-json", at: "2026-08-20T00:00:00Z",
+      },
+    });
+    const s = await run({
+      cwd,
+      budgetUsd: 10,
+      next: () => ({ action: "run-stage", stage: "stage-02", name: "design", reason: "test" }),
+    });
+    assert.equal(s.halt_action, "budget",
+      "a derived cost must bind --budget-usd, or the cap is inert on hosts that report no dollars");
+  });
+
   it("does not halt on budget using the observed cost even though the model over-reports its own cost_usd", async () => {
     const cwd = track(makeTargetProject());
     // Model claims $50 spent; the orchestrator actually observed $1. A $10 cap
