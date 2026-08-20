@@ -21,7 +21,7 @@ const { resolveAdapter } = require("./router");
 const { withSpan, setSpanAttributes } = require("./observability");
 const { loadGateSafe } = require("./gates/load-gate");
 const { classifyGate, MAX_RETRIES_DEFAULT } = require("./gates/classify");
-const { pricingFor } = require("./pricing");
+const { pricingFor, computeCostUsd } = require("./pricing");
 const { getRecipe } = require("./pipeline/fix-recipes");
 const { deterministicSkipForStage } = require("./pipeline/right-sizing");
 const {
@@ -154,22 +154,49 @@ function patchGateForToolBudget(gatePath, toolBudget) {
 // which adapter produced the observation (e.g. "claude-code:stream-json",
 // "openai-compat:usage"); defaults to the pre-28.2 claude-code value for
 // callers that don't set it.
-function patchGateForObservedUsage(gatePath, usage) {
+//
+// Some hosts report tokens but no dollars: codex's `exec --json` stream
+// carries usage and nothing else (core/adapters/codex-exec-json.js sets
+// costUsd and model to null rather than guessing). Leaving cost null there
+// means `--budget-usd` silently enforces nothing and every downstream cost
+// denominator reads zero — the Phase 41 review's `projects-with-cost-telemetry:
+// 0/2` was partly this. So when the adapter observed tokens but no cost,
+// derive one from core/pricing.js and record it in `cost_usd_derived`, never
+// in `cost_usd`: an arithmetic product of observed tokens and a table we
+// maintain is not the same evidence class as a figure the host reported, and
+// collapsing the two would launder an estimate into an observation.
+// `cost_model` names which id priced it, so a wrong table entry is traceable.
+// `routedModel` is the routing-resolved model for this dispatch (ws.model) —
+// used only when the host reported no model of its own.
+function patchGateForObservedUsage(gatePath, usage, routedModel = null) {
   if (!fs.existsSync(gatePath)) return;
   const { gate, error } = loadGateSafe(gatePath);
   if (error || !gate) return;
-  const patched = {
-    ...gate,
-    _orchestrator_observed: {
+  const observed = {
+    tokens_in: usage.tokensIn,
+    tokens_out: usage.tokensOut,
+    ...(typeof usage.cachedTokens === "number" ? { cached_tokens: usage.cachedTokens } : {}),
+    cost_usd: usage.costUsd,
+    model_observed: usage.model,
+    source: usage.source || "claude-code:stream-json",
+    at: new Date().toISOString(),
+  };
+  if (typeof usage.costUsd !== "number") {
+    const costModel = usage.model || routedModel || null;
+    const derived = computeCostUsd({
+      model: costModel,
       tokens_in: usage.tokensIn,
       tokens_out: usage.tokensOut,
-      ...(typeof usage.cachedTokens === "number" ? { cached_tokens: usage.cachedTokens } : {}),
-      cost_usd: usage.costUsd,
-      model_observed: usage.model,
-      source: usage.source || "claude-code:stream-json",
-      at: new Date().toISOString(),
-    },
-  };
+    });
+    // A null here is the honest outcome — no model id, or no pricing entry for
+    // it. patchGateForUnpricedModel already surfaces the latter as the D7
+    // warning; nothing is fabricated either way.
+    if (derived !== null) {
+      observed.cost_usd_derived = derived;
+      observed.cost_model = costModel;
+    }
+  }
+  const patched = { ...gate, _orchestrator_observed: observed };
   fs.writeFileSync(gatePath, JSON.stringify(patched, null, 2) + "\n", "utf8");
 }
 
@@ -1325,7 +1352,9 @@ async function runStageHeadless(stageName, opts = {}) {
       // promptBytes/4 estimate instead — clearly flagged, never mixed with
       // observed values (see patchGateForEstimatedUsage above).
       if (r.usage) {
-        patchGateForObservedUsage(r.gatePath || wsGatePathExpected, r.usage);
+        // ws.model is the routing-resolved pin; it prices hosts that report
+        // tokens but no cost or model of their own (codex today).
+        patchGateForObservedUsage(r.gatePath || wsGatePathExpected, r.usage, ws.model || null);
       } else if (ws.adapter.capabilities && ws.adapter.capabilities.telemetry !== "native") {
         patchGateForEstimatedUsage(r.gatePath || wsGatePathExpected, telemetry.promptBytes);
       }
