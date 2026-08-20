@@ -94,6 +94,9 @@ describe("driver dispatch handlers", () => {
       until: null,
       budgetUsd: null,
       spent: 0,
+      budgetTokens: null,
+      tokensUsed: 0,
+      tokenBasis: null,
     };
     const ceiling = dispatchGuardTransition({
       ...common,
@@ -106,10 +109,15 @@ describe("driver dispatch handlers", () => {
       until: "requirements",
     });
     const budget = dispatchGuardTransition({ ...common, budgetUsd: 5, spent: 5 });
+    const tokenBudget = dispatchGuardTransition({
+      ...common, budgetTokens: 1000, tokensUsed: 1000, tokenBasis: "observed",
+    });
 
     assert.equal(ceiling.summaryPatch.halt_action, "ceiling");
     assert.equal(until.summaryPatch.halt_action, "until");
     assert.equal(budget.summaryPatch.halt_action, "budget");
+    assert.equal(tokenBudget.summaryPatch.halt_action, "budget");
+    assert.match(tokenBudget.summaryPatch.halt_reason, /token budget/);
     assert.equal(dispatchGuardTransition(common), null);
   });
 

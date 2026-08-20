@@ -30,11 +30,11 @@ describe("devteam help <command> / devteam <command> --help", () => {
     assert.ok(lineCount < 60, `expected under 60 lines, got ${lineCount}`);
   });
 
-  it("'run --help' lists all 22 of run's flags with their types", () => {
+  it("'run --help' lists all 23 of run's flags with their types", () => {
     const { flags } = require(path.join(COMMANDS_DIR, "run"));
     const r = runCLI(["run", "--help"]);
     const flagNames = Object.keys(flags);
-    assert.equal(flagNames.length, 22, "run is expected to declare 22 flags");
+    assert.equal(flagNames.length, 23, "run is expected to declare 23 flags");
     for (const flagName of flagNames) {
       assert.match(r.stdout, new RegExp(`--${flagName}\\b`), `missing --${flagName} in help output`);
       const { type } = flags[flagName];

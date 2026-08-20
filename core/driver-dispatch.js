@@ -11,6 +11,9 @@ function dispatchGuardTransition({
   until,
   budgetUsd,
   spent,
+  budgetTokens,
+  tokensUsed,
+  tokenBasis,
 }) {
   if (consequenceCeiling.has(action.name) && !allowStages.has(action.name)) {
     return transitionResult(TRANSITION_CONTROLS.HALT, {
@@ -44,7 +47,30 @@ function dispatchGuardTransition({
         halt_reason: `budget cap reached: $${spent.toFixed(2)} ≥ $${budgetUsd.toFixed(2)}`,
       },
       logEvents: [{ ...base, outcome: "budget-halt", cost_usd: spent }],
-      emittedEvents: [{ type: "budget", ...base, cost_usd: spent }],
+      emittedEvents: [{ type: "budget", budget_kind: "usd", ...base, cost_usd: spent }],
+    });
+  }
+
+  if (budgetTokens != null && tokensUsed >= budgetTokens) {
+    return transitionResult(TRANSITION_CONTROLS.HALT, {
+      summaryPatch: {
+        halted: true,
+        halt_action: "budget",
+        halt_reason: `token budget cap reached: ${tokensUsed} ≥ ${budgetTokens}`,
+      },
+      logEvents: [{
+        ...base,
+        outcome: "token-budget-halt",
+        tokens_used: tokensUsed,
+        token_basis: tokenBasis,
+      }],
+      emittedEvents: [{
+        type: "budget",
+        budget_kind: "tokens",
+        ...base,
+        tokens_used: tokensUsed,
+        token_basis: tokenBasis,
+      }],
     });
   }
 

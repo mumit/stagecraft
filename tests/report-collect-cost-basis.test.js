@@ -38,6 +38,23 @@ describe("collectReport: cost_basis (28.4)", () => {
     assert.equal(data.meta.costBasis, "mixed");
   });
 
+  it("surfaces trusted token usage and partial coverage", () => {
+    const cwd = track(makeTargetProject());
+    writeRunState(cwd, {
+      track: "full", intent: "feature", iterations: 2,
+      tokens_used: 1234, token_basis: "estimated", token_coverage_complete: false,
+      started_at: new Date().toISOString(),
+    });
+    const data = collectReport(cwd, {});
+    assert.equal(data.meta.tokensUsed, 1234);
+    assert.equal(data.meta.tokenBasis, "estimated");
+    assert.equal(data.meta.tokenCoverageComplete, false);
+    const html = renderHtml(data);
+    assert.match(html, /Tokens: <strong>1,234<\/strong>/);
+    assert.match(html, /estimated/);
+    assert.match(html, /partial/);
+  });
+
   it("meta.costBasis is null when run-state.json predates the field", () => {
     const cwd = track(makeTargetProject());
     writeRunState(cwd, {

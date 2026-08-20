@@ -38,7 +38,7 @@ const CORPUS_FILE_NAME = "dispatches.jsonl";
 const RECORD_FIELDS = [
   "ts", "run_id", "stage", "role", "host", "model_observed", "model_requested",
   "prompt_pack_version", "track", "prompt_hash", "prompt_bytes", "tokens_in",
-  "tokens_out", "cost_usd", "cost_basis", "duration_ms", "queue_ms",
+  "tokens_out", "token_basis", "cost_usd", "cost_basis", "duration_ms", "queue_ms",
   "cached_tokens", "knowledge_items", "prior_knowledge_items",
   "gate_status", "blockers", "retry_of", "framework_version",
 ];
@@ -129,9 +129,21 @@ function observedOrAssertedTokens(gate) {
   const observed = gate && gate._orchestrator_observed;
   const observedIn = nonNegativeNumber(observed && observed.tokens_in);
   const observedOut = nonNegativeNumber(observed && observed.tokens_out);
+  if (observedIn !== null && observedOut !== null) {
+    return { tokens_in: observedIn, tokens_out: observedOut, token_basis: "observed" };
+  }
+  const estimatedIn = observed && observed.tokens_estimated === true
+    ? nonNegativeNumber(observed.tokens_in_estimate)
+    : null;
+  if (estimatedIn !== null) {
+    return { tokens_in: estimatedIn, tokens_out: 0, token_basis: "estimated" };
+  }
+  const assertedIn = nonNegativeNumber(gate && gate.tokens_in);
+  const assertedOut = nonNegativeNumber(gate && gate.tokens_out);
   return {
-    tokens_in: observedIn !== null ? observedIn : nonNegativeNumber(gate && gate.tokens_in),
-    tokens_out: observedOut !== null ? observedOut : nonNegativeNumber(gate && gate.tokens_out),
+    tokens_in: assertedIn,
+    tokens_out: assertedOut,
+    token_basis: assertedIn !== null && assertedOut !== null ? "model-asserted" : null,
   };
 }
 
@@ -155,7 +167,7 @@ function loadGateSafe(gatePath) {
 function recordDispatch(cwd, opts = {}) {
   const gate = loadGateSafe(opts.gatePath);
   const { cost_usd, cost_basis } = observedOrAssertedCost(gate);
-  const { tokens_in, tokens_out } = observedOrAssertedTokens(gate);
+  const { tokens_in, tokens_out, token_basis } = observedOrAssertedTokens(gate);
   const modelObserved = (gate && gate._orchestrator_observed && gate._orchestrator_observed.model_observed) || null;
   // 32.3: what routing asked for (orchestrator-set at dispatch time), as
   // opposed to modelObserved (what the host actually reported serving).
@@ -184,6 +196,7 @@ function recordDispatch(cwd, opts = {}) {
     prompt_bytes: nonNegativeNumber(opts.promptBytes),
     tokens_in,
     tokens_out,
+    token_basis,
     cost_usd,
     cost_basis,
     duration_ms: nonNegativeNumber(opts.durationMs),

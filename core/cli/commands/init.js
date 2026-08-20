@@ -252,7 +252,7 @@ function run(positional, _flags) {
     }
 
     console.log("\n✅ Dogfood profile active. Run 'devteam doctor' to verify the install.");
-    console.log("   Tip: use --budget-usd with devteam run to cap spend during dogfood runs.");
+    console.log("   Tip: use --budget-usd and/or --budget-tokens with devteam run to cap usage during dogfood runs.");
   }
 
   console.log(`\nNext: edit ${path.relative(cwd, configPath(cwd))} if you need custom routing, then \`devteam stage requirements --feature "..."\`.`);

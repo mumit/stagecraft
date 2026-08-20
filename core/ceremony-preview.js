@@ -307,7 +307,7 @@ function renderCeremonyPreviewText(preview) {
     lines.push(`  cost omitted — unknown model for: ${preview.unresolved_models.join(", ")}`);
   }
   if (preview.cost_scope === "input-only-floor" && preview.cost_usd) {
-    lines.push("  output generation is excluded until observed; use --budget-usd as a runtime halt threshold");
+    lines.push("  output generation is excluded until observed; use --budget-usd and/or --budget-tokens as runtime halt thresholds");
   }
   lines.push(`  (${preview.estimate_basis === "empirical" ? `median of ${preview.sample_size} prior run(s)` : "estimate — framework overhead + on-disk artifact sampling"}, never a bill)`);
   return lines;

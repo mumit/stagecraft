@@ -742,6 +742,7 @@ function renderHtml(data) {
     logStats && logStats.wallClockMs != null && `Wall clock: <strong>${esc(formatDuration(logStats.wallClockMs))}</strong>`,
     logStats && logStats.totalComputeMs > 0 && `Compute: <strong>${esc(formatDuration(logStats.totalComputeMs))}</strong>`,
     meta.costUsd != null && `Cost: <strong>${esc(formatCost(meta.costUsd))}</strong>${meta.costBasis && meta.costBasis !== "observed" ? ` <span style="color:#b45309">(${esc(meta.costBasis)})</span>` : ""}`,
+    meta.tokensUsed != null && `Tokens: <strong>${esc(meta.tokensUsed.toLocaleString("en-US"))}</strong>${meta.tokenBasis && meta.tokenBasis !== "observed" ? ` <span style="color:#b45309">(${esc(meta.tokenBasis)})</span>` : ""}${meta.tokenCoverageComplete ? "" : ` <span style="color:#b45309">(partial)</span>`}`,
     logStats && logStats.retries > 0 && `Retries: <strong>${esc(String(logStats.retries))}</strong>`,
     logStats && logStats.stalls > 0 && `Stalls: <strong>${esc(String(logStats.stalls))}</strong>`,
     meta.orchestratorVersion && `<span style="color:#d1d5db">${esc(meta.orchestratorVersion)}</span>`,

@@ -11,7 +11,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, seedGate, cleanup, runCLI } = require("./_helpers");
-const { run } = require(path.join(REPO_ROOT, "core", "driver"));
+const { run, tokenUsageDetail } = require(path.join(REPO_ROOT, "core", "driver"));
+const corpus = require(path.join(REPO_ROOT, "core", "corpus"));
 const { orderedStageNamesForTrack, STAGES } = require(path.join(REPO_ROOT, "core", "pipeline", "stages"));
 
 let _dirs = [];
@@ -1370,6 +1371,164 @@ describe("driver: budget cap accounts for unmerged workstream gate costs (fix 1.
     // With no double-counting, total = $2 < $3 cap → should NOT halt on budget.
     assert.equal(s.completed, true, "pipeline should complete without budget halt when no double-counting occurs");
     assert.equal(s.halted, false, "should not be halted");
+  });
+});
+
+describe("driver: observed/estimated token budget", () => {
+  it("uses workstream telemetry instead of double-counting a merged multi-role gate", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      _orchestrator_observed: { tokens_in: 100, tokens_out: 20 },
+    });
+    seedGate(cwd, "stage-04", {
+      tokens_in: 9999,
+      tokens_out: 9999,
+      _orchestrator_observed: { tokens_in: 9999, tokens_out: 9999 },
+    });
+    const gateDir = path.join(cwd, "pipeline", "gates");
+    fs.writeFileSync(path.join(gateDir, "stage-04.backend.json"), JSON.stringify({
+      stage: "stage-04", status: "PASS",
+      _orchestrator_observed: { tokens_in: 200, tokens_out: 30 },
+    }));
+    fs.writeFileSync(path.join(gateDir, "stage-04.frontend.json"), JSON.stringify({
+      stage: "stage-04", status: "PASS",
+      _orchestrator_observed: { tokens_estimated: true, tokens_in_estimate: 50 },
+    }));
+
+    const usage = tokenUsageDetail(cwd);
+    assert.equal(usage.input, 350);
+    assert.equal(usage.output, 50);
+    assert.equal(usage.total, 400);
+    assert.equal(usage.basis, "mixed");
+    assert.equal(usage.coverage_complete, true);
+  });
+
+  it("halts before dispatch when trusted token usage reaches the cap", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      tokens_in: 1,
+      tokens_out: 1,
+      _orchestrator_observed: { tokens_in: 900, tokens_out: 100, source: "codex:exec-json" },
+    });
+    const s = await run({
+      cwd,
+      budgetTokens: 1000,
+      next: () => ({ action: "run-stage", stage: "stage-02", name: "design", reason: "test" }),
+      runStageHeadless: () => { throw new Error("should not dispatch — token budget must halt first"); },
+    });
+    assert.equal(s.halt_action, "budget");
+    assert.match(s.halt_reason, /token budget cap reached/);
+    assert.equal(s.tokens_used, 1000);
+    assert.equal(s.token_basis, "observed");
+    assert.equal(s.token_coverage_complete, true);
+  });
+
+  it("ignores model-asserted token claims and reports incomplete coverage", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "PASS", tokens_in: 5000, tokens_out: 5000 });
+    const s = await run({
+      cwd,
+      budgetTokens: 1,
+      next: () => ({ action: "pipeline-complete", reason: "test" }),
+    });
+    assert.equal(s.completed, true);
+    assert.equal(s.tokens_used, 0);
+    assert.equal(s.token_basis, null);
+    assert.equal(s.token_coverage_complete, false);
+  });
+
+  it("counts every retry dispatch from the durable corpus before halting", async () => {
+    const cwd = track(makeTargetProject());
+    let nextCalls = 0;
+    let dispatches = 0;
+    const s = await run({
+      cwd,
+      budgetTokens: 1000,
+      next: () => {
+        nextCalls++;
+        return { action: "run-stage", stage: "stage-02", name: "design", reason: "retry test" };
+      },
+      runStageHeadless: async (_stageName, opts) => {
+        dispatches++;
+        corpus.appendDispatchRecord(cwd, {
+          run_id: opts.runId,
+          stage: "stage-02",
+          role: "principal",
+          host: "codex",
+          tokens_in: 550,
+          tokens_out: 50,
+          token_basis: "observed",
+        });
+        return [{ role: "principal", gatePath: "x", exitCode: 0, durationMs: 1 }];
+      },
+      stallProbe: () => () => {},
+    });
+    assert.equal(dispatches, 2, "the third dispatch must be stopped after two 600-token attempts");
+    assert.equal(nextCalls, 3);
+    assert.equal(s.halt_action, "budget");
+    assert.equal(s.tokens_used, 1200, "replaced/retried gates must not erase prior usage");
+    assert.equal(s.token_basis, "observed");
+    assert.equal(s.token_coverage_complete, true);
+  });
+
+  it("preserves trusted token usage across --resume", async () => {
+    const cwd = track(makeTargetProject());
+    let firstNext = 0;
+    const first = await run({
+      cwd,
+      budgetTokens: 5000,
+      next: () => firstNext++ === 0
+        ? { action: "run-stage", stage: "stage-02", name: "design", reason: "first attempt" }
+        : { action: "pipeline-complete", reason: "pause point" },
+      runStageHeadless: async (_stageName, opts) => {
+        corpus.appendDispatchRecord(cwd, {
+          run_id: opts.runId,
+          stage: "stage-02",
+          role: "principal",
+          host: "codex",
+          tokens_in: 550,
+          tokens_out: 50,
+          token_basis: "observed",
+        });
+        return [{ role: "principal", gatePath: "x", exitCode: 0, durationMs: 1 }];
+      },
+      stallProbe: () => () => {},
+    });
+    assert.equal(first.tokens_used, 600);
+
+    let resumedDispatch = false;
+    const resumed = await run({
+      cwd,
+      resume: true,
+      budgetTokens: 500,
+      next: () => ({ action: "run-stage", stage: "stage-03", name: "security", reason: "resume" }),
+      runStageHeadless: async () => { resumedDispatch = true; return []; },
+    });
+    assert.equal(resumedDispatch, false);
+    assert.equal(resumed.halt_action, "budget");
+    assert.equal(resumed.tokens_used, 600);
+    assert.equal(resumed.token_coverage_complete, true);
+  });
+
+  it("marks coverage partial when a dispatch corpus record is unavailable", async () => {
+    const cwd = track(makeTargetProject());
+    let nextCalls = 0;
+    const s = await run({
+      cwd,
+      budgetTokens: 1000,
+      next: () => nextCalls++ === 0
+        ? { action: "run-stage", stage: "stage-02", name: "design", reason: "missing telemetry" }
+        : { action: "pipeline-complete", reason: "done" },
+      runStageHeadless: async () => [
+        { role: "principal", gatePath: "x", exitCode: 0, durationMs: 1 },
+      ],
+      stallProbe: () => () => {},
+    });
+    assert.equal(s.tokens_used, 0);
+    assert.equal(s.token_coverage_complete, false);
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.equal(state.token_missing, 1);
   });
 });
 
