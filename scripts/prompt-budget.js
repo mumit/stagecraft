@@ -264,6 +264,11 @@ function generateBlock() {
     "This replaces eager changed-file content loading: agents inspect file bodies on demand",
     "when the manifest shows a relevant path or digest change.",
     "",
+    "Framework-owned paths never enter it: Stagecraft's own state and every host install",
+    `surface ${BT}devteam init${BT} writes. The same predicate filters right-sizing's role`,
+    `inference and the file list ${BT}assess${BT} scores a track from — see`,
+    "`FRAMEWORK_OWNED_PREFIXES` in [`core/paths.js`](../../core/paths.js).",
+    "",
     budgetDataBlock,
     FENCE_CLOSE,
   ].join("\n");

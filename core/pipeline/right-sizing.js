@@ -4,6 +4,7 @@ const { spawnSync } = require("node:child_process");
 const { assess } = require("../stage-shopping/assess");
 const { STAGES, rolesForStage } = require("./stages");
 const { DOCUMENTATION_ROLE, isDocumentationPath } = require("./affected-files");
+const { isFrameworkOwnedPath, FRAMEWORK_OWNED_PREFIXES } = require("../paths");
 
 const WORKSTREAM_RULES = [
   { role: "backend", patterns: [/^src\/backend\//, /^api\//, /^server\//, /^routes\//, /^core\//, /^bin\//] },
@@ -36,15 +37,11 @@ const STAGE_TRIGGERS = {
   },
 };
 
+// Role inference and the track `assess` recommends both read this list, so
+// Stagecraft's own install must never appear in it — see core/paths.js for what
+// leaking `.claude/` here cost before this was shared.
 function isRightSizingInputPath(file) {
-  return !(
-    file.startsWith(".devteam/") ||
-    file.startsWith(".git/") ||
-    file.startsWith(".codex/") ||
-    file.startsWith(".codex-tmp/") ||
-    file.startsWith(".devteam-tmp/") ||
-    file.startsWith("pipeline/")
-  );
+  return !isFrameworkOwnedPath(file);
 }
 
 function gitChangedFiles(cwd) {
@@ -69,7 +66,9 @@ function gitChangedFiles(cwd) {
 
 function listProjectFiles(cwd) {
   const out = [];
-  const ignored = new Set([".git", ".devteam", "pipeline", "node_modules", ".codex", ".codex-tmp", ".devteam-tmp"]);
+  // node_modules is a walk-cost skip, not a framework path; the rest is
+  // derived so this cannot drift from isRightSizingInputPath below.
+  const ignored = new Set(["node_modules", ...FRAMEWORK_OWNED_PREFIXES.map((prefix) => prefix.slice(0, -1))]);
   function walk(dir, prefix = "") {
     let entries = [];
     try {
