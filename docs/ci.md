@@ -140,7 +140,7 @@ Before running the pipeline autonomously in CI, record the track decision with `
 
 ```yaml
 - name: Assess track
-  run: devteam assess --description "${{ github.event.pull_request.title }}" --confirm
+  run: devteam assess --feature "${{ github.event.pull_request.title }}" --confirm
   # writes pipeline/track.json with source:"human" (--confirm) so devteam run
   # proceeds without the unconfirmed-track guard triggering.
 ```
@@ -158,7 +158,7 @@ With the flag on, an inferred `pipeline/track.json` at medium or low confidence 
 
 ```yaml
 - name: Assess track (record with human-confirm)
-  run: devteam assess --description "$FEATURE_DESC" --confirm
+  run: devteam assess --feature "$FEATURE_DESC" --confirm
 
 - name: Run pipeline
   run: devteam run --json > run-summary.json

@@ -235,6 +235,6 @@ Every stage runs. One API key for the configured provider. No CLI installation.
 | `worktrees: true` | Requires git-worktree support on the local machine; low value add for the HTTP model |
 | `hooks: true` | Hooks are claude-code-specific (SubagentStop, PostToolUse). Approval-derivation is orchestrator-driven |
 | `subagents: true` | openai-compat dispatches sequentially; multi-agent fan-out via the orchestrator |
-| `goalLoop: true` | Covered by 40-iteration tool loop; see §5 |
+| convergence conditions | Rendered into the prompt as `## Done when` (ADR-023); the 40-iteration tool loop covers the iteration itself, see §5 |
 | Allow-list for bash | Valid security concern; deferred to a future hardening ADR |
 | Streaming output | Model output already streamed to stdout in invoke.js |
