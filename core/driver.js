@@ -34,7 +34,8 @@ const { readCorpus } = require("./corpus");
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom, resolveRoute } = require("./config");
 const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require("./scheduler");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
-const { orderedStageNamesForTrack, STAGES } = require("./pipeline/stages");
+const { STAGES } = require("./pipeline/stages");
+const { resolveStageOrder } = require("./driver-stage-order");
 const { blockerFiles, normalizeOwnershipPath, resolveRetryOwnership } = require("./retry-ownership");
 const {
   candidateActiveRoles,
@@ -1064,56 +1065,24 @@ async function run(opts = {}) {
   // ADR-009 §Decision.3: injectable scope gate for deterministic tests.
   const _checkScopeGate = typeof opts.checkScopeGate === "function" ? opts.checkScopeGate : defaultCheckScopeGate;
 
-  // ADR-009 §Decision.1: repair stoplist upgrade — hotfix bypasses STOPLIST_TRACKS
-  // by design, but auth/payments/migration symptoms must still force the track to
-  // full. Check the symptom now (before acquiring the lock) so the upgrade is visible
-  // in the initial run-state write. --force opts out, same as the regular stoplist.
-  let effectiveTrack = track;
-  let repairStoplistMatches = [];
-  if (opts.repair && !opts.force && effectiveTrack !== "full") {
-    const _checkStoplist = opts.checkStoplist || checkStoplist;
-    repairStoplistMatches = _checkStoplist({ description: opts.repair, cwd });
-    if (repairStoplistMatches.length > 0) effectiveTrack = "full";
-  }
-
-  // ADR-009 Phase 2: repair without escape hatch prepends "requirements" (diagnosis)
-  // to the stage list so next() routes through it before build. The escape hatch
-  // (--repair-at) seeds the affected-files list directly and writes a synthetic
-  // stage-01 gate — no LLM diagnosis needed, so no prepend.
-  // "requirements" is filtered out first to guard against double-prepend if the
-  // user specifies a full track that already includes it.
-  //
-  // ADR-009 Phase 3: repair intent always includes "executable-spec" (stage-03b),
-  // providing failing-first reproduction discipline even on hotfix depth (which
-  // normally skips it — hotfix has no requirements stage and therefore no brief).
-  // Inject executable-spec immediately before "build" in the filtered base list so
-  // the PM authors the regression scenario before the build writes the failing test.
-  const repairNeedsDiagnosis = intent === "repair" && !repairAtRaw;
-  let order;
-  if (intent === "repair") {
-    const base = orderedStageNamesForTrack(effectiveTrack)
-      .filter((n) => n !== "requirements" && n !== "executable-spec");
-    const buildIdx = base.indexOf("build");
-    const withSpec = buildIdx >= 0
-      ? [...base.slice(0, buildIdx), "executable-spec", ...base.slice(buildIdx)]
-      : ["executable-spec", ...base];
-    order = repairNeedsDiagnosis ? ["requirements", ...withSpec] : withSpec;
-  } else {
-    order = orderedStageNamesForTrack(effectiveTrack);
-  }
-  // A boundary the run cannot recognize is worse than no boundary: dispatch
-  // treats untilIndex < 0 as "no limit" (core/driver-dispatch.js), so a typo or
-  // a stage that belongs to a different track used to run the *whole* track --
-  // deploy included -- while the operator believed they had stopped at build.
-  // Fail before the lock is acquired so a rejected flag leaves nothing behind.
-  const untilIndex = opts.until ? order.indexOf(opts.until) : -1;
-  if (opts.until && untilIndex < 0) {
-    const label = Array.isArray(effectiveTrack) ? "custom" : effectiveTrack;
-    throw new Error(
-      `--until ${opts.until} is not a stage in the '${label}' track. ` +
-      `Stages, in order: ${order.join(", ")}`,
-    );
-  }
+  // Slice 3 of the P2-2 decomposition — see core/driver-stage-order.js. The
+  // stoplist upgrade runs before the lock is acquired so it is visible in the
+  // initial run-state write, and the --until boundary is validated against the
+  // order it will actually be applied to, so a rejected flag leaves no lock
+  // behind.
+  const {
+    effectiveTrack,
+    repairStoplistMatches,
+    order,
+    untilIndex,
+  } = resolveStageOrder({
+    track,
+    intent,
+    cwd,
+    repairAt: repairAtRaw,
+    opts,
+    ...(opts.checkStoplist ? { checkStoplist: opts.checkStoplist } : {}),
+  });
 
   acquireLock(cwd, { force: opts.force }, changeId);
 

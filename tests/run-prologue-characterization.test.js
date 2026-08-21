@@ -97,6 +97,14 @@ describe("run prologue: track resolution", () => {
     assert.equal(plan.track_source, "human");
   });
 
+  it("materializes the ADR-009 repair stage order into the plan", () => {
+    // The plan is where the repair rewrite becomes observable: diagnosis first,
+    // reproduction authored before the build that must fail against it.
+    const names = repairPlan("typo in the footer copy").stages.map((s) => s.name);
+    assert.equal(names[0], "requirements");
+    assert.ok(names.indexOf("executable-spec") < names.indexOf("build"));
+  });
+
   it("--repair upgrades to full when the symptom hits the stoplist", () => {
     // ADR-009 Decision.1: hotfix bypasses STOPLIST_TRACKS by design, so an
     // auth/payments/migration symptom is re-checked and forced to full.
