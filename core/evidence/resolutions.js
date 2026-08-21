@@ -44,7 +44,16 @@ function schemaFingerprint(stage) {
   }
 }
 
-function pendingResolution(events) {
+// `opts.stage` narrows the search to one stage. Without it this returns the
+// newest unaccepted fix/retry, which is right when there is one — but a run
+// that retried stage-04 successfully and then escalated at stage-06 leaves the
+// newest slot occupied by a retry that never resolved, and assertPassingGate
+// correctly refuses it. Before the selector existed there was then no way to
+// accept stage-04's genuine, derivable resolution at all: the mechanism was
+// blocked by an unrelated later failure. Observed on a real run, and part of
+// why accepted-resolution evidence stayed at zero.
+function pendingResolution(events, opts = {}) {
+  const wantStage = typeof opts.stage === "string" && opts.stage ? category(opts.stage) : null;
   const accepted = new Set(events
     .filter((event) => event.outcome === "resolution-accepted" && HASH_PATTERN.test(event.source_event_sha256))
     .map((event) => event.source_event_sha256));
@@ -54,6 +63,7 @@ function pendingResolution(events) {
     const source_event_sha256 = sourceEventRef(event);
     if (accepted.has(source_event_sha256)) continue;
     const stage = category(event.stage);
+    if (wantStage && stage !== wantStage) continue;
     const failure_class = category(event.failure_class);
     const schema_fingerprint = schemaFingerprint(stage);
     if (stage === "other" || failure_class === "other" || !schema_fingerprint) continue;
@@ -124,9 +134,33 @@ function appendAcceptedResolution(pipelinePath, options = {}) {
       || source.quality.symlink_sources) {
       throw new Error("cannot accept resolution: run log is incomplete or invalid");
     }
-    const pending = pendingResolution(source.records);
-    if (!pending) throw new Error("no unaccepted fix/retry resolution is available");
-    assertPassingGate(resolved, pending.stage);
+    const pending = pendingResolution(source.records, { stage: options.stage });
+    // When the caller did not name a stage, the newest unaccepted retry wins —
+    // and that one may be an escalation that never resolved, whose gate
+    // assertPassingGate will reject. Say so before throwing, naming the stages
+    // that would work, rather than leaving the operator with a dead end.
+    const otherStages = () => pendingResolutionStages(source.records)
+      .filter((stage) => !pending || stage !== pending.stage);
+    if (!pending) {
+      const available = pendingResolutionStages(source.records)
+        .filter((stage) => !options.stage || stage !== category(options.stage));
+      const hint = available.length > 0
+        ? ` Unaccepted resolutions exist for: ${available.join(", ")} — select one with --stage.`
+        : "";
+      throw new Error(
+        (options.stage
+          ? `no unaccepted fix/retry resolution is available for ${category(options.stage)}`
+          : "no unaccepted fix/retry resolution is available") + hint,
+      );
+    }
+    try {
+      assertPassingGate(resolved, pending.stage);
+    } catch (error) {
+      const alternatives = options.stage ? [] : otherStages();
+      throw alternatives.length > 0
+        ? new Error(`${error.message}. Other stages have unaccepted resolutions: ${alternatives.join(", ")} — select one with --stage.`)
+        : error;
+    }
     const event = {
       ts: options.now || new Date().toISOString(),
       outcome: "resolution-accepted",
@@ -146,10 +180,26 @@ function appendAcceptedResolution(pipelinePath, options = {}) {
   }
 }
 
+// Every stage with an unaccepted fix/retry, newest first. The CLI uses this to
+// turn "no unaccepted resolution is available" into an actionable message
+// naming the stages an operator could pass to --stage.
+function pendingResolutionStages(events) {
+  const seen = new Set();
+  const stages = [];
+  for (let index = events.length - 1; index >= 0; index--) {
+    const pending = pendingResolution(events.slice(0, index + 1));
+    if (!pending || seen.has(pending.stage)) continue;
+    seen.add(pending.stage);
+    stages.push(pending.stage);
+  }
+  return stages;
+}
+
 module.exports = {
   HASH_PATTERN,
   sourceEventRef,
   schemaFingerprint,
   pendingResolution,
+  pendingResolutionStages,
   appendAcceptedResolution,
 };
