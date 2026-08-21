@@ -116,6 +116,7 @@ function buildRunPlan({
   generatedAt = new Date().toISOString(),
   trustProfile = null,
   safetyPolicy = null,
+  until = null,
 }) {
   const configSkipStages = new Set((config.pipeline && config.pipeline.skip_stages) || []);
   const trackLabel = Array.isArray(track) ? "custom" : track;
@@ -155,6 +156,7 @@ function buildRunPlan({
     };
   });
 
+  const untilIndex = until ? order.indexOf(until) : -1;
   const included = stages.filter((stage) => stage.disposition !== "skipped");
   const skippedByConfig = stages.filter((stage) =>
     stage.disposition === "skipped" && stage.reason === "excluded by pipeline.skip_stages");
@@ -226,6 +228,15 @@ function buildRunPlan({
       candidate_routes: "resolved configuration; runtime discovery may narrow candidates",
     },
     assess_inline: assessInline,
+    // The stopping boundary for *this* invocation. Deliberately outside both
+    // fingerprints: --until is where the operator paused, not what the plan
+    // is. Folding it into plan_fingerprint would make the ordinary
+    // "run --until build, review, run --resume" cycle report policy drift.
+    // stages_included keeps its meaning (stages the track will execute);
+    // stages_after_until is what this invocation will not reach.
+    until,
+    stages_after_until: untilIndex < 0 ? 0
+      : included.filter((stage) => order.indexOf(stage.name) > untilIndex).length,
     stages_total: stages.length,
     stages_included: included.length,
     stages_skipped_by_config: skippedByConfig.length,

@@ -45,6 +45,14 @@ model output, or dynamic evidence. Right-sizing observations and conditional
 stages are explicitly reevaluated as earlier stages produce code and gates; the
 append-only run log records the resulting runtime decisions.
 
+`--until` is recorded in the plan but deliberately left out of both
+fingerprints. It is where the operator paused, not what the plan *is*: folding
+it in would make the ordinary “run `--until build`, review, `--resume`” cycle
+report policy drift and refuse to continue. The plan reports the boundary
+alongside the counts instead — `until` names the last stage this invocation
+will run, and `stages_after_until` says how many included stages it puts out of
+reach, while `stages_included` keeps its meaning of what the track executes.
+
 ## The recorded fields
 
 Optional additions to every gate, defined in `core/gates/schemas/gate.schema.json`:

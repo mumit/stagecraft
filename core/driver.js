@@ -1101,7 +1101,19 @@ async function run(opts = {}) {
   } else {
     order = orderedStageNamesForTrack(effectiveTrack);
   }
+  // A boundary the run cannot recognize is worse than no boundary: dispatch
+  // treats untilIndex < 0 as "no limit" (core/driver-dispatch.js), so a typo or
+  // a stage that belongs to a different track used to run the *whole* track --
+  // deploy included -- while the operator believed they had stopped at build.
+  // Fail before the lock is acquired so a rejected flag leaves nothing behind.
   const untilIndex = opts.until ? order.indexOf(opts.until) : -1;
+  if (opts.until && untilIndex < 0) {
+    const label = Array.isArray(effectiveTrack) ? "custom" : effectiveTrack;
+    throw new Error(
+      `--until ${opts.until} is not a stage in the '${label}' track. ` +
+      `Stages, in order: ${order.join(", ")}`,
+    );
+  }
 
   acquireLock(cwd, { force: opts.force }, changeId);
 
@@ -1324,6 +1336,7 @@ async function run(opts = {}) {
       runId: state.started_at,
       trustProfile,
       safetyPolicy,
+      until: opts.until || null,
     });
     const persistedRunPlan = persistRunPlan(cwd, changeId, proposedRunPlan, { resume: opts.resume });
     const runPlan = persistedRunPlan.plan;

@@ -84,7 +84,7 @@ Bounded autonomous driver with optional TTY watch mode: loop next â†’ dispatch â
 | --repair-at        | string | Skip diagnosis: seed affected-files from file:line location(s) (comma-separated; ADR-009 Phase 2)    |
 | --track            | string | Override the pipeline track                                                                          |
 | --scope            | list   | Scope review to this path (repeatable; review-only track)                                            |
-| --until            | string | Stop before this stage                                                                               |
+| --until            | string | Stop after this stage (inclusive)                                                                    |
 | --max-iterations   | number | Iteration cap                                                                                        |
 | --budget-usd       | number | Cost cap in USD                                                                                      |
 | --budget-tokens    | number | Observed/estimated token cap (not provider quota)                                                    |
