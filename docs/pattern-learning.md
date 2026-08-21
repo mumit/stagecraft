@@ -161,6 +161,36 @@ trail.
 short, and written as prevention guidance rather than a command to edit a specific
 file.
 
+## Cold-start seeding
+
+Gate-derived collection only learns from pain: every observation begins as a
+blocker, a warning, or a follow-up, so a project's first run has an empty
+pattern store and an agent rediscovers the house rules by failing a gate.
+
+`devteam patterns seed` reads what the project already documents —
+`AGENTS.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/project-conventions.md`,
+`docs/CONVENTIONS.md` — and lands the normative statements it finds as
+candidates in the same review queue:
+
+```bash
+devteam patterns seed
+devteam patterns review
+devteam patterns promote <candidate-id>
+```
+
+Only statements carrying normative language (*must*, *never*, *always*,
+*prefer*, *avoid*, *require*) are taken; headings, tables, and fenced code are
+skipped, and wrapped prose is rejoined so fragments are never emitted. A seeded
+candidate proposes **the project's own sentence** as its `proposed_prompt_text`
+and records `proposed_from` so a reviewer can see where it came from — the
+per-domain templates cannot express a specific house rule. Statements are
+capped at 40, bounded to 24–240 characters, and secret-scanned at the same bar
+`promote` applies to operator-authored text.
+
+Seeded candidates enter as `nudge`: a documented preference is not evidence of
+a defect. Nothing is promoted automatically, and re-running seeding is
+idempotent. See [ADR-024](adr/024-cold-start-pattern-seeding.md).
+
 ## Collection
 
 The driver calls collection automatically, fire-and-forget, at the end of every
