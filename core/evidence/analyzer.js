@@ -2,6 +2,7 @@
 
 const { category, number } = require("./categories");
 const { sourceEventRef } = require("./resolutions");
+const { observedCostForGate, observedModelForGate } = require("../gates/observed");
 
 const KNOWN_STATUSES = new Set(["PASS", "WARN", "FAIL", "ESCALATE"]);
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -89,7 +90,8 @@ function extractRouting(gateRecords) {
     for (const item of observations) {
       const role = category(item.workstream);
       const host = category(item.host);
-      const model = category(item.model || gate.model || "unknown");
+      // Same precedence the durable path uses; see core/gates/observed.js.
+      const model = category(observedModelForGate(item) || observedModelForGate(gate) || "unknown");
       const key = `${role}\0${host}\0${model}`;
       if (!groups.has(key)) {
         groups.set(key, {
@@ -106,8 +108,8 @@ function extractRouting(gateRecords) {
       else if (status === "WARN") row.warn += 1;
       else if (status === "FAIL") row.fail += 1;
       else if (status === "ESCALATE") row.escalate += 1;
-      const cost = number(item.cost_usd ?? gate.cost_usd);
-      if (cost !== null) { row.cost_observations += 1; row.total_cost_usd += cost; }
+      const costEntry = observedCostForGate(item) || observedCostForGate(gate);
+      if (costEntry !== null) { row.cost_observations += 1; row.total_cost_usd += costEntry.cost; }
       const duration = number(item.duration_ms ?? gate.duration_ms);
       if (duration !== null) {
         row.duration_observations += 1;

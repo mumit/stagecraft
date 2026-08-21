@@ -68,9 +68,9 @@ pm@claude-code       model=unknown  n=1  cost_obs=0  $0.00
 qa@claude-code       model=unknown  n=1  cost_obs=0  $0.00
 ```
 
-**Cause.** `extractDurableRouting` reads run-log `dispatch-observation` events,
-and `dispatchObservation` (`core/driver.js`) records the *model-asserted*
-fields:
+**Cause** (fixed 2026-08-21; recorded here as the finding). `extractDurableRouting`
+reads run-log `dispatch-observation` events, and `dispatchObservation`
+(`core/driver.js`) recorded the *model-asserted* fields:
 
 ```js
 model: evidenceCategory(gate && gate.model || "unknown"),
@@ -123,10 +123,15 @@ Three independent blockers, only one of which is a code defect.
 
 ## What would change the answer
 
-1. **Route `dispatchObservation` through `costEntryForGate`** and record the
-   observed or routing-requested model rather than the model-asserted one. Small
-   and mechanical; it is the only code defect this re-review found, and without
-   it fresh dispatches keep contributing `cost_obs: 0`.
+1. ~~**Route `dispatchObservation` through `costEntryForGate`**~~ — **fixed
+   2026-08-21.** The precedence now lives once in `core/gates/observed.js`, and
+   the fix turned out to be needed in *two* readers, not one: the durable
+   dispatch-observation writer and the evidence gate-snapshot fallback
+   (`extractRouting`) had both drifted to the model-asserted fields. A gate
+   carrying cost only in `_orchestrator_observed` and a model only in
+   `model_requested` now reports `model=claude-opus-5, cost_obs=1, $0.53`
+   where it previously reported `model=unknown, cost_obs=0`. Historical records
+   are unchanged — there is nothing to backfill, so nothing is invented.
 2. **Collect on a second real project.** One project cannot satisfy any
    `projects: N / 2` condition, and no fix changes that.
 3. **Route comparable roles through two hosts.** Every record is `codex`. Note
