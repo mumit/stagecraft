@@ -730,3 +730,99 @@ test("`devteam stage executable-spec` renders a prompt referencing spec.feature"
   assert.match(r.stdout, /spec\.feature/);
   assert.match(r.stdout, /spec-template\.feature/);
 });
+
+// ─── 42.4: `spec verify` distinguishes not-applicable from drift ─────────────
+
+test("spec verify: a track without executable-spec reports not-applicable, not drift", () => {
+  // executable-spec is absent from loop, so pipeline/spec.feature is not
+  // something anything was ever going to produce. Reporting it as "MISSING"
+  // drift made a correct project look broken.
+  const cwd = makeTargetProject({ config: "pipeline:\n  default_track: loop\n" });
+  try {
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "# Brief\n\n- AC-1: it works\n");
+    const r = runCLI(["spec", "verify", "--json"], { cwd });
+    assert.equal(r.status, 0, "not-applicable must not exit non-zero");
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.applicable, false);
+    assert.equal(report.status, "not-applicable");
+    assert.equal(report.drift, false);
+    assert.equal(report.track, "loop");
+    assert.equal(report.track_source, "config");
+  } finally { cleanup(cwd); }
+});
+
+test("spec verify: a track that requires executable-spec keeps the G2 failure", () => {
+  const cwd = makeTargetProject({ config: "pipeline:\n  default_track: full\n" });
+  try {
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "# Brief\n\n- AC-1: it works\n");
+    const r = runCLI(["spec", "verify", "--json"], { cwd });
+    assert.equal(r.status, 1, "a required stage with no spec is still drift");
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.applicable, true);
+    assert.equal(report.drift, true);
+    assert.equal(report.orphan_criteria.length, 1);
+  } finally { cleanup(cwd); }
+});
+
+test("spec verify: --track overrides the project's configured track", () => {
+  const cwd = makeTargetProject({ config: "pipeline:\n  default_track: loop\n" });
+  try {
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "# Brief\n\n- AC-1: it works\n");
+    const r = runCLI(["spec", "verify", "--track", "full", "--json"], { cwd });
+    assert.equal(r.status, 1);
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.track, "full");
+    assert.equal(report.track_source, "explicit");
+    assert.equal(report.applicable, true);
+  } finally { cleanup(cwd); }
+});
+
+test("spec verify: pipeline/track.json outranks the config default", () => {
+  // The per-run record `devteam assess` writes is what `devteam run` obeys, so
+  // verification has to read the same chain or it reports on a different track
+  // than the one that will execute.
+  const cwd = makeTargetProject({ config: "pipeline:\n  default_track: loop\n" });
+  try {
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "# Brief\n\n- AC-1: it works\n");
+    fs.writeFileSync(
+      path.join(cwd, "pipeline", "track.json"),
+      JSON.stringify({ track: "full", source: "human", confidence: "high" }),
+    );
+    const r = runCLI(["spec", "verify", "--json"], { cwd });
+    assert.equal(r.status, 1, "track.json says full, so the stage is required");
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.track, "full");
+    assert.equal(report.track_source, "track-record");
+  } finally { cleanup(cwd); }
+});
+
+test("spec verify: an unknown track name still reports drift rather than passing", () => {
+  // Suppressing drift for a track we cannot resolve would turn a typo in
+  // default_track into a silent pass.
+  const cwd = makeTargetProject({ config: "pipeline:\n  default_track: full\n" });
+  try {
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "# Brief\n\n- AC-1: it works\n");
+    const r = runCLI(["spec", "verify", "--track", "not-a-real-track", "--json"], { cwd });
+    assert.equal(r.status, 1);
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.applicable, true, "unknown track must not be read as not-applicable");
+  } finally { cleanup(cwd); }
+});
+
+test("spec verify: a materialized run plan outranks track.json and config", () => {
+  // run-plan.json is the highest tier in resolveActiveTrack — the track a run
+  // actually froze. Verification has to honour it or it reports against a
+  // different track than the one executing.
+  const cwd = makeTargetProject({ config: "pipeline:\n  default_track: loop\n" });
+  try {
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), "# Brief\n\n- AC-1: it works\n");
+    fs.writeFileSync(path.join(cwd, "pipeline", "track.json"), JSON.stringify({ track: "loop" }));
+    fs.writeFileSync(path.join(cwd, "pipeline", "run-plan.json"), JSON.stringify({ track: "full" }));
+    const r = runCLI(["spec", "verify", "--json"], { cwd });
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.track, "full");
+    assert.equal(report.track_source, "run-plan");
+    assert.equal(report.applicable, true, "full requires executable-spec");
+    assert.equal(r.status, 1);
+  } finally { cleanup(cwd); }
+});

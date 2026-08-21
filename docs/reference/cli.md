@@ -448,13 +448,14 @@ Drop a CI workflow template into the target project (install), or print it to st
 
 Drift-check brief.md ↔ spec.feature ↔ test-report.md (verify), or scaffold a spec.feature from brief ACs (generate).
 
-| Flag      | Type   | Description                        |
-| --------- | ------ | ---------------------------------- |
-| --cwd     | string | Target project directory           |
-| --strict  | bool   | Also fail on multi-mapped criteria |
-| --json    | bool   | JSON output                        |
-| --force   | bool   | Overwrite existing spec.feature    |
-| --feature | string | Feature name for scaffold          |
+| Flag      | Type   | Description                                                   |
+| --------- | ------ | ------------------------------------------------------------- |
+| --cwd     | string | Target project directory                                      |
+| --strict  | bool   | Also fail on multi-mapped criteria                            |
+| --track   | string | Track to verify against (default: the project's active track) |
+| --json    | bool   | JSON output                                                   |
+| --force   | bool   | Overwrite existing spec.feature                               |
+| --feature | string | Feature name for scaffold                                     |
 
 ### `devteam consistency analyze [options]`
 

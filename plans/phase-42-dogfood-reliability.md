@@ -94,10 +94,10 @@ distinguish "stage not in this track" from real drift.
 - a Python project with `tests/` receives the correct QA read/write scope
   — ✅ [#437](https://github.com/telus-labs/stagecraft/pull/437);
 - a loop track without executable-spec reports `not-applicable`, not drift
-  — ⬜ open (`devteam spec verify` has no `--track` flag and prints
-  `❌ MISSING` for a stage the active track does not contain);
+  — ✅ `devteam spec verify` resolves the active track through the shared
+  `resolveActiveTrack` and exits 0 with a `not-applicable` verdict;
 - full/quick tracks retain the current G2 failure behavior when the stage is
-  required — ⬜ open, pairs with the item above;
+  required — ✅ unchanged, with regression tests on both tracks;
 - no missing test root is interpreted as a passing test suite — ✅ the gate now
   carries `test unverified by orchestrator: …` in `warnings[]`, matching C3's
   treatment of `license_check_passed`. Non-blocking by design; the model's
