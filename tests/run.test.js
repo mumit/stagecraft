@@ -2805,3 +2805,63 @@ describe("driver: logical run identity (42.5)", () => {
     assert.notEqual(first.logical_run_id, second.logical_run_id);
   });
 });
+
+// ─── --budget-tokens must count what a dispatch actually consumed ───────────
+
+describe("driver: token accounting includes cache counters", () => {
+  it("counts cache reads and writes toward the run total", async () => {
+    // Measured on a real loop run: 52 uncached input and 11,293 output against
+    // 1,363,880 cache tokens. Counting only in+out made the total 121x low, so
+    // a --budget-tokens cap could not bind on an agentic host — the same shape
+    // as a stale pricing table making --budget-usd inert.
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: {
+        tokens_in: 52, tokens_out: 11293,
+        cached_tokens: 1269278, cache_creation_tokens: 94602,
+        source: "claude-code:stream-json", at: "2026-08-21T00:00:00Z",
+      },
+    });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.tokens_used, 52 + 11293 + 1269278 + 94602);
+    // Separable, so a large total is not misread as a proportionally large bill.
+    assert.equal(s.tokens_in, 52);
+    assert.equal(s.tokens_out, 11293);
+    assert.equal(s.tokens_cached, 1269278 + 94602);
+    assert.equal(s.token_basis, "observed");
+  });
+
+  it("a gate without cache counters contributes zero, not NaN", async () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: { tokens_in: 100, tokens_out: 200, source: "x", at: "2026-08-21T00:00:00Z" },
+    });
+    const s = await run({ cwd, next: () => ({ action: "pipeline-complete", reason: "test" }) });
+    assert.equal(s.tokens_used, 300);
+    assert.equal(s.tokens_cached, 0);
+  });
+
+  it("halts on --budget-tokens once cache is counted", async () => {
+    // The point of the fix: the cap has to bind on a host whose consumption is
+    // almost entirely cache reads.
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "PASS",
+      _orchestrator_observed: {
+        tokens_in: 10, tokens_out: 20, cached_tokens: 500000,
+        source: "claude-code:stream-json", at: "2026-08-21T00:00:00Z",
+      },
+    });
+    const s = await run({
+      cwd,
+      budgetTokens: 100000,
+      next: () => ({ action: "run-stage", stage: "stage-02", name: "design", reason: "test" }),
+    });
+    // Both caps share halt_action "budget"; the reason distinguishes them.
+    assert.equal(s.halt_action, "budget",
+      "a 100k cap must bind against 500k of observed cache reads");
+    assert.match(String(s.halt_reason), /token/i);
+  });
+});

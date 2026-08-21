@@ -353,18 +353,31 @@ function totalCostUsd(cwd, changeId) {
   return costUsdDetail(cwd, changeId).total;
 }
 
+// --budget-tokens is a runtime halt threshold, so it has to count what a
+// dispatch actually consumed. On an agentic host the uncached input is a
+// rounding error: a measured `loop` run reported 92 uncached input and 20,355
+// output against 1,269,278 cache reads and 94,602 cache writes, so counting
+// only in+out made the cap read ~67x low and never bind. That is the same
+// shape as the stale pricing table making --budget-usd inert, and it is the
+// same correction ceremony-preview's `observed-total` already took.
+//
+// `cached` stays separable from `input`/`output` so the summary can say what
+// the number is made of — cache reads bill well below uncached input, and
+// --budget-usd remains the control to budget money against.
 function tokenEntryForGate(gate) {
   const observed = gate && gate._orchestrator_observed;
   const input = nonNegativeNumber(observed && observed.tokens_in);
   const output = nonNegativeNumber(observed && observed.tokens_out);
+  const cached = (nonNegativeNumber(observed && observed.cached_tokens) || 0)
+    + (nonNegativeNumber(observed && observed.cache_creation_tokens) || 0);
   if (input !== null && output !== null) {
-    return { input, output, basis: "observed" };
+    return { input, output, cached, basis: "observed" };
   }
   const estimatedInput = observed && observed.tokens_estimated === true
     ? nonNegativeNumber(observed.tokens_in_estimate)
     : null;
   if (estimatedInput !== null) {
-    return { input: estimatedInput, output: 0, basis: "estimated" };
+    return { input: estimatedInput, output: 0, cached: 0, basis: "estimated" };
   }
   return null;
 }
@@ -397,6 +410,7 @@ function tokenUsageDetail(cwd, changeId) {
 
   let input = 0;
   let output = 0;
+  let cached = 0;
   let observations = 0;
   let missing = 0;
   let sawObserved = false;
@@ -413,6 +427,7 @@ function tokenUsageDetail(cwd, changeId) {
       }
       input += entry.input;
       output += entry.output;
+      cached += entry.cached || 0;
       observations++;
       if (entry.basis === "observed") sawObserved = true;
       else sawEstimated = true;
@@ -423,9 +438,10 @@ function tokenUsageDetail(cwd, changeId) {
       : sawEstimated ? "estimated"
         : null;
   return {
-    total: input + output,
+    total: input + output + cached,
     input,
     output,
+    cached,
     basis,
     observations,
     missing,
@@ -436,6 +452,7 @@ function tokenUsageDetail(cwd, changeId) {
 function combineTokenUsage(...details) {
   let input = 0;
   let output = 0;
+  let cached = 0;
   let observations = 0;
   let missing = 0;
   let sawObserved = false;
@@ -443,6 +460,7 @@ function combineTokenUsage(...details) {
   for (const detail of details.filter(Boolean)) {
     input += nonNegativeNumber(detail.input) || 0;
     output += nonNegativeNumber(detail.output) || 0;
+    cached += nonNegativeNumber(detail.cached) || 0;
     observations += nonNegativeNumber(detail.observations) || 0;
     missing += nonNegativeNumber(detail.missing) || 0;
     if (detail.basis === "observed" || detail.basis === "mixed") sawObserved = true;
@@ -453,9 +471,10 @@ function combineTokenUsage(...details) {
       : sawEstimated ? "estimated"
         : null;
   return {
-    total: input + output,
+    total: input + output + cached,
     input,
     output,
+    cached,
     basis,
     observations,
     missing,
@@ -2574,11 +2593,15 @@ async function run(opts = {}) {
     summary.tokens_used = finalTokens.total;
     summary.tokens_in = finalTokens.input;
     summary.tokens_out = finalTokens.output;
+    // Separable so the total is readable: cache reads bill well below uncached
+    // input, and --budget-usd remains the control for money.
+    summary.tokens_cached = finalTokens.cached;
     summary.token_basis = finalTokens.basis;
     summary.token_coverage_complete = finalTokens.coverage_complete;
     state.tokens_used = finalTokens.total;
     state.tokens_in = finalTokens.input;
     state.tokens_out = finalTokens.output;
+    state.tokens_cached = finalTokens.cached;
     state.token_basis = finalTokens.basis;
     state.token_coverage_complete = finalTokens.coverage_complete;
     state.token_observations = finalTokens.observations;
