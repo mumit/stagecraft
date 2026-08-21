@@ -231,9 +231,17 @@ live inside that function.
 > after the lock releases, none of which touches `summary`. `run()` is 1,725 lines, down
 > from 1,780. The whole suite passed with **no test changes**, which is the evidence the
 > extraction was behavior-preserving; 13 characterization tests now pin the seam so the next
-> slice has something to break. Remaining candidates, roughly by size: the ~300-line
-> prologue (config pinning, track resolution, changeId derivation, dependency injection) and
-> the ~35-line final-persistence `finally` block.
+> slice has something to break.
+>
+> **Slice 2 landed (2026-08-21).** The effective safety policy — cap resolution plus the two
+> operator warnings that go with it — moved to `core/driver-safety.js`, split into a pure
+> `resolveRunSafety` that returns the warnings and an `emitSafetyWarnings` that writes them,
+> so the policy is testable without capturing process output. `run()` is 1,721 lines. Again
+> no test changes, and 9 characterization tests pin the seam. `run()` deliberately keeps
+> ownership of the mid-prologue reassignment when a stoplist bypass is authorized.
+> Remaining candidates: the rest of the ~300-line prologue (config pinning, track
+> resolution, changeId derivation, dependency injection) and the ~35-line final-persistence
+> `finally` block.
 
 ### F6 — Factory default contradicted the docs (fixed, #432)
 

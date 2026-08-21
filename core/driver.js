@@ -46,7 +46,6 @@ const { assess } = require("./stage-shopping/assess");
 const { ceremonyPreview } = require("./ceremony-preview");
 const { buildRunPlan, persistRunPlan, portableRelative, updateRunPlanSafetyPolicy } = require("./run-plan");
 const {
-  resolveEffectiveSafetyPolicy,
   assertResumeTrack,
   stoplistContext,
   stoplistBypassStatus,
@@ -68,6 +67,7 @@ const {
   applyTransitionResult,
 } = require("./driver-transition");
 const { runEndEffects } = require("./driver-runend");
+const { resolveRunSafety, emitSafetyWarnings } = require("./driver-safety");
 const { observedCostForGate, observedModelForGate } = require("./gates/observed");
 const {
   dispatchGuardTransition,
@@ -1017,27 +1017,19 @@ async function run(opts = {}) {
   const _runReflector = opts.runReflector || runReflector;
   const _ingestMemory = opts.ingestMemory || ingestMemory;
   const maxIterations = Number.isInteger(opts.maxIterations) ? opts.maxIterations : DEFAULT_MAX_ITERATIONS;
-  const resolvedSafety = resolveEffectiveSafetyPolicy({
+  // Slice 2 of the P2-2 decomposition — see core/driver-safety.js. `let`
+  // because run() still reassigns the policy when a stoplist bypass is
+  // authorized further down; that mutation stays here deliberately.
+  const resolvedSafety = resolveRunSafety({
     resume: opts.resume,
     state: resumedState,
     budgetUsd: opts.budgetUsd,
     budgetTokens: opts.budgetTokens,
   });
   let safetyPolicy = resolvedSafety.policy;
-  const budgetUsd = safetyPolicy.budget_usd;
-  const budgetTokens = safetyPolicy.budget_tokens;
-  if (resolvedSafety.migrated) {
-    process.stderr.write(
-      "[devteam run] Warning: legacy run-state had no persisted safety policy; "
-      + "cap flags on this resume are now authoritative and omitted caps are explicitly uncapped.\n",
-    );
-  }
-  if (budgetUsd === null && budgetTokens === null) {
-    process.stderr.write(
-      "[devteam run] Warning: no usage cap set. The run will not halt on spend or tokens.\n" +
-      "              Use --budget-usd <amount> and/or --budget-tokens <count>.\n"
-    );
-  }
+  const budgetUsd = resolvedSafety.budgetUsd;
+  const budgetTokens = resolvedSafety.budgetTokens;
+  emitSafetyWarnings(resolvedSafety.warnings);
   // Phase-28 item 28.4: warn at most once per run when the cost total includes
   // any model-asserted (self-reported) cost_usd — i.e. some dispatch's host/
   // adapter didn't produce orchestrator-observed usage. Doesn't affect halt
