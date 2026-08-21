@@ -120,7 +120,9 @@ answer the question without conflating invocations and feature changes.
   the corpus with no `run_id` and surfaced as `quality.dispatches_outside_run`,
   so the exclusion is stated rather than silent;
 - manual Principal rulings are not inferred from prose, but the CLI offers a
-  supported typed path to record them — ⬜ open;
+  supported typed path to record them — ✅ `devteam evidence record-ruling
+  --class <c> --yes`, bound to a real judgment-gate halt and reported as a
+  population distinct from auto-applied rulings;
 - bundle schema evolution is backward-compatible and duplicate-safe — ✅ for
   this change: no bundle field was added or renamed, and a run log written
   before `logical_run_id` counts exactly as it did before.

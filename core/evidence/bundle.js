@@ -95,6 +95,9 @@ function createBundle(report, projectRef, opts = {}) {
   const recoveryResult = suppressRows(report.recovery.map(copyRecovery), "observations");
   const resolutionResult = suppressRows((report.resolutions || []).map(copyResolution), "observations");
   const rulingResult = suppressRows(report.rulings.map(copyRuling), "observations");
+  // 42.5: separate population from `rulings` — an auto-applied ruling and a
+  // hand-recorded one answer different questions (see the analyzer).
+  const recordedRulingResult = suppressRows((report.recorded_rulings || []).map(copyRuling), "observations");
   const stallResult = suppressRows(report.stalls.map(copyStall), "observations");
   const packageVersion = opts.stagecraftVersion || require("../../package.json").version;
   const generatedDate = opts.generatedDate || new Date().toISOString().slice(0, 10);
@@ -135,10 +138,13 @@ function createBundle(report, projectRef, opts = {}) {
     recovery: recoveryResult.included,
     resolutions: resolutionResult.included,
     rulings: rulingResult.included,
+    ...(recordedRulingResult.included.length > 0
+      ? { recorded_rulings: recordedRulingResult.included }
+      : {}),
     stalls: stallResult.included,
     readiness: report.readiness.map(copyReadiness),
     suppressed_observations: routingResult.suppressed + recoveryResult.suppressed + resolutionResult.suppressed
-      + rulingResult.suppressed + stallResult.suppressed,
+      + rulingResult.suppressed + recordedRulingResult.suppressed + stallResult.suppressed,
   };
   const bundle = { ...payload, payload_sha256: payloadDigest(payload) };
   const errors = validateBundle(bundle, { verifyDigest: true });
@@ -229,6 +235,9 @@ function validateBundle(bundle, opts = {}) {
     "suppressed_observations", "payload_sha256",
   ];
   if (Object.prototype.hasOwnProperty.call(bundle, "resolutions")) topKeys.push("resolutions");
+  // Same optional-section pattern: a bundle exported before 42.5 carries no
+  // recorded_rulings and must keep validating unchanged.
+  if (Object.prototype.hasOwnProperty.call(bundle, "recorded_rulings")) topKeys.push("recorded_rulings");
   if (!exactKeys(bundle, topKeys, "bundle", errors)) return errors;
   if (bundle.schema_version !== EXPORT_SCHEMA_VERSION) errors.push("unsupported schema_version");
   if (!VERSION_PATTERN.test(bundle.stagecraft_version)) errors.push("stagecraft_version is invalid");
@@ -282,6 +291,11 @@ function validateBundle(bundle, opts = {}) {
   validateRows(bundle.rulings, {
     categories: ["ruling_class"], counts: ["observations"],
   }, "rulings", errors);
+  if (Object.prototype.hasOwnProperty.call(bundle, "recorded_rulings")) {
+    validateRows(bundle.recorded_rulings, {
+      categories: ["ruling_class"], counts: ["observations"],
+    }, "recorded_rulings", errors);
+  }
   validateRows(bundle.stalls, {
     categories: ["stage", "stall_class"], counts: ["observations"],
   }, "stalls", errors);

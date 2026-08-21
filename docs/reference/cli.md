@@ -324,7 +324,8 @@ Assess evidence-gated capabilities offline, export consented aggregates or a per
 | --bundle           | list   | Validated bundle for portfolio status (repeatable)                              |
 | --rotate           | bool   | Rotate the local project identity                                               |
 | --delete           | bool   | Delete the local project identity                                               |
-| --yes              | bool   | Confirm identity mutation or resolution acceptance                              |
+| --yes              | bool   | Confirm identity mutation, resolution acceptance, or ruling record              |
+| --class            | string | Ruling class for record-ruling (lowercase-kebab, e.g. formatting-only)          |
 | --attestation      | bool   | Export an in-toto-shaped, per-stage attestation instead of the aggregate bundle |
 | --track            | string | Override the pipeline track for --attestation chain verification                |
 | --allow-unverified | bool   | Attest even when the gate chain is broken, stamping the bundle as unverified    |

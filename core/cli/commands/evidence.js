@@ -15,6 +15,7 @@ const {
 } = require(path.join(__dirname, "..", "..", "evidence", "identity"));
 const { analyzePortfolio } = require(path.join(__dirname, "..", "..", "evidence", "portfolio"));
 const { appendAcceptedResolution } = require(path.join(__dirname, "..", "..", "evidence", "resolutions"));
+const { appendRecordedRuling } = require(path.join(__dirname, "..", "..", "evidence", "rulings"));
 const {
   createAttestation, readAttestation, writeAttestation, signAttestation,
   assertExportDestination: assertAttestationDestination,
@@ -30,7 +31,8 @@ const flags = {
   bundle: { type: "list", description: "Validated bundle for portfolio status (repeatable)" },
   rotate: { type: "boolean", description: "Rotate the local project identity" },
   delete: { type: "boolean", description: "Delete the local project identity" },
-  yes: { type: "boolean", description: "Confirm identity mutation or resolution acceptance" },
+  yes: { type: "boolean", description: "Confirm identity mutation, resolution acceptance, or ruling record" },
+  class: { type: "string", description: "Ruling class for record-ruling (lowercase-kebab, e.g. formatting-only)" },
   attestation: { type: "boolean", description: "Export an in-toto-shaped, per-stage attestation instead of the aggregate bundle" },
   track: { type: "string", description: "Override the pipeline track for --attestation chain verification" },
   "allow-unverified": { type: "boolean", description: "Attest even when the gate chain is broken, stamping the bundle as unverified" },
@@ -274,7 +276,25 @@ function runAcceptResolution(commandFlags) {
   else process.stdout.write(`Accepted ${output.stage}/${output.failure_class} resolution (${output.derivable ? "derivable" : "not derivable"}).\n`);
 }
 
-const USAGE = "devteam evidence <status|export|identity|accept-resolution|verify-attestation> [options]";
+function runRecordRuling(commandFlags) {
+  rejectFlags(commandFlags, ["out", "consent", "bundle", "rotate", "delete"], "record-ruling");
+  if (!commandFlags.yes) throw new Error("recording a ruling requires --yes");
+  const cwd = path.resolve(commandFlags.cwd || process.cwd());
+  const config = loadConfig(cwd);
+  checkBoundedFence(config, name);
+  const changeId = resolveChangeId(commandFlags, config);
+  const event = appendRecordedRuling(pipelineRoot(cwd, changeId), { rulingClass: commandFlags.class });
+  const output = {
+    recorded: true,
+    ruling_class: event.ruling_class,
+    stage: event.stage,
+    halt_event_sha256: event.halt_event_sha256,
+  };
+  if (commandFlags.json) console.log(JSON.stringify(output, null, 2));
+  else process.stdout.write(`Recorded ${output.ruling_class} ruling for ${output.stage}.\n`);
+}
+
+const USAGE = "devteam evidence <status|export|identity|accept-resolution|record-ruling|verify-attestation> [options]";
 
 function run(positional, commandFlags) {
   if (commandFlags.help) {
@@ -282,7 +302,7 @@ function run(positional, commandFlags) {
     process.exit(0);
   }
   const sub = positional[0];
-  const validSubs = ["status", "export", "identity", "accept-resolution", "verify-attestation"];
+  const validSubs = ["status", "export", "identity", "accept-resolution", "record-ruling", "verify-attestation"];
   const expectedPositionals = sub === "verify-attestation" ? 2 : 1;
   if (!validSubs.includes(sub) || positional.length !== expectedPositionals) {
     process.stderr.write(`Usage: ${USAGE}\n`);
@@ -292,6 +312,7 @@ function run(positional, commandFlags) {
   if (sub === "export") return runExport(commandFlags);
   if (sub === "identity") return runIdentity(commandFlags);
   if (sub === "verify-attestation") return runVerifyAttestation(positional, commandFlags);
+  if (sub === "record-ruling") return runRecordRuling(commandFlags);
   return runAcceptResolution(commandFlags);
 }
 
