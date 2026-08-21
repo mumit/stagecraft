@@ -68,6 +68,7 @@ const {
   applyTransitionResult,
 } = require("./driver-transition");
 const { runEndEffects } = require("./driver-runend");
+const { observedCostForGate, observedModelForGate } = require("./gates/observed");
 const {
   dispatchGuardTransition,
   normalizeDispatchResults,
@@ -178,22 +179,11 @@ function nonNegativeNumber(value) {
 // what the orchestrator actually saw. Returns null when neither is a valid
 // non-negative number (e.g. a tokens-estimated-only gate with no cost_usd
 // at all — patchGateForEstimatedUsage never writes one).
-// Precedence, strongest evidence first: a cost the host itself reported, then
-// one derived from host-observed tokens times core/pricing.js (written by
-// patchGateForObservedUsage for hosts like codex that report tokens and no
-// dollars), then the model's own claim. Each carries its source so
-// costUsdDetail can report an honest basis rather than presenting all three
-// as one number.
-function costEntryForGate(gate) {
-  const observed = gate && gate._orchestrator_observed;
-  const observedCost = nonNegativeNumber(observed && observed.cost_usd);
-  if (observedCost !== null) return { cost: observedCost, source: "observed" };
-  const derivedCost = nonNegativeNumber(observed && observed.cost_usd_derived);
-  if (derivedCost !== null) return { cost: derivedCost, source: "derived" };
-  const assertedCost = nonNegativeNumber(gate && gate.cost_usd);
-  if (assertedCost !== null) return { cost: assertedCost, source: "asserted" };
-  return null;
-}
+// Cost and model precedence live in core/gates/observed.js — three readers
+// wanted the same answer and two had drifted to the model-asserted fields.
+// Shape is unchanged: { cost, source } or null.
+const costEntryForGate = observedCostForGate;
+const observedModel = observedModelForGate;
 
 function dispatchObservation(base, result) {
   if (!result || result.skipped) return null;
@@ -212,18 +202,29 @@ function dispatchObservation(base, result) {
     stage: evidenceCategory(base.stage),
     role: evidenceCategory(result.role || "unknown"),
     host: evidenceCategory(result.host || "unknown"),
-    model: evidenceCategory(gate && gate.model || "unknown"),
+    model: evidenceCategory(observedModel(gate) || "unknown"),
     status: evidenceCategory(gate && gate.status || "NO_GATE"),
     gate_written: Boolean(gate),
     timed_out: Boolean(result.timedOut),
   };
-  const cost = nonNegativeNumber(gate && gate.cost_usd);
+  // Same precedence the run's own cost total uses — host-reported, then
+  // token-derived, then the model's self-report. Reading gate.cost_usd
+  // directly meant a dispatch whose cost the orchestrator observed still
+  // contributed cost_obs: 0 to D5's denominator, which the 2026-08-21 evidence
+  // re-review found still blocking the gate after gate-level telemetry worked.
+  const costEntry = costEntryForGate(gate);
   const duration = nonNegativeNumber(gate && gate.duration_ms)
     ?? nonNegativeNumber(result.durationMs);
   const promptBytes = nonNegativeNumber(result.promptBytes);
   const contextManifestFiles = nonNegativeNumber(result.contextManifestFiles);
   const contextManifestOmitted = nonNegativeNumber(result.contextManifestOmitted);
-  if (cost !== null) observation.cost_usd = cost;
+  if (costEntry !== null) {
+    observation.cost_usd = costEntry.cost;
+    // Local only — the exported bundle carries the number, not the basis. Kept
+    // so a reviewer can tell an observed figure from a derived or
+    // model-asserted one without re-reading gates.
+    observation.cost_basis = costEntry.source;
+  }
   if (duration !== null) observation.duration_ms = duration;
   if (promptBytes !== null) observation.prompt_bytes = promptBytes;
   if (contextManifestFiles !== null) observation.context_manifest_files = contextManifestFiles;
