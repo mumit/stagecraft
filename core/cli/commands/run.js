@@ -48,7 +48,7 @@ const flags = {
   "repair-at":       { type: "string",  description: "Skip diagnosis: seed affected-files from file:line location(s) (comma-separated; ADR-009 Phase 2)" },
   track:             { type: "string",  description: "Override the pipeline track" },
   scope:             { type: "list",    description: "Scope review to this path (repeatable; review-only track)" },
-  until:             { type: "string",  description: "Stop before this stage" },
+  until:             { type: "string",  description: "Stop after this stage (inclusive)" },
   "max-iterations":  { type: "number",  description: "Iteration cap" },
   "budget-usd":      { type: "number",  description: "Cost cap in USD" },
   "budget-tokens":   { type: "number",  description: "Observed/estimated token cap (not provider quota)" },
@@ -215,12 +215,14 @@ function run(positional, _flags) {
       );
     }
     // Exit 0 when the pipeline finished or stopped at a boundary the operator
-    // configured (--until) or a gate they must approve (consequence ceiling).
-    // Exit 1 for halts that signal something needs fixing. Exit 2 = lock error.
-    // Exit 3 = pipeline complete but --fail-on-advisory threshold exceeded.
+    // configured (--until, --plan-only) or a gate they must approve
+    // (consequence ceiling). Exit 1 for halts that signal something needs
+    // fixing. Exit 2 = lock error. Exit 3 = pipeline complete but
+    // --fail-on-advisory threshold exceeded.
     const cleanStop = summary.completed
       || summary.halt_action === "until"
-      || summary.halt_action === "ceiling";
+      || summary.halt_action === "ceiling"
+      || summary.halt_action === "plan-only";
     // ADR-008: --fail-on-advisory opt-in. Only fires on a cleanStop to preserve
     // the exit-1 contract for halts. Threshold: QA_BLOCKER+A11Y_FIX (default)
     // or all three blocker classes (=all).

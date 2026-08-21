@@ -46,13 +46,9 @@ function planOnly(args = [], config = CONFIG) {
 describe("run prologue: it halts having produced the execution contract", () => {
   it("writes a plan, a state, and a run-start event, and dispatches nothing", () => {
     const { result, plan, state, events } = planOnly();
-    // Exit 1, not 0. run.js treats only completed/until/ceiling as a "clean
-    // stop", and plan-only is none of them -- even though the comment three
-    // lines above that check describes exactly this case ("stopped at a
-    // boundary the operator configured"). Pinned as-is: this suite records
-    // today's behavior so the F5 extraction is provably behavior-preserving.
-    // See core/cli/commands/run.js:221.
-    assert.equal(result.status, 1);
+    // Exit 0: --plan-only is a boundary the operator configured, which is the
+    // documented rule for a clean stop in core/cli/commands/run.js.
+    assert.equal(result.status, 0);
     assert.equal(events.filter((e) => e.outcome === "plan-only-halt").length, 1);
     assert.ok(plan, "run-plan.json must exist");
     assert.ok(state, "run-state.json must exist");
@@ -120,18 +116,40 @@ describe("run prologue: stage dispositions", () => {
       + plan.stages_skipped_by_right_sizing, plan.stages_total);
   });
 
-  it("does NOT reflect --until anywhere in the plan", () => {
-    // Known gap, pinned deliberately. --until is read at core/driver.js:1104
-    // into untilIndex, which only bounds the dispatch loop -- it never reaches
-    // the plan built ~350 lines later. So the "inspectable execution contract"
-    // (ADR-018) reports every stage of the track as included, and the two plans
-    // below are byte-identical. Fix separately; flipping it here first would
-    // stop this suite from characterizing what ships today.
+  it("records the --until boundary and what it puts out of reach", () => {
     const withUntil = planOnly(["--track", "full", "--until", "build", "--budget-usd", "5"]).plan;
     const without = planOnly(["--track", "full", "--budget-usd", "5"]).plan;
+    assert.equal(withUntil.until, "build");
+    assert.equal(without.until, null);
+    assert.equal(without.stages_after_until, 0);
+    assert.ok(withUntil.stages_after_until > 0,
+      "the plan must say how many included stages the boundary puts out of reach");
+    // stages_included keeps its meaning: what the track executes, boundary or
+    // not. The boundary is reported alongside it, not folded into it.
     assert.equal(withUntil.stages_included, without.stages_included);
+  });
+
+  it("keeps --until out of both fingerprints so a resume is not drift", () => {
+    // "run --until build, review, run --resume" must not report policy drift.
+    const withUntil = planOnly(["--track", "full", "--until", "build", "--budget-usd", "5"]).plan;
+    const without = planOnly(["--track", "full", "--budget-usd", "5"]).plan;
     assert.equal(withUntil.plan_fingerprint, without.plan_fingerprint);
-    assert.ok(!("until" in withUntil));
+    assert.equal(withUntil.execution_fingerprint, without.execution_fingerprint);
+  });
+
+  it("rejects an --until that names no stage in the track", () => {
+    // untilIndex < 0 reads as "no boundary" in dispatch, so silently accepting
+    // this ran the whole track -- deploy included.
+    const { result } = planOnly(["--track", "full", "--until", "nonsense-stage"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--until nonsense-stage is not a stage in the 'full' track/);
+    assert.match(result.stderr, /Stages, in order: /);
+  });
+
+  it("rejects an --until naming a stage from a different track", () => {
+    const { result } = planOnly(["--track", "loop", "--until", "red-team"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /not a stage in the 'loop' track/);
   });
 
   it("records configured skips", () => {
