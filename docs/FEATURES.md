@@ -95,6 +95,15 @@ orchestrator-run commands mint content-addressed receipts keyed by command, suit
 verification scope, workspace bytes, verify config, material env/toolchain data, and
 Stagecraft version. Build, pre-review, and QA share the project-test scope, so later
 stamps reuse an unchanged successful suite while repair reproduction stays isolated.
+When no test or lint command can be discovered at all, the orchestrator records the skip in
+`_orchestrator_stamped.runs` **and adds a `warnings[]` entry to the gate itself** — e.g.
+`test unverified by orchestrator: no test command configured or discovered`. Without it a
+stage-06 gate in a project with no tests could read `status: PASS`, `tests_passed: 12`,
+`tests_failed: 0` with nothing on the gate showing that nothing had run. The model's claim
+is left standing rather than overwritten, and the warning is non-blocking: the orchestrator
+is reporting an absence of evidence, not a failure. This matches the tri-state treatment C3
+gave `license_check_passed`.
+
 One failing language adds a named blocker without preventing the remaining suites from running. Set
 `pipeline.verify.test_command` for an exclusive custom command, `null` to disable test
 discovery, or `pipeline.verify.receipts: false` to force fresh execution. See
