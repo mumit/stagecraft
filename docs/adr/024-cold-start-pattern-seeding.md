@@ -1,6 +1,6 @@
 # ADR 024 — Seed pattern candidates from a project's own written conventions
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-21
 **Authors:** Stagecraft maintainers
 

@@ -63,7 +63,7 @@ What else was on the table and why we didn't pick those.
 | [021](021-dependency-free-memory-default.md) | Dependency-free feature-hash memory by default; transformer semantics as an explicit opt-in | Accepted |
 | [022](022-exact-file-documentation-workstream.md) | Exact-file documentation build ownership as an optional gate-selected workstream | Accepted |
 | [023](023-goal-condition-in-prompt-body.md) | Convergence conditions are stated in the prompt body; no host slash command is composed | Proposed |
-| [024](024-cold-start-pattern-seeding.md) | Seed pattern candidates from a project's own written conventions; candidates only, human promotion unchanged | Proposed |
+| [024](024-cold-start-pattern-seeding.md) | Seed pattern candidates from a project's own written conventions; candidates only, human promotion unchanged | Accepted |
 | [025](025-scope-build-not-just-review.md) | Extend single-workstream build scoping to tracks that already scope review; no track renamed or removed | Proposed |
 
 ### Deferred
