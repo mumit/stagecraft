@@ -458,17 +458,25 @@ touched) a changelog fragment.
 
 ### Wave 1 — Fix the dispatch economics
 
-F1 is the expensive one and needs a recorded decision, not a patch. Everything else here is
-measurement-driven and should be **re-measured after F1 lands, not assumed**.
+Wave 1 is complete. Its lasting result is not a saving but a correction: measurement showed
+that two of its four items were optimizing the wrong 0.26% of a dispatch.
 
-1. **F1 — ADR on goal-loop under `--print`.** Decide whether `/goal` survives headless
-   dispatch at all. If not, delete the fallback chain and recover framework inlining plus
-   retry guidance on build and qa.
-2. **F4 — scope inlined rules to the dispatched role.** Stop shipping the review rubric and
-   retrospective instructions in build prompts; keep the prefix byte-stable within a role.
-3. **Enable cache breakpoints by default** on `openai-compat`, and record cache-hit rates in
-   the corpus so 32.1's payoff becomes measurable rather than assumed.
-4. **Re-run the ceremony preview** and publish the new per-track token numbers.
+1. ✅ **F1 — ADR on goal-loop under `--print`.**
+   [ADR-023](../docs/adr/023-goal-condition-in-prompt-body.md) /
+   [#435](https://github.com/telus-labs/stagecraft/pull/435). The condition moved into the
+   prompt body, the fallback chain is gone, and `build`/`qa` keep their inlined framework
+   and retry guidance.
+2. ⛔ **F4 — scope inlined rules to the dispatched role. Closed, not built.** The whole
+   rendered prompt is 0.26% of a dispatch; scoping it per role would fragment the shared
+   prefix for no measurable gain. See §4.
+3. ✅ **Record cache-hit rates in the corpus**
+   ([#436](https://github.com/telus-labs/stagecraft/pull/436)) — the measurement that closed
+   F4. **Enabling `openai-compat` breakpoints by default remains open**, and should be
+   decided against that host's own numbers rather than claude-code's.
+4. ✅ **Re-run the ceremony preview.** The static numbers barely moved (~2%), because they
+   count prompt bytes — which is exactly §4's point. Separately, the preview's
+   `observed-total` was found to exclude the cache counters and under-report by ~140×; that
+   is corrected.
 
 ### Wave 2 — Finish Phase 42, then reduce ceremony
 
