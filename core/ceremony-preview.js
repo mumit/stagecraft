@@ -225,12 +225,26 @@ function computeEmpiricalEstimate(cwd, track) {
 
   const perRun = runIds.map((id) => {
     const recs = byRun.get(id);
-    const tokensTotal = recs.reduce((s, r) => s + (r.tokens_in || 0) + (r.tokens_out || 0), 0);
+    // "observed-total" has to mean total. Summing only tokens_in + tokens_out
+    // excludes the cache counters, and on an agentic host those dominate:
+    // a measured stage-04 dispatch reported 66 uncached input and 14,866
+    // output against 2,049,649 cache reads and 49,888 cache writes, so the
+    // old sum reported 14,932 for 2,114,469 tokens actually touched — low by
+    // a factor of 140. The counters only became visible on claude-code when
+    // the parser started capturing them, which is why this surfaced now.
+    // cost_usd stays the authoritative money figure; this is volume.
+    const tokensTotal = recs.reduce(
+      (s, r) => s + (r.tokens_in || 0) + (r.tokens_out || 0)
+        + (r.cached_tokens || 0) + (r.cache_creation_tokens || 0),
+      0,
+    );
+    const uncachedTotal = recs.reduce((s, r) => s + (r.tokens_in || 0) + (r.tokens_out || 0), 0);
+    const cachedTotal = recs.reduce((s, r) => s + (r.cached_tokens || 0) + (r.cache_creation_tokens || 0), 0);
     const costs = recs.map((r) => r.cost_usd);
     const costTotal = costs.every((c) => typeof c === "number")
       ? costs.reduce((s, c) => s + c, 0)
       : null;
-    return { dispatchCount: recs.length, tokensTotal, costTotal };
+    return { dispatchCount: recs.length, tokensTotal, uncachedTotal, cachedTotal, costTotal };
   });
 
   const dispatchMedian = Math.round(median(perRun.map((r) => r.dispatchCount)));
@@ -249,6 +263,13 @@ function computeEmpiricalEstimate(cwd, track) {
     dispatch_count: { min: dispatchMedian, max: dispatchMedian },
     tokens: { low: tokensMedian, high: tokensMedian },
     tokens_scope: "observed-total",
+    // Kept separable so a reader can see why the total is large: cache reads
+    // bill well below uncached input, so a big total is not proportionally a
+    // big bill. cost_usd below is the figure to budget against.
+    tokens_breakdown: {
+      uncached: median(perRun.map((r) => r.uncachedTotal)),
+      cached: median(perRun.map((r) => r.cachedTotal)),
+    },
     cost_usd: costMedian !== null ? { low: costMedian, high: costMedian } : null,
     cost_scope: "observed-total",
     unresolved_models: costMedian !== null ? [] : ["insufficient cost data in corpus for this track's runs"],
@@ -306,8 +327,20 @@ function renderCeremonyPreviewText(preview) {
   if (preview.unresolved_models.length > 0) {
     lines.push(`  cost omitted — unknown model for: ${preview.unresolved_models.join(", ")}`);
   }
-  if (preview.cost_scope === "input-only-floor" && preview.cost_usd) {
-    lines.push("  output generation is excluded until observed; use --budget-usd and/or --budget-tokens as runtime halt thresholds");
+  if (preview.cost_scope === "input-only-floor") {
+    // Printed whenever the estimate is a static input floor — not only when a
+    // cost figure happens to be resolvable. The case with no cost shown is
+    // exactly where the reader has least to go on: a measured `loop` build
+    // dispatch touched ~2.1M tokens against a ~21k static prompt estimate,
+    // because the agentic loop re-reads its accumulated context every turn.
+    lines.push("  prompt input only — excludes output and the host's own agentic turns, which dominate real usage;");
+    lines.push("  use --budget-usd and/or --budget-tokens as runtime halt thresholds");
+  }
+  if (preview.estimate_basis === "empirical" && preview.tokens_breakdown) {
+    lines.push(
+      `  observed median: ${formatTokenRange({ low: preview.tokens_breakdown.uncached, high: preview.tokens_breakdown.uncached })} uncached ` +
+      `+ ${formatTokenRange({ low: preview.tokens_breakdown.cached, high: preview.tokens_breakdown.cached })} cached (cache reads bill below uncached input)`,
+    );
   }
   lines.push(`  (${preview.estimate_basis === "empirical" ? `median of ${preview.sample_size} prior run(s)` : "estimate — framework overhead + on-disk artifact sampling"}, never a bill)`);
   return lines;
