@@ -65,7 +65,11 @@ function evidenceReport(options = {}) {
       });
     }
   }
-  return analyzeEvidence({ events, gates, quality: { log_present: true, gate_files: gates.length } });
+  return analyzeEvidence({
+    events, gates,
+    quality: { log_present: true, gate_files: gates.length },
+    dispatchesOutsideRun: options.dispatchesOutsideRun ?? null,
+  });
 }
 
 function writeFixtureBundle(cwd, name, rawId, report = evidenceReport()) {
@@ -269,5 +273,39 @@ describe("portfolio evidence", () => {
       const source = fs.readFileSync(path.join(REPO_ROOT, relative), "utf8");
       assert.doesNotMatch(source, /node:(?:http|https|net)|\bfetch\s*\(/);
     }
+  });
+});
+
+// ─── 42.5: dispatches_outside_run is optional and backward-compatible ────────
+
+describe("evidence export: dispatches_outside_run (42.5)", () => {
+  it("carries the count into the bundle when the corpus was consulted", () => {
+    const bundle = createBundle(evidenceReport({ dispatchesOutsideRun: 3 }), projectRef("a".repeat(32)));
+    assert.equal(bundle.quality.dispatches_outside_run, 3);
+    assert.deepEqual(validateBundle(bundle, { verifyDigest: true }), []);
+  });
+
+  it("omits the key when the corpus was not consulted, and still validates", () => {
+    // Absent is not zero — "none outside a run" must stay distinct from
+    // "this export could not tell".
+    const bundle = createBundle(evidenceReport(), projectRef("b".repeat(32)));
+    assert.equal("dispatches_outside_run" in bundle.quality, false);
+    assert.deepEqual(validateBundle(bundle, { verifyDigest: true }), []);
+  });
+
+  it("a bundle predating the field validates unchanged", () => {
+    const current = createBundle(evidenceReport({ dispatchesOutsideRun: 2 }), projectRef("c".repeat(32)));
+    const { payload_sha256: _digest, ...payload } = current;
+    delete payload.quality.dispatches_outside_run;
+    const legacy = { ...payload, payload_sha256: payloadDigest(payload) };
+    assert.deepEqual(validateBundle(legacy, { verifyDigest: true }), []);
+  });
+
+  it("rejects a non-numeric value", () => {
+    const current = createBundle(evidenceReport(), projectRef("d".repeat(32)));
+    const { payload_sha256: _digest, ...payload } = current;
+    payload.quality.dispatches_outside_run = "three";
+    const bad = { ...payload, payload_sha256: payloadDigest(payload) };
+    assert.ok(validateBundle(bad, { verifyDigest: true }).length > 0);
   });
 });

@@ -123,6 +123,13 @@ function createBundle(report, projectRef, opts = {}) {
         (sum, row) => sum + row.cost_observations, 0,
       ),
       durable_dispatch_observations: quality.durable_dispatch_observations || 0,
+      // 42.5: only when the corpus was actually consulted. Omitted rather than
+      // zero-filled otherwise, so "no dispatches outside a run" stays distinct
+      // from "this export could not tell" — the same distinction the cache
+      // counters keep.
+      ...(typeof quality.dispatches_outside_run === "number"
+        ? { dispatches_outside_run: quality.dispatches_outside_run }
+        : {}),
     },
     routing: routingResult.included,
     recovery: recoveryResult.included,
@@ -240,6 +247,11 @@ function validateBundle(bundle, opts = {}) {
   ];
   if (Object.prototype.hasOwnProperty.call(bundle.quality, "durable_dispatch_observations")) {
     qualityKeys.push("durable_dispatch_observations");
+  }
+  // Same optional-key pattern: a bundle exported before 42.5 has no
+  // dispatches_outside_run and must keep validating unchanged.
+  if (Object.prototype.hasOwnProperty.call(bundle.quality, "dispatches_outside_run")) {
+    qualityKeys.push("dispatches_outside_run");
   }
   if (exactKeys(bundle.quality, qualityKeys, "quality", errors)) {
     if (typeof bundle.quality.log_present !== "boolean") errors.push("quality.log_present must be boolean");

@@ -116,7 +116,9 @@ answer the question without conflating invocations and feature changes.
   — ✅ `logical_run_id` (the lineage root, carried across resumes) groups
   `run_count`; the id stays local and the bundle stays a count;
 - every host dispatch, including direct remediation, is either durably counted
-  or explicitly excluded with a reason — ⬜ open;
+  or explicitly excluded with a reason — ✅ direct dispatches are recorded in
+  the corpus with no `run_id` and surfaced as `quality.dispatches_outside_run`,
+  so the exclusion is stated rather than silent;
 - manual Principal rulings are not inferred from prose, but the CLI offers a
   supported typed path to record them — ⬜ open;
 - bundle schema evolution is backward-compatible and duplicate-safe — ✅ for
