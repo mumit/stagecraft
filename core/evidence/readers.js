@@ -238,8 +238,41 @@ function countDispatchesOutsideRun(cwd) {
   }
 }
 
+// Signals that a project already produced evidence before this moment. Used to
+// catch a minted-too-late identity: the id is what ties a project's bundles
+// together across checkouts, and `getOrCreateIdentity` silently mints a fresh
+// one whenever the file is absent. A clone, a cleaned `.devteam/`, or a restore
+// done one command too late therefore yields a *different* project_ref with no
+// indication anything went wrong — and bundles exported under it read as a
+// second, independent project, inflating every `N / 2` readiness threshold.
+//
+// Cheap by construction: existence and length checks only, no parsing.
+function priorEvidenceSummary(cwd, changeId = null) {
+  const summary = { dispatches: 0, gates: 0, run_log: false, any: false };
+  if (!cwd) return summary;
+  try {
+    const { pipelineRoot } = require("../paths");
+    const root = pipelineRoot(cwd, changeId);
+    try {
+      const raw = fs.readFileSync(path.join(root, "run-log.jsonl"), "utf8");
+      summary.run_log = raw.trim().length > 0;
+    } catch { /* absent */ }
+    try {
+      summary.gates = fs.readdirSync(path.join(root, "gates"))
+        .filter((name) => name.endsWith(".json") && !name.includes(".attempt-")).length;
+    } catch { /* absent */ }
+  } catch { /* unresolvable pipeline root */ }
+  try {
+    const { readCorpus } = require("../corpus");
+    summary.dispatches = readCorpus(cwd).length;
+  } catch { /* absent or unreadable */ }
+  summary.any = summary.dispatches > 0 || summary.gates > 0 || summary.run_log;
+  return summary;
+}
+
 module.exports = {
   countDispatchesOutsideRun,
+  priorEvidenceSummary,
   DEFAULT_MAX_LOG_BYTES,
   DEFAULT_MAX_LINE_BYTES,
   DEFAULT_MAX_GATE_BYTES,

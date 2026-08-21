@@ -46,6 +46,37 @@ The JSON output has `schema_version: "1.0"` and contains aggregate sections:
 | `stalls` | observed stalls grouped by stage and stall class |
 | `readiness` | local conditions and explicit cross-project limitations for each gated capability |
 
+**A minted-too-late identity is warned about.** `.devteam/evidence-project-id`
+is what ties a project's bundles together across checkouts, and it is gitignored
+by design — so a clone, a cleaned `.devteam/`, or a restore done one command too
+late gets a *fresh* id. Bundles exported under it carry a different
+`project_ref`, and a portfolio counts them as a second independent project,
+inflating every `N / 2` readiness threshold.
+
+`devteam evidence export` now warns on stderr when it mints an id for a project
+that already has dispatch records, gate files, or a run log:
+
+```
+[devteam] warning: minted a new evidence identity for a project that already has
+          20 dispatch record(s), 15 gate file(s), a run log.
+```
+
+Advisory and non-blocking — minting is correct for a genuinely new project, and
+warning on minting alone would train operators to ignore it. Restore the saved
+identity before exporting:
+
+```bash
+cp <saved>/evidence-project-id .devteam/evidence-project-id
+chmod 600 .devteam/evidence-project-id
+devteam evidence identity          # confirm the ref matches your earlier bundles
+```
+
+There is deliberately no `--import` subcommand. Restoring is a file copy, and a
+command for it would make identity *reassignment* convenient — which is the
+thing the pseudonymous bundle model wants to stay deliberate. The warning
+targets the actual failure, which is not "I cannot import" but "I did not know I
+needed to."
+
 **Accepting a resolution when a later stage escalated.** `accept-resolution`
 takes the newest unaccepted fix/retry by default. A run that retried `stage-04`
 successfully and then escalated at `stage-06` leaves the newest slot holding a
