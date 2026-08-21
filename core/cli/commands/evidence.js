@@ -5,7 +5,7 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { loadConfig, checkBoundedFence } = require(path.join(__dirname, "..", "..", "config"));
 const { resolveChangeId } = require(path.join(__dirname, "..", "resolve-change-id"));
 const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
-const { readEvidenceSources, countDispatchesOutsideRun } = require(path.join(__dirname, "..", "..", "evidence", "readers"));
+const { readEvidenceSources, countDispatchesOutsideRun, priorEvidenceSummary } = require(path.join(__dirname, "..", "..", "evidence", "readers"));
 const { analyzeEvidence } = require(path.join(__dirname, "..", "..", "evidence", "analyzer"));
 const {
   assertExportDestination, createBundle, writeBundle,
@@ -121,6 +121,40 @@ function runStatus(commandFlags) {
   else process.stdout.write(renderProject(report));
 }
 
+// A project's identity ties its bundles together across checkouts, and
+// getOrCreateIdentity mints a fresh one whenever the file is absent — silently.
+// A clone, a cleaned `.devteam/`, or an identity restored one command too late
+// exports under a *different* project_ref, and the portfolio then reads those
+// bundles as a second independent project, inflating every `N / 2` readiness
+// threshold. Nothing surfaced `created: true` before this.
+//
+// Advisory and non-blocking: minting is correct for a genuinely new project,
+// which is the common case. It is only suspicious when the project already
+// produced evidence this id cannot account for, so the warning fires on that
+// combination rather than on minting alone. stderr, so `--json` stdout stays
+// machine-readable.
+function warnOnMintedIdentity(cwd, commandFlags, identity) {
+  if (!identity || !identity.created) return;
+  let prior;
+  try {
+    prior = priorEvidenceSummary(cwd, resolveChangeId(commandFlags, loadConfig(cwd)));
+  } catch {
+    return; // a probe failure must never block an export
+  }
+  if (!prior.any) return;
+  const found = [
+    prior.dispatches > 0 ? `${prior.dispatches} dispatch record(s)` : null,
+    prior.gates > 0 ? `${prior.gates} gate file(s)` : null,
+    prior.run_log ? "a run log" : null,
+  ].filter(Boolean).join(", ");
+  process.stderr.write(
+    `[devteam] warning: minted a new evidence identity for a project that already has ${found}.\n` +
+    "          If this project exported evidence before, those bundles carry a different\n" +
+    "          project_ref and a portfolio will count them as a separate project. Restore\n" +
+    "          the saved .devteam/evidence-project-id and re-export. New project? Nothing to do.\n",
+  );
+}
+
 function runExport(commandFlags) {
   if (commandFlags.attestation) return runExportAttestation(commandFlags);
   if (!commandFlags.out) throw new Error("evidence export requires --out <new-file.json>");
@@ -129,6 +163,7 @@ function runExport(commandFlags) {
   const destination = assertExportDestination(commandFlags.out);
   const { cwd, report } = localReport(commandFlags);
   const identity = getOrCreateIdentity(cwd);
+  warnOnMintedIdentity(cwd, commandFlags, identity);
   const bundle = createBundle(report, identity.project_ref);
   writeBundle(destination, bundle);
   const result = {
