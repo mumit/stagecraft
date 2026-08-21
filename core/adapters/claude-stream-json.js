@@ -21,12 +21,34 @@ function extractAssistantText(message) {
     .join("");
 }
 
-// modelUsage keys are the model id(s) billed for this invocation. A single
-// `--print` dispatch is expected to use exactly one model; if the CLI ever
-// reports more than one, leave model_observed unset rather than guessing.
+// modelUsage keys are the model id(s) billed for this invocation.
+//
+// This used to require exactly one, on the assumption that a single `--print`
+// dispatch uses a single model, and returned null otherwise "rather than
+// guessing". That assumption is empirically false: claude-code 2.1.207 reports
+// two models even for a trivial one-line prompt, because it routes auxiliary
+// work (titles, quick classifications) to a cheaper model alongside the main
+// turn. The result was that model_observed was null on essentially every
+// claude-code dispatch, so every routing row in D5's evidence read
+// `model=unknown` — which is not routing evidence at all.
+//
+// Choosing the highest-cost entry is not a guess. modelUsage carries per-model
+// `costUSD`, and the model that did the dispatch's work is the one that cost
+// the most; on a real run the auxiliary model is two orders of magnitude
+// cheaper. `canonicalModel` is preferred over the raw key because the key can
+// carry a dated suffix while the canonical form is what core/pricing.js and a
+// human reading a routing table both want.
 function modelFromResultMessage(obj) {
-  const keys = obj.modelUsage && typeof obj.modelUsage === "object" ? Object.keys(obj.modelUsage) : [];
-  return keys.length === 1 ? keys[0] : null;
+  const usage = obj.modelUsage && typeof obj.modelUsage === "object" ? obj.modelUsage : null;
+  if (!usage) return null;
+  const entries = Object.entries(usage).filter(([id, value]) => id && value && typeof value === "object");
+  if (entries.length === 0) return null;
+  if (entries.length === 1) return entries[0][1].canonicalModel || entries[0][0];
+  const cost = (entry) => (typeof entry[1].costUSD === "number" && entry[1].costUSD >= 0 ? entry[1].costUSD : -1);
+  // Ties and cost-less payloads fall back to declaration order, which keeps the
+  // result deterministic rather than dependent on object-key iteration luck.
+  const primary = entries.reduce((best, entry) => (cost(entry) > cost(best) ? entry : best), entries[0]);
+  return primary[1].canonicalModel || primary[0];
 }
 
 function createStreamJsonExtractor() {

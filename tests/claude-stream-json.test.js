@@ -87,7 +87,12 @@ describe("createStreamJsonExtractor — JSON mode", () => {
     assert.equal(out, "final answer\n");
   });
 
-  it("leaves model_observed unset when modelUsage reports more than one model", () => {
+  it("records the primary model when modelUsage reports more than one", () => {
+    // Superseded behavior: this asserted null, on the assumption that a single
+    // --print dispatch uses a single model. claude-code 2.1.207 reports two
+    // even for a one-line prompt, so that rule left model_observed null on
+    // essentially every dispatch. Highest cost wins; ties fall back to
+    // declaration order, which is why this expects the first key here.
     const ex = createStreamJsonExtractor();
     ex.push(line({
       type: "result",
@@ -98,7 +103,7 @@ describe("createStreamJsonExtractor — JSON mode", () => {
       modelUsage: { "claude-sonnet-5": {}, "claude-opus-4-7": {} },
     }));
     const { usage } = ex.result();
-    assert.equal(usage.model, null);
+    assert.equal(usage.model, "claude-sonnet-5");
   });
 
   it("handles a JSON chunk split mid-line across multiple push() calls", () => {
@@ -168,5 +173,57 @@ describe("createStreamJsonExtractor — degradation to raw passthrough", () => {
     const out = ex.end();
     assert.equal(out, "");
     assert.equal(ex.result().telemetry, "unavailable");
+  });
+});
+
+// ─── multi-model dispatches (claude-code 2.1.207) ───────────────────────────
+
+describe("modelFromResultMessage: claude-code reports more than one model", () => {
+  // Captured live: a one-line `--print` prompt reported two models, because
+  // auxiliary work is routed to a cheaper one alongside the main turn. The old
+  // "exactly one or null" rule therefore left model_observed null on
+  // essentially every dispatch, and every D5 routing row read model=unknown.
+  const MULTI = {
+    type: "result", subtype: "success", total_cost_usd: 0.0703, result: "ok",
+    usage: { input_tokens: 2, output_tokens: 4 },
+    modelUsage: {
+      "claude-haiku-4-5-20251001": { inputTokens: 897, outputTokens: 12, costUSD: 0.000957, canonicalModel: "claude-haiku-4-5" },
+      "claude-sonnet-5": { inputTokens: 2, outputTokens: 4, costUSD: 0.0693, canonicalModel: "claude-sonnet-5" },
+    },
+  };
+
+  function modelFor(result) {
+    const ex = createStreamJsonExtractor();
+    ex.push(line(result));
+    return ex.result().usage.model;
+  }
+
+  it("records the model that did the work, not null", () => {
+    assert.equal(modelFor(MULTI), "claude-sonnet-5");
+  });
+
+  it("prefers canonicalModel over a dated key", () => {
+    assert.equal(modelFor({
+      ...MULTI,
+      modelUsage: { "claude-opus-5-20260101": { costUSD: 1, canonicalModel: "claude-opus-5" } },
+    }), "claude-opus-5");
+  });
+
+  it("falls back to the key when no canonical form is given", () => {
+    assert.equal(modelFor({ ...MULTI, modelUsage: { "claude-opus-5": { costUSD: 1 } } }), "claude-opus-5");
+  });
+
+  it("is deterministic when costs tie or are missing", () => {
+    // Declaration order, not object-key iteration luck.
+    const tied = { ...MULTI, modelUsage: { "model-a": { costUSD: 0.5 }, "model-b": { costUSD: 0.5 } } };
+    assert.equal(modelFor(tied), "model-a");
+    const costless = { ...MULTI, modelUsage: { "model-a": {}, "model-b": {} } };
+    assert.equal(modelFor(costless), "model-a");
+  });
+
+  it("returns null when the CLI reports no model usage at all", () => {
+    assert.equal(modelFor({ ...MULTI, modelUsage: {} }), null);
+    const { modelUsage: _drop, ...none } = MULTI;
+    assert.equal(modelFor(none), null);
   });
 });
