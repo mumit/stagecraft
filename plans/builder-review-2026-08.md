@@ -69,7 +69,7 @@ of the roadmap.
 | F1 | `build`/`qa` discard the inlined framework and retry guidance on every dispatch to fit a `/goal` directive that only sometimes survives | Critical | ADR-023 proposed |
 | F2 | The changed-file manifest treats Stagecraft's own install as the user's diff | High | Fixed (#431) |
 | F3 | Cost telemetry is structurally impossible, which is what blocks the Phase 41 gates | High | Fixed (#429, #430) |
-| F4 | Prompt budget is ~99% process and ~1% project | Medium | Open — Wave 1 |
+| F4 | Prompt budget is ~99% process and ~1% project | Medium | **Closed — not worth doing**; see §4 |
 | F5 | The driver's core loop is a 1,730-line function | Medium | Open — Wave 1 |
 | F6 | The factory default contradicts the documentation | Medium | Fixed (#432) |
 | F7 | CLI vocabulary drifts across commands | Medium | Fixed (#433) |
@@ -183,7 +183,7 @@ observed tokens and a table we maintain is a weaker evidence class than a figure
 reported, and collapsing them would launder an estimate into an observation. `cost_basis`
 gains a `derived` value; any mixture reports `mixed`.
 
-### F4 — Prompt budget is ~99% process (open)
+### F4 — Prompt budget is ~99% process (closed by measurement)
 
 A build prompt for a one-function change was 28,296 bytes. The Project Knowledge Pack — the
 part carrying anything specific to *this* repository — was about 250 of them.
@@ -202,10 +202,17 @@ part carrying anything specific to *this* repository — was about 250 of them.
 ```
 
 Some of this is the deliberate [phase-32](phase-32-performance-parallelism.md) item 32.1
-trade: a byte-identical prefix is worth extra bytes if a cache reuses it. But the build
-prompt carries the peer-review rubric and the retrospective instructions, and per F1 the
-cacheable half is discarded on this exact stage anyway. The one host where Stagecraft
-controls cache breakpoints — `openai-compat` — has them `enabled: false` by default.
+trade: a byte-identical prefix is worth extra bytes if a cache reuses it.
+
+> **Closed by measurement (2026-08-21).** The proposed fix — scope the inlined rules to the
+> dispatched role — is not worth doing, and would probably make things worse. A real
+> stage-04 dispatch on claude-code touched **2,114,469 tokens**: 66 uncached input, 14,866
+> output, 2,049,649 cache reads, 49,888 cache writes. The entire rendered prompt is ~5,400
+> tokens — **0.26%** of that. Trimming the ~2.9 KB of cross-stage rules saves roughly 0.03%
+> of a dispatch while fragmenting the shared prefix across roles: on a `loop` run, four
+> dispatches to four different roles, that trades three potential prefix hits for none. The
+> cost is the agentic loop re-reading its accumulated context every turn, not the prompt.
+> See §4.
 
 ### F5 — `run()` is a 1,730-line function (open)
 
@@ -317,18 +324,39 @@ different shapes with different entry conditions, not points on a slider.
 
 ## 4. Speed, cost, and self-learning
 
-### Where the money goes
+### Where the money goes — measured
 
-Per-dispatch framework overhead dominates on light tracks, not model choice. A `loop` run is
-4 dispatches at ~7,000 tokens of scaffolding each — roughly 21,000 tokens before the model
-reads a line of project code. F1, F2, and F4 all attack that number, and together they are
-worth more than any routing optimization layered on top. **Fix them before tuning model
-tiers.**
+This section originally argued that per-dispatch framework overhead dominates on light
+tracks. **That was wrong, and the correction is the most useful number in this review.**
 
-The second lever is caching, currently half-built: the prefix is byte-stable by design, but
-breakpoints are off by default where Stagecraft controls them and discarded entirely on
-build and qa where F1 fires. Closing F1 and enabling breakpoints turns an existing
-investment into an actual discount.
+Two real `build` dispatches on claude-code 2.1.207 — same project, same feature, run back
+to back:
+
+| | dispatch 1 | dispatch 2 |
+|---|---:|---:|
+| Uncached input | 48 | 66 |
+| Output | 15,020 | 14,866 |
+| Cache write | 51,789 | 49,888 |
+| Cache read | 1,526,680 | 2,049,649 |
+| **Total touched** | **1,593,537** | **2,114,469** |
+| Cost | $1.00 | $1.14 |
+
+The rendered prompt was 21,408 bytes — about 5,400 tokens, or **0.26%** of one dispatch.
+The other 99.7% is the host's own agentic loop: every turn re-reads the accumulated
+conversation, which is what the cache-read column is. **Prompt-shaving is therefore not a
+cost lever at all.** What costs money is how many turns the agent takes, and the things that
+move that are track choice, scope, and `--budget-usd`.
+
+Three consequences worth stating plainly:
+
+- **A `loop` run costs roughly $4, not cents.** Four dispatches at ~$1 each. `full`, at
+  20–25 dispatches, is $20–30. The ceremony preview's `~21,334 tokens` is an accurate count
+  of prompt bytes and a ~94×-low proxy for a run.
+- **Caching is working hard** — 29–41× reads per write — but *within* a dispatch, across
+  agentic turns. Cache writes stayed near 50K on both dispatches, so there is no evidence of
+  cross-dispatch prefix reuse; phase-32.1's byte-stable prefix is not producing the saving
+  its design assumed. It matters little, because within-dispatch reuse dwarfs it either way.
+- **This is why F4 is closed.** Optimizing the prompt optimizes 0.26% of the bill.
 
 ### Why agents don't act like seniors
 

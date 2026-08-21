@@ -30,6 +30,7 @@ const {
   computeStaticEstimate,
   computeEmpiricalEstimate,
   assuranceOptions,
+  renderCeremonyPreviewText,
 } = require(path.join(REPO_ROOT, "core", "ceremony-preview"));
 const { loadConfig, clearConfigCache } = require(path.join(REPO_ROOT, "core", "config"));
 
@@ -238,6 +239,62 @@ describe("ceremony-preview: empirical basis (phase-28 corpus)", () => {
       ? (sortedCosts[mid - 1] + sortedCosts[mid]) / 2
       : sortedCosts[mid];
     assert.ok(Math.abs(preview.cost_usd.low - expectedMedian) < 1e-9);
+  });
+
+  test("observed-total includes the cache counters, which dominate on an agentic host", () => {
+    // Measured on a real stage-04 dispatch (claude-code 2.1.207): 66 uncached
+    // input and 14,866 output against 2,049,649 cache reads and 49,888 cache
+    // writes. Summing only in+out reported 14,932 for 2,114,469 tokens
+    // actually touched — low by a factor of 140, under a field named
+    // "observed-total".
+    const cwd = makeCwd("routing:\n  default_host: generic\npipeline:\n  default_track: loop\n");
+    const records = [];
+    for (let run = 1; run <= MIN_EMPIRICAL_RUNS; run++) {
+      records.push({
+        ts: `2026-08-2${run}T00:00:00Z`, run_id: `run-${run}`, stage: "stage-04",
+        role: "backend", host: "generic", model_observed: "claude-opus-5", track: "loop",
+        tokens_in: 66, tokens_out: 14866,
+        cached_tokens: 2049649, cache_creation_tokens: 49888, cost_usd: 1.14,
+      });
+    }
+    writeCorpus(cwd, records);
+    const preview = ceremonyPreview(cwd, "loop", loadConfig(cwd));
+
+    assert.equal(preview.estimate_basis, "empirical");
+    assert.equal(preview.tokens_scope, "observed-total");
+    assert.equal(preview.tokens.low, 66 + 14866 + 2049649 + 49888);
+    // The components stay separable: a large total is not proportionally a
+    // large bill, because cache reads bill below uncached input.
+    assert.equal(preview.tokens_breakdown.uncached, 66 + 14866);
+    assert.equal(preview.tokens_breakdown.cached, 2049649 + 49888);
+    assert.ok(Math.abs(preview.cost_usd.low - 1.14) < 1e-9, "cost stays the authoritative money figure");
+  });
+
+  test("a corpus without cache counters still totals in+out (older records)", () => {
+    const cwd = makeCwd("routing:\n  default_host: generic\npipeline:\n  default_track: loop\n");
+    const records = [];
+    for (let run = 1; run <= MIN_EMPIRICAL_RUNS; run++) {
+      records.push({
+        ts: `2026-07-0${run}T00:00:00Z`, run_id: `run-${run}`, stage: "stage-04",
+        role: "backend", host: "generic", model_observed: "claude-opus-5", track: "loop",
+        tokens_in: 800, tokens_out: 150, cost_usd: 0.1,
+      });
+    }
+    writeCorpus(cwd, records);
+    const preview = ceremonyPreview(cwd, "loop", loadConfig(cwd));
+    assert.equal(preview.tokens.low, 950);
+    assert.equal(preview.tokens_breakdown.cached, 0);
+  });
+
+  test("the static input-floor caveat prints even when no cost is resolvable", () => {
+    // The no-cost case is exactly where the reader has least to go on, and it
+    // was the one case that printed no caveat at all.
+    const cwd = makeCwd("routing:\n  default_host: claude-code\npipeline:\n  default_track: loop\n");
+    const preview = ceremonyPreview(cwd, "loop", loadConfig(cwd));
+    assert.equal(preview.estimate_basis, "static");
+    assert.equal(preview.cost_usd, null, "precondition: no model pinned, so no cost is resolvable");
+    const text = renderCeremonyPreviewText(preview).join("\n");
+    assert.match(text, /excludes output and the host's own agentic turns/);
   });
 
   test("< MIN_EMPIRICAL_RUNS runs of the track falls back to static", () => {
