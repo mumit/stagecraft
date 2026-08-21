@@ -18,11 +18,11 @@ A **track** is a named subset of pipeline stages. It tells Stagecraft how much r
 - [Track record (`pipeline/track.json`)](#track-record-pipelinetrackjson)
 - [Customizing tracks](#customizing-tracks)
 
-You set the active track in `.devteam/config.yml`:
+You set the active track in `.devteam/config.yml`. `devteam init` writes `loop`:
 
 ```yaml
 pipeline:
-  default_track: full
+  default_track: loop
 ```
 
 Or override per-invocation: `devteam stage build --track quick`.

@@ -211,6 +211,14 @@ The model writes the top block. **Everything from `dispatched_tool_budget` down 
 - `chain` — hash link to the predecessor gate, making the trail tamper-evident (`devteam verify-chain`).
 - `_orchestrator_observed` — token counts and cost parsed from the host CLI's own output. Before v0.8 the only cost number in a gate was whatever the model claimed about itself; now `--budget-usd` counts this instead (28.1–28.4). On a host that reports no usage you get `tokens_estimated: true` and a labelled estimate rather than a confident wrong number.
 
+  Note the shape of those numbers, because it is the single most surprising thing
+  about running an agentic host: **10 uncached input tokens against 225,139 cache
+  reads.** The prompt is a rounding error; the cost is the host's own loop re-reading
+  its accumulated context every turn. `--budget-tokens` counts all four figures for
+  that reason — summing only `tokens_in + tokens_out` made the cap read ~120× low, so
+  it never bound. `--budget-usd` stays the control to budget money against, since
+  cache reads bill well below uncached input.
+
 #### What you do next
 
 ```bash
@@ -675,7 +683,7 @@ Every gate carries the contract F identity fields. Every multi-role stage has a 
 
 - **The `loop` track — and it is now the recommended default for everyday changes.** This doc walks `full` because it shows every stage, but `full` is the *audited* path you choose when the stakes justify it. Most changes should run `loop`: four slots (requirements → build → qa → peer-review), same gate and chain artifacts on disk, a fraction of the cost. `devteam run` with no `--track` now assesses the change and picks a track for you (29.2). See [docs/tracks.md](docs/tracks.md).
 
-- **Track shortcuts.** `devteam init` defaults `pipeline.default_track: full`. For a config-only change, edit that to `config-only` and `devteam next` walks a different stage list.
+- **Track shortcuts.** `devteam init` writes `pipeline.default_track: loop` — the day-to-day default. For a config-only change, edit that to `config-only` and `devteam next` walks a different stage list; for the audited path shown in this document, use `full`.
 
 - **FAIL / ESCALATE branches.** A FAIL gate gives `❌ fix-and-retry` with blockers listed; an ESCALATE gate gives `🚨 resolve-escalation` with the reason. Both halt `next` until the situation is resolved.
 

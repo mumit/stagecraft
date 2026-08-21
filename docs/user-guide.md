@@ -1205,6 +1205,7 @@ The supported way is **`devteam run`** — the bounded autonomous driver. It adv
 
 ```bash
 devteam run                       # drive the configured track to completion
+devteam run --plan-only           # materialize pipeline/run-plan.json and stop before dispatching
 devteam run --watch               # rolling liveness status on an interactive terminal
 devteam run --until peer-review   # stop after a specific stage
 devteam run --budget-usd 10       # stop before a dispatch once spend ≥ $10
@@ -1214,6 +1215,8 @@ devteam run --auto-rule formatting-only,doc-only          # auto-resolve bounded
 devteam status --verbose                                  # inspect active/last workstream details
 devteam performance critical-path                         # inspect where run time went
 ```
+
+`--plan-only` builds, fingerprints, and persists the run plan, then halts before the first dispatch — so you can read the resolved track, stage dispositions, and candidate role/host/model routes before committing to a run. Because it stops *after* the same build-and-persist path a real run uses, the plan you review is the plan that would execute: `devteam run --resume` continues it unchanged. It is not a read-only preview — it takes the run lock and writes `run-plan.json`, `run-state.json`, and `track.json`, leaving the ordinary interrupted-before-first-dispatch state.
 
 It never advances into `sign-off`/`deploy` without `--allow-stage`, and by default halts on every escalation (the Principal isn't dispatched unless you pass `--auto-rule`). It writes `pipeline/run.lock`, a resumable `run-state.json` (`--resume`), and an audit-trail `run-log.jsonl`. At startup, non-JSON runs print the effective track, stage count, configured skips, conditional-stage count, and base workstream count; `run-log.jsonl` records the same data as `run-plan`. During dispatch, line progress now reports each workstream start/finish with its host plus gate/log pointers; configured per-host limits record `workstream-queued` and `queue_ms` so queue wait is visible in `devteam performance critical-path`. `--watch` redraws a rolling liveness block only on a TTY and includes active workstreams, the last settled workstream, transcript, and gate pointers. Redirected output remains line-oriented and ANSI-free. See [`docs/runbooks/autonomous-run.md`](runbooks/autonomous-run.md) for the full launch guide, halt reasons, and limitations.
 
@@ -1961,16 +1964,15 @@ managed `.gitignore` block includes `.devteam/worktrees/`. See
 [ADR-019](adr/019-isolated-build-workstreams.md) for the decision and rejected
 alternatives.
 
-### `/goal` injection for convergent stages
+### Convergence conditions for build and qa
 
-Hosts that declare `goalLoop: true` (claude-code and codex) automatically receive a `/goal "<condition>"` prepended to the prompt when running headless for build (stage-04) and qa (stage-06) stages. The condition is a workstream-specific exit criterion so the host can loop internally until its objective is met rather than running a fixed number of turns.
+`build` (stage-04) and `qa` (stage-06) declare a `goalCondition` in `stages.js`: the exit criterion that says "keep going until this holds" rather than "take one pass". It is rendered into the prompt as a `## Done when` section, with the workstream's own gate path resolved into it.
 
-This is automatic with no config required. It fires when:
-- The stage has a `goalCondition` in `stages.js` (currently build and qa)
-- The routed host declares `capabilities.goalLoop: true`
-- The workstream runs headless (`--headless`)
+Automatic, no config required, and every host receives it — it is prompt text, not a host directive, so it survives at any prompt size. Stages without a `goalCondition` carry no such section.
 
-Antigravity, Gemini CLI, Omnigent, openai-compat, and the generic adapter do not declare `goalLoop: true` and are unaffected. Interactive (non-headless) runs also skip the `/goal` prepend.
+It is advisory: it asks the model to converge. The mechanism that actually re-dispatches a stage whose gate does not pass is the driver's fix-and-retry loop.
+
+Before [ADR-023](adr/023-goal-condition-in-prompt-body.md) this rode on claude-code's `/goal "<condition>"` slash command, gated on a `capabilities.goalLoop` flag. That handler rejects input over 4,000 characters and, in `--print` mode, measures the whole piped prompt — so the orchestrator had to discard the inlined framework from every build and qa dispatch to make room, and the directive still only survived when few files happened to be dirty. `goalLoop` and `promptCharLimit` no longer exist in the adapter contract.
 
 ### Stoplist
 

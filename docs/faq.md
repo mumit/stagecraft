@@ -1109,7 +1109,9 @@ Use cases: PCI / HIPAA / SOC 2 compliance checks, team-specific naming conventio
 
 Both, for different purposes. `/goal` is a continuation primitive: set a session-level condition and the host loops until it holds. Stagecraft is a decomposition primitive: one feature decomposes into 18 stages with defined artifacts and gates.
 
-They compose: for `build` (stage-04) and `qa` (stage-06), hosts that declare `capabilities.goalLoop: true` (claude-code and codex) automatically receive a `/goal "<condition>"` prepended to the headless prompt — the host loops internally until the stated condition holds, then the gate is written. Setting one manually before other stages works fine.
+They compose. Stagecraft states its own convergence conditions for `build` (stage-04) and `qa` (stage-06) as a `## Done when` section in the prompt, so the model knows the exit criterion for that stage; setting a `/goal` yourself before or around a run works fine alongside that.
+
+Stagecraft used to compose the `/goal` directive itself, gated on a `capabilities.goalLoop` flag. It stopped: the handler caps input at 4,000 characters and measures the whole piped prompt in `--print` mode, so composing it cost more context than it bought. See [ADR-023](adr/023-goal-condition-in-prompt-body.md).
 
 ### Where does Stagecraft fit relative to Codex's autonomous task mode?
 

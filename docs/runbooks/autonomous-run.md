@@ -77,7 +77,7 @@ Before `devteam run` on an autonomous or CI pipeline:
 
 ```bash
 devteam run --feature "add sorting to the results page"  # assesses inline; generic work defaults to loop
-devteam assess --description "fix login validation bug" --confirm  # optional human-confirmed track
+devteam assess --feature "fix login validation bug" --confirm  # optional human-confirmed track
 devteam run --feature "fix login validation bug" --track full       # explicit safety override
 ```
 

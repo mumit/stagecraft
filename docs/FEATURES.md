@@ -82,6 +82,14 @@ Runs automatically after QA on `full`, `quick`, and `hotfix` tracks.
 
 ### Polyglot QA — verify every detected test suite
 
+### `devteam run --plan-only` — read the execution contract before committing to it
+
+ADR-018 calls `pipeline/run-plan.json` an inspectable execution contract; `--plan-only` is how you inspect it. The plan is built, fingerprinted, and persisted, then the run halts before the first dispatch.
+
+- Stops *after* the same build-and-persist path a real run uses, so the previewed plan is the plan that would execute — `devteam run --resume` continues it unchanged
+- Not a read-only preview: it takes the run lock and writes `run-plan.json`, `run-state.json`, and `track.json`
+- Does not mask an `unconfirmed-track` halt — a track that needed confirming still surfaces first
+
 Orchestrator stamping at pre-review and QA discovers and runs all applicable project
 test suites: `npm test` when `package.json` has `scripts.test`, pytest when pytest
 configuration or conventional Python test files are present, and `go test ./...` when
