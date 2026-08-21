@@ -304,6 +304,16 @@ stages.**
 The problem is the surface, not the pipeline. There are ten track names, and four are
 variants of a single three-stage shape:
 
+Measured dispatches, which is what actually costs money — stage count is not:
+
+| Track | Documented as | build | peer-review | total |
+|---|---|---:|---:|---:|
+| `loop` | "Lightest" | **1** | **1** | **4** |
+| `nano` | "Minimal" | 4 | 1 | 6 |
+| `refactor` | "Minimal" | 4 | 1 | 6 |
+| `dep-update` | "Light" | 4 | 4 | 12 |
+| `quick` | "Light" | 4 | 4 | 15 |
+
 | Track | Stage list | Actually differs by |
 |---|---|---|
 | `nano` | build → peer-review → qa | — (the base shape) |
@@ -316,16 +326,18 @@ Those four names cost a 250-line explainer, a nine-branch decision tree, and a r
 difference is three orthogonal modifiers: *does it need a brief*, *does it deploy*, and *is
 behavior meant to be preserved*.
 
-**Recommendation.** Keep three visible tracks. Demote the four variants to modifiers on
-`loop` (`--deploy`, `--preserve-behavior`, `--no-brief`) — same stage machinery, one name to
-learn. This needs an ADR because the stage role/write contract is load-bearing, so it
-belongs behind [42.4](phase-42-dogfood-reliability.md), not in front of it.
+**Recommendation.** Keep three visible tracks, and **scope the build, not just the
+review.** `PEER_REVIEW_SIZING` gives `nano`, `refactor`, and `review-pr` a single reviewer,
+but nothing scopes build except `loop`'s `loopBuildRole`. So `nano` runs a four-area build
+matrix and then has one reviewer look at all of it — the funnel narrows where the cost has
+already been spent. Pairing the two takes `nano` and `refactor` from 6 dispatches to 3.
+[ADR-025](../docs/adr/025-scope-build-not-just-review.md) has the measurements, the
+assurance tradeoff this accepts, and why `dep-update` is deliberately left alone.
 
-Also: **fill the gap between 4 and 15 dispatches.** A bounded change that needs to ship
-jumps from `loop`'s single workstream to `quick`'s four-area build matrix and four-area
-review — a 3.75× step with nothing in between. `loop --deploy` is the missing rung, and it
-removes the "promote by re-running on a bigger track" workaround the docs currently
-prescribe.
+~~Demote the four variants to modifiers on `loop`.~~ **Rejected by ADR-025**: it deprecates
+track names living in user config files and `pipeline/track.json` records for a
+surface-area win, and the ceremony reduction comes from the scoping change, not the
+renaming. The renaming can be evaluated separately on its own merits.
 
 Leave `review-only`, `review-pr`, `config-only`, and `hotfix` alone. These are genuinely
 different shapes with different entry conditions, not points on a slider.
