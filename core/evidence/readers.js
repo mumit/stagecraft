@@ -223,7 +223,23 @@ function readEvidenceSources(pipelinePath, opts = {}) {
   return { events: log.records, gates: gates.records, quality };
 }
 
+// 42.5: dispatches made outside a run. `devteam stage --headless` records a
+// corpus entry with run_id null (core/orchestrator.js passes opts.runId, which
+// only the driver sets) and writes no run-log event, so run-log-derived
+// evidence cannot count it. Reuses the corpus reader rather than parsing the
+// file again — it already tolerates a partial trailing write.
+function countDispatchesOutsideRun(cwd) {
+  if (!cwd) return null;
+  try {
+    const { readCorpus } = require("../corpus");
+    return readCorpus(cwd).filter((record) => !record || !record.run_id).length;
+  } catch {
+    return null; // absent or unreadable corpus is "not consulted", not zero
+  }
+}
+
 module.exports = {
+  countDispatchesOutsideRun,
   DEFAULT_MAX_LOG_BYTES,
   DEFAULT_MAX_LINE_BYTES,
   DEFAULT_MAX_GATE_BYTES,

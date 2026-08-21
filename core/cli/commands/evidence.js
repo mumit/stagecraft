@@ -5,7 +5,7 @@ const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { loadConfig, checkBoundedFence } = require(path.join(__dirname, "..", "..", "config"));
 const { resolveChangeId } = require(path.join(__dirname, "..", "resolve-change-id"));
 const { pipelineRoot } = require(path.join(__dirname, "..", "..", "paths"));
-const { readEvidenceSources } = require(path.join(__dirname, "..", "..", "evidence", "readers"));
+const { readEvidenceSources, countDispatchesOutsideRun } = require(path.join(__dirname, "..", "..", "evidence", "readers"));
 const { analyzeEvidence } = require(path.join(__dirname, "..", "..", "evidence", "analyzer"));
 const {
   assertExportDestination, createBundle, writeBundle,
@@ -89,7 +89,10 @@ function localReport(commandFlags) {
   checkBoundedFence(config, name);
   const changeId = resolveChangeId(commandFlags, config);
   const sources = readEvidenceSources(pipelineRoot(cwd, changeId));
-  return { cwd, report: analyzeEvidence(sources) };
+  return {
+    cwd,
+    report: analyzeEvidence({ ...sources, dispatchesOutsideRun: countDispatchesOutsideRun(cwd) }),
+  };
 }
 
 function rejectFlags(commandFlags, names, subcommand) {

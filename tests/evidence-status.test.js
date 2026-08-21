@@ -517,3 +517,56 @@ describe("evidence: logical run identity across resumes", () => {
     assert.equal(JSON.stringify(report).includes("T0"), false);
   });
 });
+
+// ─── 42.5: dispatches outside a run are excluded explicitly, not silently ────
+
+describe("evidence: dispatches made outside a run", () => {
+  const { analyzeEvidence } = require(path.join(REPO_ROOT, "core", "evidence", "analyzer"));
+  const { countDispatchesOutsideRun } = require(path.join(REPO_ROOT, "core", "evidence", "readers"));
+  const { appendDispatchRecord } = require(path.join(REPO_ROOT, "core", "corpus"));
+
+  function project() {
+    return fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-outside-run-"));
+  }
+
+  it("counts corpus records that carry no run_id", () => {
+    // `devteam stage --headless` — direct remediation — records a corpus entry
+    // with run_id null and writes no run-log event, so run-log-derived evidence
+    // structurally cannot see it.
+    const cwd = project();
+    try {
+      appendDispatchRecord(cwd, { ts: "2026-08-21T00:00:00Z", stage: "stage-04", role: "backend", host: "codex" });
+      appendDispatchRecord(cwd, { ts: "2026-08-21T00:01:00Z", stage: "stage-06", role: "qa", host: "codex" });
+      appendDispatchRecord(cwd, {
+        ts: "2026-08-21T00:02:00Z", run_id: "2026-08-21T00:02:00Z",
+        stage: "stage-04", role: "backend", host: "codex",
+      });
+      assert.equal(countDispatchesOutsideRun(cwd), 2, "only the run-less records count");
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  it("reports the exclusion in quality so a threshold is not read as complete", () => {
+    const report = analyzeEvidence({
+      events: [{ outcome: "run-start", intent: "feature", logical_run_id: "T0" }, { outcome: "complete" }],
+      gates: [], quality: {}, dispatchesOutsideRun: 3,
+    });
+    assert.equal(report.quality.dispatches_outside_run, 3);
+    assert.equal(report.quality.durable_dispatch_observations, 0,
+      "the durable count stays honest about what the run log actually held");
+  });
+
+  it("omits the field entirely when the corpus was not consulted", () => {
+    // Absent is not zero: "no dispatches outside a run" must stay distinct from
+    // "this export could not tell".
+    const report = analyzeEvidence({ events: [], gates: [], quality: {} });
+    assert.equal("dispatches_outside_run" in report.quality, false);
+  });
+
+  it("returns null rather than zero for a project with no corpus", () => {
+    const cwd = project();
+    try {
+      assert.equal(countDispatchesOutsideRun(cwd), 0, "an empty corpus reads as zero");
+      assert.equal(countDispatchesOutsideRun(null), null, "no cwd means not consulted");
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+});

@@ -288,7 +288,7 @@ function readinessSummary({ runs, routing, recovery, resolutions, rulings, stall
   ];
 }
 
-function analyzeEvidence({ events = [], gates = [], quality = {} }) {
+function analyzeEvidence({ events = [], gates = [], quality = {}, dispatchesOutsideRun = null }) {
   const { runs, orphanEvents } = groupRuns(events);
   const recoveryMap = new Map();
   const recoveryRuns = new Map();
@@ -336,6 +336,13 @@ function analyzeEvidence({ events = [], gates = [], quality = {} }) {
     ...quality,
     durable_dispatch_observations: durableDispatchObservations,
     orphan_events: orphanEvents,
+    // 42.5: a dispatch made outside a run — `devteam stage --headless` used for
+    // direct remediation — writes a corpus record but no run-log event, so the
+    // durable count above structurally cannot see it. Reporting the number
+    // makes the exclusion explicit instead of silent: a reviewer weighing a D5
+    // threshold can tell "12 dispatches" from "12 that this evidence path can
+    // see, plus 3 it cannot". Null when the corpus was not consulted.
+    ...(dispatchesOutsideRun !== null ? { dispatches_outside_run: dispatchesOutsideRun } : {}),
   };
 
   return {

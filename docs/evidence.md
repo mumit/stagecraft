@@ -37,13 +37,23 @@ The JSON output has `schema_version: "1.0"` and contains aggregate sections:
 | Section | Meaning |
 |---|---|
 | `scope` | observed run, completion, and repair-run counts |
-| `quality` | missing or degraded source counters |
+| `quality` | missing or degraded source counters, including `dispatches_outside_run` — host dispatches the run log structurally cannot see |
 | `routing` | durable dispatch observations, or legacy gate snapshots when no durable history exists, grouped by role, host, and model |
 | `recovery` | fix/retry and convergence counts grouped by stage and failure class |
 | `resolutions` | hash-bound human-accepted retries grouped by stage, failure class, and gate-schema fingerprint |
 | `rulings` | auto-applied ruling counts by grant class |
 | `stalls` | observed stalls grouped by stage and stall class |
 | `readiness` | local conditions and explicit cross-project limitations for each gated capability |
+
+**Dispatches outside a run are excluded explicitly, not silently.**
+`devteam stage --headless`, the direct-remediation path, records a run-corpus
+entry with no `run_id` and writes no run-log event — so run-log-derived
+`durable_dispatch_observations` structurally cannot count it. `quality.dispatches_outside_run`
+reports how many such dispatches the corpus holds, so a reviewer weighing a D5
+threshold can tell "12 dispatches" from "12 this evidence path can see, plus 3
+it cannot". The key is omitted rather than zero-filled when the corpus was not
+consulted, keeping "none" distinct from "could not tell", and a bundle exported
+before it validates unchanged.
 
 `run_count` counts **logical runs, not invocations.** `run_id` is the invocation
 timestamp, and every `devteam run --resume` mints a new one, so a single feature
