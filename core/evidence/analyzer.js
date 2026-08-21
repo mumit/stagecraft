@@ -293,6 +293,7 @@ function analyzeEvidence({ events = [], gates = [], quality = {}, dispatchesOuts
   const recoveryMap = new Map();
   const recoveryRuns = new Map();
   const rulingMap = new Map();
+  const recordedRulingMap = new Map();
   const stallMap = new Map();
 
   runs.forEach((run, runIndex) => {
@@ -306,6 +307,14 @@ function analyzeEvidence({ events = [], gates = [], quality = {}, dispatchesOuts
       if (event.outcome === "auto-ruled") {
         increment(rulingMap, category(event.grant_class));
       }
+      // 42.5: kept in a separate population from auto-ruled on purpose. An
+      // auto-applied ruling is evidence a standing grant already exists; a
+      // hand-recorded one is evidence about what a human chose. ADR-005 asks
+      // which grants operators routinely approve, so merging the two would
+      // answer a different question than the one the gate poses.
+      if (event.outcome === "ruling-recorded") {
+        increment(recordedRulingMap, category(event.ruling_class));
+      }
       if (event.outcome === "stall-detected") {
         increment(stallMap, `${category(event.stage)}\0${category(event.stall_class)}`);
       }
@@ -317,6 +326,7 @@ function analyzeEvidence({ events = [], gates = [], quality = {}, dispatchesOuts
     row.runs = recoveryRuns.get(`${row.stage}\0${row.failure_class}`).size;
   }
   const rulings = rowsFromMap(rulingMap, ["ruling_class"]);
+  const recordedRulings = rowsFromMap(recordedRulingMap, ["ruling_class"]);
   const stalls = rowsFromMap(stallMap, ["stage", "stall_class"]);
   const resolutions = extractResolutions(events);
   const durableRouting = extractDurableRouting(events);
@@ -359,6 +369,7 @@ function analyzeEvidence({ events = [], gates = [], quality = {}, dispatchesOuts
     recovery,
     resolutions,
     rulings,
+    recorded_rulings: recordedRulings,
     stalls,
     readiness: readinessSummary({
       runs,

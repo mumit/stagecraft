@@ -309,3 +309,50 @@ describe("evidence export: dispatches_outside_run (42.5)", () => {
     assert.ok(validateBundle(bad, { verifyDigest: true }).length > 0);
   });
 });
+
+// ─── 42.5: recorded_rulings is an optional, backward-compatible section ──────
+
+describe("evidence export: recorded_rulings (42.5)", () => {
+  function reportWithRecordedRuling(observations = 4) {
+    const base = evidenceReport();
+    return { ...base, recorded_rulings: [{ ruling_class: "doc-only", observations }] };
+  }
+
+  it("carries hand-recorded rulings as their own section", () => {
+    const bundle = createBundle(reportWithRecordedRuling(), projectRef("e".repeat(32)));
+    assert.deepEqual(bundle.recorded_rulings, [{ ruling_class: "doc-only", observations: 4 }]);
+    assert.ok(bundle.rulings.length > 0, "auto-applied rulings are unaffected");
+    assert.deepEqual(validateBundle(bundle, { verifyDigest: true }), []);
+  });
+
+  it("applies the same k-anonymity floor as every other section", () => {
+    // A cell below MIN_EXPORT_CELL is suppressed and counted, not exported —
+    // the new section must not become a way around the export boundary.
+    const bundle = createBundle(reportWithRecordedRuling(2), projectRef("3".repeat(32)));
+    assert.equal("recorded_rulings" in bundle, false, "a 2-observation cell must be suppressed");
+    assert.ok(bundle.suppressed_observations >= 2, "and counted in the suppression total");
+    assert.deepEqual(validateBundle(bundle, { verifyDigest: true }), []);
+  });
+
+  it("omits the section when there are none", () => {
+    const bundle = createBundle(evidenceReport(), projectRef("f".repeat(32)));
+    assert.equal("recorded_rulings" in bundle, false);
+    assert.deepEqual(validateBundle(bundle, { verifyDigest: true }), []);
+  });
+
+  it("a bundle predating the section validates unchanged", () => {
+    const current = createBundle(reportWithRecordedRuling(), projectRef("1".repeat(32)));
+    const { payload_sha256: _digest, ...payload } = current;
+    delete payload.recorded_rulings;
+    const legacy = { ...payload, payload_sha256: payloadDigest(payload) };
+    assert.deepEqual(validateBundle(legacy, { verifyDigest: true }), []);
+  });
+
+  it("rejects a malformed row", () => {
+    const current = createBundle(reportWithRecordedRuling(), projectRef("2".repeat(32)));
+    const { payload_sha256: _digest, ...payload } = current;
+    payload.recorded_rulings = [{ ruling_class: "doc-only", observations: "two" }];
+    const bad = { ...payload, payload_sha256: payloadDigest(payload) };
+    assert.ok(validateBundle(bad, { verifyDigest: true }).length > 0);
+  });
+});

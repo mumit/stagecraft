@@ -42,8 +42,30 @@ The JSON output has `schema_version: "1.0"` and contains aggregate sections:
 | `recovery` | fix/retry and convergence counts grouped by stage and failure class |
 | `resolutions` | hash-bound human-accepted retries grouped by stage, failure class, and gate-schema fingerprint |
 | `rulings` | auto-applied ruling counts by grant class |
+| `recorded_rulings` | rulings a human made and recorded by hand, kept separate from auto-applied ones |
 | `stalls` | observed stalls grouped by stage and stall class |
 | `readiness` | local conditions and explicit cross-project limitations for each gated capability |
+
+**A manual Principal ruling has a typed path.** `--auto-rule` writes an
+`auto-ruled` event, so rulings the driver applied under a standing grant are
+already durable. A ruling an operator made themselves left no typed trace, and
+inferring one from prose in a gate or commit message is not something Stagecraft
+will do. Record it explicitly instead:
+
+```bash
+devteam evidence record-ruling --class doc-only --yes
+```
+
+The record binds to a real observed `judgment-gate` halt — the same safeguard
+ADR-012 gives resolution acceptance — so ruling evidence cannot be minted for an
+escalation that never happened, and the same escalation cannot be recorded
+twice. Only the normalized class is stored; the halt's free-form reason is not.
+
+Recorded rulings stay a **separate population** from auto-applied ones.
+ADR-005 asks which grants operators routinely approve: an auto-applied ruling is
+evidence a standing grant already exists, while a hand-recorded one is evidence
+about what a human chose. Merging them would answer a different question than
+the gate poses.
 
 **Dispatches outside a run are excluded explicitly, not silently.**
 `devteam stage --headless`, the direct-remediation path, records a run-corpus
