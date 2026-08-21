@@ -97,6 +97,25 @@ function appendTestFailures(blockers, execution) {
   }
 }
 
+// A verification that did not run must say so on the gate, not only inside
+// _orchestrator_stamped.runs. Before this, a project with no discoverable test
+// command produced runs.test = { skipped: ... } while the model's claim stood
+// untouched: a stage-06 gate could read `status: PASS, tests_passed: 12,
+// tests_failed: 0` in a repo with no tests, with no blocker and no warning, and
+// every downstream consumer — sign-off, deploy, peer review, the evidence
+// bundle — saw a clean pass.
+//
+// This is the same hole C3 closed for license_check_passed, and it takes the
+// same shape: record the skip, warn on the gate, leave the model's assertion
+// standing rather than inventing a verdict. Non-blocking by design — the
+// orchestrator is reporting an absence of evidence, not a failure.
+function recordSkippedVerification(stamp, gate, kind, reason) {
+  stamp.runs[kind] = { skipped: reason };
+  gate.warnings = Array.isArray(gate.warnings) ? gate.warnings : [];
+  const message = `${kind} unverified by orchestrator: ${reason}`;
+  if (!gate.warnings.includes(message)) gate.warnings.push(message);
+}
+
 // Stage-04a (Pre-Review): orchestrator stamps lint_passed and tests_passed
 // based on actually running the configured commands.
 async function stampStage04a(cwd, gatePath) {
@@ -145,7 +164,7 @@ async function stampStage04a(cwd, gatePath) {
       blockers.push(`lint failed (exit ${result.exitCode}${result.timedOut ? ", timed out" : ""}): ${result.command}`);
     }
   } else {
-    stamp.runs.lint = { skipped: "no lint command configured or discovered" };
+    recordSkippedVerification(stamp, gate, "lint", "no lint command configured or discovered");
   }
 
   // tests_passed (lightweight check at 4a; 06 is the authoritative test stage)
@@ -161,7 +180,7 @@ async function stampStage04a(cwd, gatePath) {
     stamp.runs.test = testRunRecord(testExecution);
     if (!passed) appendTestFailures(blockers, testExecution);
   } else {
-    stamp.runs.test = { skipped: "no test command configured or discovered" };
+    recordSkippedVerification(stamp, gate, "test", "no test command configured or discovered");
   }
 
   // license_check_passed: orchestrator-verified for Node projects; tri-state
@@ -283,7 +302,7 @@ async function stampStage06(cwd, gatePath) {
       stamp.fields.push({ field: "test_command_exit_0", orchestrator: true });
     }
   } else {
-    stamp.runs.test = { skipped: "no test command configured or discovered" };
+    recordSkippedVerification(stamp, gate, "test", "no test command configured or discovered");
   }
 
   // AC→test cross-check: derive `all_acceptance_criteria_met` from the
@@ -949,7 +968,7 @@ async function stampStage04Workstream(cwd, gatePath, { role, allowedWrites } = {
       );
     }
   } else {
-    stamp.runs.lint = { skipped: "no lint command configured or discovered" };
+    recordSkippedVerification(stamp, gate, "lint", "no lint command configured or discovered");
   }
 
   // Not path-scoped: polyglot test commands (npm test / pytest / go test / configured
@@ -967,7 +986,7 @@ async function stampStage04Workstream(cwd, gatePath, { role, allowedWrites } = {
     stamp.runs.test = testRunRecord(testExecution);
     if (!passed) appendTestFailures(blockers, testExecution);
   } else {
-    stamp.runs.test = { skipped: "no test command configured or discovered" };
+    recordSkippedVerification(stamp, gate, "test", "no test command configured or discovered");
   }
 
   return finalizeStamp(gate, gatePath, blockers, stamp);
@@ -1003,7 +1022,7 @@ async function stampStage04Merged(cwd, gatePath) {
     stamp.runs.test = testRunRecord(testExecution);
     if (!passed) appendTestFailures(blockers, testExecution);
   } else {
-    stamp.runs.test = { skipped: "no test command configured or discovered" };
+    recordSkippedVerification(stamp, gate, "test", "no test command configured or discovered");
   }
 
   return finalizeStamp(gate, gatePath, blockers, stamp);

@@ -117,6 +117,75 @@ describe("verify/stamp: stampStage04a — happy path", () => {
     assert.match(r.gate._orchestrator_stamped.runs.lint.skipped, /no lint command/);
     assert.match(r.gate._orchestrator_stamped.runs.test.skipped, /no test command/);
     assert.equal(r.gate.status, "PASS", "skipped runs don't flip status");
+    // The skip must be visible on the gate itself, not only inside
+    // _orchestrator_stamped.runs, or every downstream consumer reads a clean
+    // pass. Same shape C3 used for license_check_passed.
+    // Sits alongside C3's existing license warning, in the same format.
+    for (const expected of [
+      "lint unverified by orchestrator: no lint command configured or discovered",
+      "test unverified by orchestrator: no test command configured or discovered",
+    ]) {
+      assert.ok(r.gate.warnings.includes(expected),
+        `missing ${JSON.stringify(expected)} in ${JSON.stringify(r.gate.warnings)}`);
+    }
+    assert.deepEqual(r.gate.blockers, [], "an absence of evidence is not a failure");
+  });
+
+  it("a stage-06 gate claiming passing tests in a project with none carries the warning", async () => {
+    // The case 42.4 names: nothing ran, yet the gate reads
+    // status PASS / tests_passed 12 / tests_failed 0. The model's claim still
+    // stands — the orchestrator reports that it could not check it, and does
+    // not invent a verdict of its own.
+    const cwd = track(makeTargetProject());
+    const gatePath = seedGateRaw(cwd, "stage-06", {
+      stage: "stage-06", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "loop", timestamp: "2026-08-21T00:00:00Z", blockers: [], warnings: [],
+      scenarios_total: 3, scenarios_passed: 3,
+      tests_passed: 12, tests_failed: 0, failing_tests: [],
+      all_acceptance_criteria_met: true, criterion_to_test_mapping_is_one_to_one: true,
+    });
+    const r = await stampStage06(cwd, gatePath);
+    assert.equal(r.ok, true);
+    assert.ok(
+      r.gate.warnings.includes("test unverified by orchestrator: no test command configured or discovered"),
+      `expected an unverified-tests warning, got ${JSON.stringify(r.gate.warnings)}`,
+    );
+    assert.equal(r.gate.tests_passed, 12, "the model's claim is left standing, not overwritten");
+    assert.equal(r.gate.status, "PASS", "non-blocking: this reports missing evidence, not failure");
+  });
+
+  it("does not warn when a real test command ran", async () => {
+    const cwd = track(makeTargetProject());
+    fs.writeFileSync(path.join(cwd, "package.json"), JSON.stringify({
+      name: "d", version: "1.0.0", scripts: { test: "node -e \"process.exit(0)\"" },
+    }));
+    const gatePath = seedGateRaw(cwd, "stage-06", {
+      stage: "stage-06", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "loop", timestamp: "2026-08-21T00:00:00Z", blockers: [], warnings: [],
+      scenarios_total: 1, scenarios_passed: 1,
+      tests_passed: 1, tests_failed: 0, failing_tests: [],
+      all_acceptance_criteria_met: true, criterion_to_test_mapping_is_one_to_one: true,
+    });
+    const r = await stampStage06(cwd, gatePath);
+    assert.equal(
+      (r.gate.warnings || []).some((w) => /unverified by orchestrator/.test(w)), false,
+      "a suite that actually ran must not be reported as unverified",
+    );
+  });
+
+  it("does not duplicate the warning when a gate is re-stamped", async () => {
+    const cwd = track(makeTargetProject());
+    const seed = {
+      stage: "stage-04a", status: "PASS", orchestrator: "devteam@test", host: "generic",
+      track: "full", timestamp: "2026-06-02T12:00:00Z", blockers: [], warnings: [],
+      lint_passed: true, tests_passed: true,
+      dependency_review_passed: true, security_review_required: false,
+    };
+    const gatePath = seedGateRaw(cwd, "stage-04a", seed);
+    await stampStage04a(cwd, gatePath);
+    const r = await stampStage04a(cwd, gatePath);
+    const unverified = r.gate.warnings.filter((w) => /test unverified by orchestrator/.test(w));
+    assert.equal(unverified.length, 1, `re-stamping must not append duplicates: ${JSON.stringify(r.gate.warnings)}`);
   });
 
   // Audit P2-7: middle path of the command-resolution fall-through chain.
