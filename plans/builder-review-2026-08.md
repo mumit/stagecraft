@@ -10,8 +10,8 @@ throwaway projects on 2026-08-20 — a fresh `git init`, `npm init`, one source 
 `devteam init --host claude-code`. Where a claim is about code rather than behavior, the
 file and line are cited so it can be re-checked.
 
-Findings carry IDs (F1–F8) so they can be referenced from commits and PRs. Five are fixed;
-two are deliberately left open because they need a recorded decision rather than a patch.
+Findings carry IDs (F1–F8) so they can be referenced from commits and PRs. Six are fixed, one
+was closed by measurement rather than built, and F5 is a refactor in progress.
 
 - [1. Headline](#1-headline)
 - [2. Findings](#2-findings)
@@ -33,7 +33,7 @@ a model.
 Three things were wrong underneath it:
 
 1. **Three shipped features silently cancel each other out** on `build` and `qa`, the two
-   most expensive stages (F1 — still open).
+   most expensive stages (F1 — fixed, [ADR-023](../docs/adr/023-goal-condition-in-prompt-body.md)).
 2. **A stale 30-line lookup table**, not insufficient dogfooding, is what held the Phase 41
    evidence gates shut (F3 — fixed).
 3. **Stagecraft's own installed files were being read as the operator's diff** by three
@@ -66,7 +66,7 @@ of the roadmap.
 
 | ID | Finding | Severity | Status |
 |---|---|---|---|
-| F1 | `build`/`qa` discard the inlined framework and retry guidance on every dispatch to fit a `/goal` directive that only sometimes survives | Critical | ADR-023 proposed |
+| F1 | `build`/`qa` discard the inlined framework and retry guidance on every dispatch to fit a `/goal` directive that only sometimes survives | Critical | Fixed (#435, [ADR-023](../docs/adr/023-goal-condition-in-prompt-body.md) accepted) |
 | F2 | The changed-file manifest treats Stagecraft's own install as the user's diff | High | Fixed (#431) |
 | F3 | Cost telemetry is structurally impossible, which is what blocks the Phase 41 gates | High | Fixed (#429, #430) |
 | F4 | Prompt budget is ~99% process and ~1% project | Medium | **Closed — not worth doing**; see §4 |
@@ -75,7 +75,7 @@ of the roadmap.
 | F7 | CLI vocabulary drifts across commands | Medium | Fixed (#433) |
 | F8 | Track inference promoted every new project to `full` because of the word "authoring" | High | Fixed (#431) |
 
-### F1 — `build` and `qa` lose their framework to a `/goal` directive (ADR-023)
+### F1 — `build` and `qa` lose their framework to a `/goal` directive (fixed, #435)
 
 Exactly two stages declare a `goalCondition`: `build` (stage-04) and `qa` (stage-06) — the
 two most expensive and most retry-prone stages in the pipeline. Both primary hosts,
