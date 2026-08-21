@@ -46,6 +46,20 @@ The JSON output has `schema_version: "1.0"` and contains aggregate sections:
 | `stalls` | observed stalls grouped by stage and stall class |
 | `readiness` | local conditions and explicit cross-project limitations for each gated capability |
 
+**Accepting a resolution when a later stage escalated.** `accept-resolution`
+takes the newest unaccepted fix/retry by default. A run that retried `stage-04`
+successfully and then escalated at `stage-06` leaves the newest slot holding a
+retry that never resolved — correctly refused, since the stage must have ended
+up passing. Name the stage that did resolve:
+
+```bash
+devteam evidence accept-resolution --stage stage-04 --yes
+```
+
+The selector chooses which resolution to consider; it never bypasses the
+requirement that the stage's current gate is PASS. When the default is refused
+and other stages have unaccepted resolutions, the error names them.
+
 **A manual Principal ruling has a typed path.** `--auto-rule` writes an
 `auto-ruled` event, so rulings the driver applied under a standing grant are
 already durable. A ruling an operator made themselves left no typed trace, and

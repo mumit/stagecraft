@@ -33,6 +33,7 @@ const flags = {
   delete: { type: "boolean", description: "Delete the local project identity" },
   yes: { type: "boolean", description: "Confirm identity mutation, resolution acceptance, or ruling record" },
   class: { type: "string", description: "Ruling class for record-ruling (lowercase-kebab, e.g. formatting-only)" },
+  stage: { type: "string", description: "Stage to accept a resolution for (default: the newest unaccepted one)" },
   attestation: { type: "boolean", description: "Export an in-toto-shaped, per-stage attestation instead of the aggregate bundle" },
   track: { type: "string", description: "Override the pipeline track for --attestation chain verification" },
   "allow-unverified": { type: "boolean", description: "Attest even when the gate chain is broken, stamping the bundle as unverified" },
@@ -263,7 +264,7 @@ function runAcceptResolution(commandFlags) {
   const config = loadConfig(cwd);
   checkBoundedFence(config, name);
   const changeId = resolveChangeId(commandFlags, config);
-  const event = appendAcceptedResolution(pipelineRoot(cwd, changeId));
+  const event = appendAcceptedResolution(pipelineRoot(cwd, changeId), { stage: commandFlags.stage });
   const output = {
     accepted: true,
     stage: event.stage,
