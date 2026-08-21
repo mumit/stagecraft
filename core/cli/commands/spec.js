@@ -9,6 +9,7 @@ const name = "spec";
 const flags = {
   cwd:     { type: "string",  description: "Target project directory" },
   strict:  { type: "boolean", description: "Also fail on multi-mapped criteria" },
+  track:   { type: "string",  description: "Track to verify against (default: the project's active track)" },
   json:    { type: "boolean", description: "JSON output" },
   force:   { type: "boolean", description: "Overwrite existing spec.feature" },
   feature: { type: "string",  description: "Feature name for scaffold" },
@@ -34,9 +35,45 @@ function run(positional, _flags) {
     const { verify } = require(path.join(FRAMEWORK_ROOT, "core", "spec", "verify"));
     const report = verify(cwd, { strictMapping: !!_flags.strict, pipelineDir });
 
+    // 42.4: an artifact a stage never produces is not drift. `executable-spec`
+    // is absent from loop, nano, refactor, and every review track, so on those
+    // a missing spec.feature was reported as "❌ MISSING" and counted toward
+    // drift — indistinguishable from a spec that should exist and does not.
+    //
+    // resolveActiveTrack is the same resolver `verify`, `verify-chain`,
+    // `stamp-chain`, and `stage` use, so this reports against the track that
+    // would actually execute — including a materialized run plan, which
+    // outranks the mutable config default.
+    //
+    // An unknown track name still reports drift: suppressing it there would
+    // turn a typo in default_track into a silent pass.
+    const { resolveActiveTrack, trackLabel } =
+      require(path.join(FRAMEWORK_ROOT, "core", "pipeline", "active-track"));
+    const { isStageInTrack, TRACKS } = require(path.join(FRAMEWORK_ROOT, "core", "pipeline", "stages"));
+    const active = resolveActiveTrack(cwd, config, _flags.track, changeId);
+    const knownTrack = Array.isArray(active.track) || TRACKS.includes(active.track);
+    const applicable = !knownTrack || isStageInTrack("executable-spec", active.track);
+    report.track = trackLabel(active.track);
+    report.track_source = active.source;
+    report.applicable = applicable;
+    if (!applicable) {
+      report.status = "not-applicable";
+      report.drift = false;
+    }
+
     if (_flags.json) {
       console.log(JSON.stringify(report, null, 2));
       process.exit(report.drift ? 1 : 0);
+    }
+
+    if (!applicable) {
+      console.log(`Executable spec verification — ${cwd}`);
+      console.log("");
+      console.log(`  not-applicable — the "executable-spec" stage is not in track "${report.track}" (${active.source}).`);
+      console.log("  Nothing is expected to produce pipeline/spec.feature here, so there is no drift to report.");
+      console.log("");
+      console.log("  Verify against a track that includes it with: devteam spec verify --track full");
+      process.exit(0);
     }
 
     const criteriaArtifact = report.artifacts.criteria;
