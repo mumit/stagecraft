@@ -2774,3 +2774,34 @@ describe("driver: --plan-only (run-plan preview)", () => {
     assert.equal(s.halt_action, "unconfirmed-track");
   });
 });
+
+// ─── 42.5: the lineage id survives every resume ─────────────────────────────
+
+describe("driver: logical run identity (42.5)", () => {
+  it("carries one logical_run_id across a fresh run and its resumes", async () => {
+    const cwd = track(makeTargetProject());
+    const halt = () => ({ action: "run-stage", stage: "stage-01", name: "requirements", reason: "test" });
+    await run({ cwd, feature: "add a thing", track: "loop", maxIterations: 0, next: halt });
+    await run({ cwd, resume: true, maxIterations: 0, next: halt });
+    await run({ cwd, resume: true, maxIterations: 0, next: halt });
+
+    const events = fs.readFileSync(path.join(cwd, "pipeline", "run-log.jsonl"), "utf8")
+      .trim().split("\n").map((l) => JSON.parse(l));
+    const starts = events.filter((e) => e.outcome === "run-start");
+    assert.equal(starts.length, 3, "each invocation still emits its own run-start");
+    const ids = new Set(starts.map((e) => e.logical_run_id));
+    assert.equal(ids.size, 1, `all three must share one lineage id, got ${JSON.stringify([...ids])}`);
+    assert.ok([...ids][0], "the id must be set, not undefined");
+  });
+
+  it("a separate feature gets its own lineage", async () => {
+    const cwd = track(makeTargetProject());
+    const halt = () => ({ action: "run-stage", stage: "stage-01", name: "requirements", reason: "test" });
+    await run({ cwd, feature: "first thing", track: "loop", maxIterations: 0, next: halt });
+    const first = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    fs.rmSync(path.join(cwd, "pipeline", "run-state.json"));
+    await run({ cwd, feature: "second thing", track: "loop", maxIterations: 0, next: halt });
+    const second = JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    assert.notEqual(first.logical_run_id, second.logical_run_id);
+  });
+});
