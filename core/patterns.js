@@ -13,6 +13,10 @@ const PROMOTED_FILE = "promoted.json";
 const RETIRED_FILE = "retired.json";
 const DEMOTED_FILE = "demoted.json";
 const PENDING_FILE = "pending-review.json";
+// Seeded proposal text, keyed by pattern_key. Its own store for the same
+// reason retired/demoted have theirs: pending-review.json is rewritten by
+// every collect(), and a seeded proposal has to survive that.
+const SEEDED_FILE = "seeded.json";
 const RECURRENCE_CHECKED_FILE = "recurrence-checked.json";
 
 const DEFAULT_BUDGET = Object.freeze({
@@ -411,7 +415,7 @@ function collect({ cwd, pipelineRoot }) {
   const all = [...byFingerprint.values()];
   writeObservations(cwd, all);
 
-  const rawCandidates = candidatesFromObservations(all);
+  const rawCandidates = candidatesFromObservations(all, loadSeededTexts(cwd));
   // 30.1: a retired pattern's identity (id, derived from pattern_key the same
   // way promote()/retire() do) must not re-enter the candidate pool from the
   // same observations that got it retired — retirement is a one-way decision
@@ -452,7 +456,74 @@ function ingestReflectorCandidates({ cwd, candidates }) {
   return { added, total: byFingerprint.size };
 }
 
-function candidatesFromObservations(observations) {
+// Cold-start seeding (core/learning/seed.js). Lands normative statements the
+// project already documents as CANDIDATES, so a new project's agents start
+// from its written conventions instead of rediscovering them by failing a
+// gate. Structurally identical to reflector ingestion — same observation
+// store, same fingerprint dedup, same human promotion gate — with one
+// difference: a seeded candidate carries the statement itself as its proposed
+// prompt text, because a templated per-domain sentence cannot express "use
+// node: prefixes on built-in imports". The observation record stays prose-free
+// exactly as before; the text lives on the candidate the operator reviews.
+function ingestSeedCandidates({ cwd, statements }) {
+  if (!Array.isArray(statements) || statements.length === 0) {
+    return { added: 0, total: readObservations(cwd).length, texts: {} };
+  }
+  const existing = readObservations(cwd);
+  const byFingerprint = new Map(existing.map((item) => [item.fingerprint, item]));
+  const texts = {};
+  let added = 0;
+  for (const statement of statements) {
+    if (!statement || typeof statement.text !== "string") continue;
+    const gate = { stage: "seed", status: null, workstream: "backend" };
+    const item = { text: statement.text, note: statement.text };
+    const obs = observationFor({ cwd, gate, item, tier: "nudge", source: "seed" });
+    if (!byFingerprint.has(obs.fingerprint)) {
+      byFingerprint.set(obs.fingerprint, obs);
+      added += 1;
+    }
+    // Keyed by pattern_key so it reaches the candidate the operator reviews.
+    // First statement for a key wins; a later restatement does not overwrite.
+    if (!texts[obs.pattern_key]) {
+      texts[obs.pattern_key] = { text: statement.text, source: statement.source };
+    }
+  }
+  if (added > 0) writeObservations(cwd, [...byFingerprint.values()]);
+  return { added, total: byFingerprint.size, texts };
+}
+
+// `devteam patterns seed`. Reads the project's own convention documents and
+// lands what they already mandate as candidates. Rewrites pending-review.json
+// the same way collect() does, so `patterns review` shows seeded and
+// gate-derived candidates in one queue.
+function seed(cwd, opts = {}) {
+  const { extractConventions } = require("./learning/seed");
+  const statements = extractConventions(cwd, opts);
+  const { added, total, texts } = ingestSeedCandidates({ cwd, statements });
+  const merged = { ...loadSeededTexts(cwd), ...texts };
+  writeJson(patternsPath(cwd, SEEDED_FILE), { schema_version: SCHEMA_VERSION, texts: merged });
+  const all = readObservations(cwd);
+  const retiredIds = new Set(loadRetired(cwd).map((item) => item.id));
+  const rawCandidates = candidatesFromObservations(all, merged);
+  const candidates = rawCandidates.filter((item) => !retiredIds.has(item.id));
+  writeJson(patternsPath(cwd, PENDING_FILE), { schema_version: SCHEMA_VERSION, candidates });
+  return {
+    scanned: statements.length,
+    added,
+    total,
+    candidates: candidates.length,
+    suppressed: rawCandidates.length - candidates.length,
+    sources: [...new Set(statements.map((item) => item.source))],
+    dir: patternsDir(cwd),
+  };
+}
+
+function loadSeededTexts(cwd) {
+  const data = readJson(patternsPath(cwd, SEEDED_FILE));
+  return data && typeof data.texts === "object" && data.texts ? data.texts : {};
+}
+
+function candidatesFromObservations(observations, seedTexts = {}) {
   const groups = new Map();
   for (const obs of observations) {
     if (!obs || !obs.pattern_key) continue;
@@ -470,6 +541,12 @@ function candidatesFromObservations(observations) {
       frameworks: new Set(),
       sources: new Set(),
       proposed_prompt_text: proposedPromptText(obs),
+      // A seeded candidate proposes the project's own sentence; the
+      // per-domain template cannot express a specific house rule.
+      ...(seedTexts[key] ? {
+        proposed_prompt_text: seedTexts[key].text,
+        proposed_from: seedTexts[key].source,
+      } : {}),
       last_seen: null,
     };
     existing.observations += 1;
@@ -515,7 +592,7 @@ function proposedPromptText(obs) {
 function list({ cwd }) {
   return {
     observations: readObservations(cwd),
-    candidates: candidatesFromObservations(readObservations(cwd)),
+    candidates: candidatesFromObservations(readObservations(cwd), loadSeededTexts(cwd)),
     promoted: loadPromoted(cwd),
     retired: loadRetired(cwd),
     demoted: loadDemoted(cwd),
@@ -553,7 +630,7 @@ function promote({ cwd, candidateId, text }) {
     return record;
   }
 
-  const candidates = candidatesFromObservations(readObservations(cwd));
+  const candidates = candidatesFromObservations(readObservations(cwd), loadSeededTexts(cwd));
   const candidate = candidates.find((item) => item.id === candidateId || item.pattern_key === candidateId);
   if (!candidate) throw new Error(`unknown pattern candidate: ${candidateId}`);
   const promptText = String(text || candidate.proposed_prompt_text || "").trim();
@@ -858,6 +935,7 @@ module.exports = {
   RETIRED_FILE,
   DEMOTED_FILE,
   PENDING_FILE,
+  SEEDED_FILE,
   RECURRENCE_CHECKED_FILE,
   DEFAULT_BUDGET,
   DEFAULT_SKILL_NAME,
@@ -866,6 +944,8 @@ module.exports = {
   resolveSkillExportDir,
   collect,
   ingestReflectorCandidates,
+  ingestSeedCandidates,
+  seed,
   list,
   promote,
   retire,

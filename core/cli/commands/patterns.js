@@ -78,7 +78,7 @@ function renderDemoted(pattern) {
 
 function run(positional, commandFlags) {
   if (commandFlags.help) {
-    console.log(generateHelp("devteam patterns <collect|list|review|promote|retire|demote|export|stats> [options]", flags));
+    console.log(generateHelp("devteam patterns <collect|seed|list|review|promote|retire|demote|export|stats> [options]", flags));
     process.exit(0);
   }
   const sub = positional[0];
@@ -90,6 +90,25 @@ function run(positional, commandFlags) {
     console.log(`Collected ${result.added} new pattern observation(s) (${result.total} total).`);
     console.log(`Candidates: ${result.candidates}`);
     console.log(`Store: ${path.relative(cwd, result.dir) || result.dir}`);
+    return;
+  }
+
+  if (sub === "seed") {
+    const result = patterns.seed(cwd);
+    if (commandFlags.json) { console.log(JSON.stringify(result, null, 2)); return; }
+    if (result.scanned === 0) {
+      console.log("No documented conventions found.");
+      console.log(`Looked in: ${require("../../learning/seed").SOURCE_FILES.join(", ")}`);
+      console.log("Seeding reads normative statements (must / never / always / prefer / avoid) from those files.");
+      return;
+    }
+    console.log(`Read ${result.scanned} documented convention(s) from ${result.sources.join(", ")}.`);
+    console.log(`Added ${result.added} new candidate observation(s) (${result.total} total).`);
+    console.log(`Candidates awaiting review: ${result.candidates}`);
+    console.log("");
+    console.log("Nothing reaches a prompt until you promote it:");
+    console.log("  devteam patterns review");
+    console.log("  devteam patterns promote <candidate-id>");
     return;
   }
 
@@ -204,7 +223,7 @@ function run(positional, commandFlags) {
   }
 
   console.error(`Unknown patterns subcommand: ${sub || "(none)"}`);
-  console.error("Usage: devteam patterns <collect|list|review|promote|retire|demote|export|stats>");
+  console.error("Usage: devteam patterns <collect|seed|list|review|promote|retire|demote|export|stats>");
   process.exit(2);
 }
 
