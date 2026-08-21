@@ -1,6 +1,6 @@
 # ADR 023 — Convergence conditions belong in the prompt, not a host slash command
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-20
 **Authors:** Stagecraft maintainers
 
