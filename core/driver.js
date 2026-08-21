@@ -1113,6 +1113,17 @@ async function run(opts = {}) {
     state.prior_run_id = state.started_at;
     state.started_at = nowTs;
   }
+  // 42.5: run_id is the invocation (state.started_at), and every --resume mints
+  // a new one. Evidence counted one "run" per run-start event, so a single
+  // logical feature change driven through two resumes was three runs in the
+  // denominator — which is what the 2026-08-19 Phase 41 review hit when it
+  // recorded 10 run records for far fewer real changes.
+  //
+  // The lineage root is the stable identity: set once, then carried forward by
+  // run-state.json across every resume. Local only — run-log.jsonl is
+  // gitignored operational state, and this value never enters an exported
+  // bundle. The evidence layer uses it to *group*, and emits a count.
+  state.logical_run_id = state.logical_run_id || state.started_at;
   // PR-B counters (resilient to a resumed state that predates them).
   state.fixRetries = state.fixRetries || {};      // code-defect re-dispatches per stage
   state.safety_policy = safetyPolicy;
@@ -1377,6 +1388,7 @@ async function run(opts = {}) {
     // ADR-006 §2/4: run-start event captures track provenance before any check.
     logEvent(cwd, changeId, {
       outcome: "run-start",
+      logical_run_id: state.logical_run_id,
       track: Array.isArray(effectiveTrack) ? effectiveTrack.join(",") : effectiveTrack,
       track_source: trackSource,
       track_confidence: trackConfidence,

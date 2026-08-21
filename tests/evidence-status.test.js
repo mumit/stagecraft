@@ -452,3 +452,68 @@ describe("devteam evidence status", () => {
     assert.equal(fs.existsSync(path.join(cwd, "pipeline", "run-log.jsonl")), false);
   });
 });
+
+// ─── 42.5: one logical feature run is one denominator entry ─────────────────
+
+describe("evidence: logical run identity across resumes", () => {
+  const { analyzeEvidence } = require(path.join(REPO_ROOT, "core", "evidence", "analyzer"));
+
+  const lineage = [
+    { outcome: "run-start", intent: "feature", logical_run_id: "T0" },
+    { outcome: "fix-retry", stage: "stage-04", failure_class: "code-defect" },
+    { outcome: "run-start", intent: "feature", logical_run_id: "T0" },
+    { outcome: "fix-retry", stage: "stage-06", failure_class: "code-defect" },
+    { outcome: "run-start", intent: "feature", logical_run_id: "T0" },
+    { outcome: "complete" },
+  ];
+
+  it("counts one change driven through two resumes as one run", () => {
+    // The conflation the 2026-08-19 Phase 41 review hit: run_id is the
+    // invocation, and every --resume mints a new one, so a single logical
+    // change inflated the denominator readiness logic divides by.
+    const report = analyzeEvidence({ events: lineage, gates: [], quality: {} });
+    assert.equal(report.scope.run_count, 1, "three invocations, one logical change");
+    assert.equal(report.scope.complete_run_count, 1);
+    assert.equal(report.quality.orphan_events, 0);
+  });
+
+  it("still separates genuinely distinct changes", () => {
+    const report = analyzeEvidence({
+      events: [...lineage,
+        { outcome: "run-start", intent: "feature", logical_run_id: "T9" },
+        { outcome: "complete" }],
+      gates: [], quality: {},
+    });
+    assert.equal(report.scope.run_count, 2);
+    assert.equal(report.scope.complete_run_count, 2);
+  });
+
+  it("keeps the intent of the run that opened the lineage", () => {
+    const report = analyzeEvidence({
+      events: [
+        { outcome: "run-start", intent: "repair", logical_run_id: "T1" },
+        { outcome: "run-start", intent: "repair", logical_run_id: "T1" },
+        { outcome: "complete" },
+      ],
+      gates: [], quality: {},
+    });
+    assert.equal(report.scope.repair_run_count, 1);
+  });
+
+  it("a log predating the field behaves exactly as before", () => {
+    // Backward compatibility is the whole reason this groups rather than
+    // rewrites: an older run-log has no lineage to group by.
+    const legacy = lineage.map(({ logical_run_id, ...rest }) => rest); // eslint-disable-line no-unused-vars
+    const report = analyzeEvidence({ events: legacy, gates: [], quality: {} });
+    assert.equal(report.scope.run_count, 3, "one run per run-start, as before");
+    assert.equal(report.scope.complete_run_count, 1);
+  });
+
+  it("never copies the lineage id into the report", () => {
+    // logical_run_id is a local timestamp. run-log.jsonl is gitignored
+    // operational state; the exported surface stays a count, per the privacy
+    // boundary in docs/evidence.md (timestamps are never copied).
+    const report = analyzeEvidence({ events: lineage, gates: [], quality: {} });
+    assert.equal(JSON.stringify(report).includes("T0"), false);
+  });
+});

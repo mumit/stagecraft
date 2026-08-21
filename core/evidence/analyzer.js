@@ -6,14 +6,38 @@ const { sourceEventRef } = require("./resolutions");
 const KNOWN_STATUSES = new Set(["PASS", "WARN", "FAIL", "ESCALATE"]);
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
+// 42.5: one run-start is one *invocation*, and every `devteam run --resume`
+// emits another. Counting them made a single logical feature change look like
+// several runs in the denominator — the conflation the 2026-08-19 Phase 41
+// review flagged before using run_count as a readiness measure.
+//
+// Runs carrying a logical_run_id (the lineage root, written by core/driver.js)
+// are grouped by it, so a change driven through two resumes is one run with one
+// completion. The id is used only for grouping: it is a local timestamp and
+// never reaches the exported bundle, which stays a count.
+//
+// Backward compatible by construction — a log predating the field has no
+// logical_run_id, so each run-start remains its own run exactly as before.
 function groupRuns(events) {
   const runs = [];
+  const byLogicalId = new Map();
   let current = null;
   let orphanEvents = 0;
   for (const event of events) {
     if (event.outcome === "run-start") {
-      current = { intent: category(event.intent), events: [] };
-      runs.push(current);
+      const logicalId = typeof event.logical_run_id === "string" && event.logical_run_id
+        ? event.logical_run_id
+        : null;
+      const existing = logicalId ? byLogicalId.get(logicalId) : null;
+      if (existing) {
+        // A resume of a run we have already seen: continue it rather than
+        // opening a second denominator entry for the same change.
+        current = existing;
+      } else {
+        current = { intent: category(event.intent), events: [] };
+        runs.push(current);
+        if (logicalId) byLogicalId.set(logicalId, current);
+      }
     }
     if (!current) {
       orphanEvents += 1;

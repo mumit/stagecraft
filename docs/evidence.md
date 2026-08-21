@@ -45,6 +45,16 @@ The JSON output has `schema_version: "1.0"` and contains aggregate sections:
 | `stalls` | observed stalls grouped by stage and stall class |
 | `readiness` | local conditions and explicit cross-project limitations for each gated capability |
 
+`run_count` counts **logical runs, not invocations.** `run_id` is the invocation
+timestamp, and every `devteam run --resume` mints a new one, so a single feature
+change driven through two resumes used to appear three times in the denominator
+readiness logic divides by. The driver now carries a `logical_run_id` — the
+lineage root, preserved across resumes in `run-state.json` — on each `run-start`
+event, and the analyzer groups by it. The id itself stays local:
+`pipeline/run-log.jsonl` is gitignored operational state, and the exported
+surface remains a count. A run log written before this field behaves exactly as
+before, one run per `run-start`.
+
 Free-form reasons, blockers, warnings, questions, rulings, paths, timestamps, feature
 text, and model output are never copied into the report. Invalid category strings are
 collapsed to `other`.

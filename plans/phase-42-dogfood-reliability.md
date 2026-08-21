@@ -112,12 +112,16 @@ answer the question without conflating invocations and feature changes.
 
 **Acceptance:**
 
-- one logical feature run with several resumes has one documented denominator;
+- one logical feature run with several resumes has one documented denominator
+  — ✅ `logical_run_id` (the lineage root, carried across resumes) groups
+  `run_count`; the id stays local and the bundle stays a count;
 - every host dispatch, including direct remediation, is either durably counted
-  or explicitly excluded with a reason;
+  or explicitly excluded with a reason — ⬜ open;
 - manual Principal rulings are not inferred from prose, but the CLI offers a
-  supported typed path to record them;
-- bundle schema evolution is backward-compatible and duplicate-safe.
+  supported typed path to record them — ⬜ open;
+- bundle schema evolution is backward-compatible and duplicate-safe — ✅ for
+  this change: no bundle field was added or renamed, and a run log written
+  before `logical_run_id` counts exactly as it did before.
 
 ## 42.6 Dogfood bootstrap isolation (P2)
 
