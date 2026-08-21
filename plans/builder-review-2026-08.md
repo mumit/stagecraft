@@ -70,7 +70,7 @@ of the roadmap.
 | F2 | The changed-file manifest treats Stagecraft's own install as the user's diff | High | Fixed (#431) |
 | F3 | Cost telemetry is structurally impossible, which is what blocks the Phase 41 gates | High | Fixed (#429, #430) |
 | F4 | Prompt budget is ~99% process and ~1% project | Medium | **Closed — not worth doing**; see §4 |
-| F5 | The driver's core loop is a 1,730-line function | Medium | Open — Wave 1 |
+| F5 | The driver's core loop is a 1,730-line function | Medium | In progress — slice 1 extracted |
 | F6 | The factory default contradicts the documentation | Medium | Fixed (#432) |
 | F7 | CLI vocabulary drifts across commands | Medium | Fixed (#433) |
 | F8 | Track inference promoted every new project to `full` because of the word "authoring" | High | Fixed (#431) |
@@ -224,6 +224,16 @@ entire orchestrators. `driver.js` is 2,604 lines; `orchestrator.js` is 2,754.
 This is not causing bugs today; the suite is thorough. It is a velocity tax on exactly the
 work Phase 42 has left — resume semantics, retry ownership, and evidence accounting all
 live inside that function.
+
+> **Slice 1 landed (2026-08-21).** The run-end side-effect phase — pattern auto-collection,
+> the opt-in Reflector pass, memory auto-ingest, and the resolution linker — moved to
+> `core/driver-runend.js`. It was the cleanest available seam: four fire-and-forget passes
+> after the lock releases, none of which touches `summary`. `run()` is 1,725 lines, down
+> from 1,780. The whole suite passed with **no test changes**, which is the evidence the
+> extraction was behavior-preserving; 13 characterization tests now pin the seam so the next
+> slice has something to break. Remaining candidates, roughly by size: the ~300-line
+> prologue (config pinning, track resolution, changeId derivation, dependency injection) and
+> the ~35-line final-persistence `finally` block.
 
 ### F6 — Factory default contradicted the docs (fixed, #432)
 

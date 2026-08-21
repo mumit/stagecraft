@@ -67,6 +67,7 @@ const {
   transitionResult,
   applyTransitionResult,
 } = require("./driver-transition");
+const { runEndEffects } = require("./driver-runend");
 const {
   dispatchGuardTransition,
   normalizeDispatchResults,
@@ -2592,13 +2593,10 @@ async function run(opts = {}) {
     releaseLock(cwd, changeId);
   }
 
-  // Phase 30 item 30.1: fire-and-forget pattern auto-collection at run end —
-  // closes the loop that previously required a manual `devteam patterns
-  // collect`. Runs on a clean completion, and on any halt where this run's
-  // gates directory holds at least one gate (a halt before any stage ever
-  // wrote a gate, e.g. --repair/--feature mutual exclusion or a pre-flight
-  // stoplist match, has nothing to collect). Never affects summary or exit
-  // code — a collection failure is logged, not thrown.
+  // Run-end side effects: pattern auto-collection, the opt-in Reflector pass,
+  // memory auto-ingest, and the resolution linker. All four are fire-and-forget
+  // and none touches `summary`, which is why they extract cleanly — see
+  // core/driver-runend.js. Behavior, ordering, and log outcomes are unchanged.
   const gateOnDisk = (() => {
     try {
       return fs.readdirSync(gatesDir(cwd, changeId))
@@ -2607,70 +2605,18 @@ async function run(opts = {}) {
       return false;
     }
   })();
-  if (summary.completed || (summary.halted && gateOnDisk)) {
-    try {
-      _collectPatterns({ cwd, pipelineRoot: pipelineRoot(cwd, changeId) });
-    } catch (err) {
-      logEvent(cwd, changeId, { outcome: "pattern-collect-failed", error: String((err && err.message) || err) });
-    }
-  }
-
-  // Phase 30 item 30.3: opt-in run-end Reflector dispatch. Only on a clean
-  // completion (not on halts — a halted run's evidence is incomplete) and
-  // only when learning.reflector: true. Fire-and-forget like auto-collection
-  // above: runReflector() already never throws (see core/learning/reflector.js),
-  // but the try/catch here is defense in depth so a future defect there still
-  // can't take down the run summary.
-  if (summary.completed && config.learning.reflector === true) {
-    try {
-      await _runReflector({
-        cwd,
-        changeId,
-        pipelineRoot: pipelineRoot(cwd, changeId),
-        config,
-        logEvent: (entry) => logEvent(cwd, changeId, entry),
-      });
-    } catch (err) {
-      logEvent(cwd, changeId, { outcome: "reflector-dispatch-failed", reason: String((err && err.message) || err) });
-    }
-  }
-
-  // Phase 30 item 30.4: auto-ingest at pipeline-complete — the write side of
-  // the closed loop (30.4's read side is memory retrieval into stage prompts,
-  // core/orchestrator.js resolvePriorKnowledgeOpts()). docs/memory.md already
-  // named "end of pipeline" as a designed ingest trigger point; this wires it
-  // up instead of requiring a manual `devteam memory ingest`. Gated on
-  // .devteam/memory/ already existing — same "opted in once, stays wired up"
-  // condition as the read side — so a project that has never run `devteam
-  // memory ingest` sees zero behavior change (no embedder load, no model
-  // download attempt) and reuses memory.inject as the single off switch for
-  // both sides of the loop. Fire-and-forget like auto-collection and the
-  // reflector above: an ingest failure is logged, never thrown — it must never
-  // fail an otherwise-clean run. This also covers an explicitly selected local
-  // provider whose separately installed transformer dependency is absent.
-  if (summary.completed && config.memory.inject !== false && fs.existsSync(path.join(cwd, ".devteam", "memory"))) {
-    try {
-      const result = await _ingestMemory({ cwd });
-      logEvent(cwd, changeId, { outcome: "memory-ingest", artifacts: result.artifacts, chunks: result.chunks });
-    } catch (err) {
-      logEvent(cwd, changeId, { outcome: "memory-ingest-failed", error: String((err && err.message) || err) });
-    }
-  }
-
-  // Phase-33 item 33.1: resolution-linker pass at run end. Runs whenever this
-  // run wrote at least one gate (same condition as pattern auto-collection
-  // above) regardless of completed/halted — a fix-retry can clear a
-  // previously-captured eval case within the same run that later halts on
-  // something unrelated. Fire-and-forget: never affects summary or exit code.
-  if (gateOnDisk && config.evals.capture !== false) {
-    try {
-      const { linkResolutions } = require("./evals/capture");
-      const result = linkResolutions(cwd, { changeId });
-      if (result.linked > 0) logEvent(cwd, changeId, { outcome: "evals-resolution-linked", linked: result.linked });
-    } catch (err) {
-      logEvent(cwd, changeId, { outcome: "evals-resolution-link-failed", error: String((err && err.message) || err) });
-    }
-  }
+  await runEndEffects({
+    cwd,
+    changeId,
+    summary,
+    config,
+    gateOnDisk,
+    logEvent: (entry) => logEvent(cwd, changeId, entry),
+    pipelineRoot: pipelineRoot(cwd, changeId),
+    collectPatterns: _collectPatterns,
+    runReflector: _runReflector,
+    ingestMemory: _ingestMemory,
+  });
 
   return summary;
 }
