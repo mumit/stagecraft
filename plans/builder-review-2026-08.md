@@ -528,8 +528,14 @@ because that is what distinguishes an improvement from a regression.
 3. **Extend proposal/apply to rulings, retry ownership, and pattern text.**
 4. **Run-scoped chat sessions** so the context that understands a halt survives between
    commands.
-5. **Re-run the Phase 41 review.** With cost coverage real and a second host in the routing
-   table, D5 becomes answerable for the first time.
+5. ~~**Re-run the Phase 41 review.**~~ **Done 2026-08-21** —
+   [`phase-41-evidence-review-2026-08-21.md`](phase-41-evidence-review-2026-08-21.md).
+   Still NO-GO, and it found that F3's fix is incomplete: the gate-level cost telemetry
+   works (a fresh run's corpus carries $1.88 across 4/5 dispatches), but
+   `dispatchObservation` records the *model-asserted* cost and model rather than the
+   observed ones, so the evidence path still reports `cost_obs: 0`. `costEntryForGate` is
+   defined immediately above it with the right precedence and is not used. That one fix,
+   plus a second project and a second host, is what the gate now waits on.
 
 ---
 

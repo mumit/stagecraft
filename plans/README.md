@@ -99,6 +99,7 @@ They document why certain capability gates remain shut and what would open them.
 | [h3-ground-truth.md](h3-ground-truth.md) | 9.2a — H3 recipe factory corpus | #129 | Gate stays shut: zero run-logs, zero gate archives; re-escalate after ≥2 real projects with ≥5 autonomous runs each |
 | [adaptive-routing-evidence.md](adaptive-routing-evidence.md) | 9.4 — D5 adaptive routing | #133 | Gate stays shut: max 4 dispatches per role (sms-opt-in fixture only); re-escalate after ≥5 dispatches per (role, host) pair across ≥2 real user projects with cost telemetry |
 | [phase-41-evidence-review-2026-08.md](phase-41-evidence-review-2026-08.md) | 41.1 — first two-project review | — | No-go: project/history minimums met; host/cost comparison, accepted recurring resolutions, standing-grant evidence, and stall calibration absent |
+| [phase-41-evidence-review-2026-08-21.md](phase-41-evidence-review-2026-08-21.md) | 41.1 — re-review after the cost-telemetry fixes | — | No-go, different reasons: gate-level cost telemetry works, but `dispatchObservation` still records model-asserted fields, so the evidence path sees `cost_obs: 0`; only one real project available |
 | [acp-read-scope.md](acp-read-scope.md) | 36.0 — ACP read-scope spike | — | Real agent confirms unsandboxed absolute-path reads outside session cwd; recommendation: absolute paths (no permission-layer change needed) for 36.2 |
 
 ## Strategic analyses
