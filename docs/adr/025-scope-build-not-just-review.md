@@ -1,7 +1,6 @@
 # ADR 025 — Ceremony belongs on the build matrix, not only the review matrix
 
-**Status:** Proposed — **premise corrected 2026-08-22, decision needs revision
-before it can be accepted. See "Correction" below.**
+**Status:** Accepted (2026-08-22)
 **Date:** 2026-08-21
 **Authors:** Stagecraft maintainers
 
@@ -50,13 +49,15 @@ argued there was a missing rung between `loop` (4 dispatches) and `quick` (15),
 cost ladder — it is that the cheap track is cheap for a reason the other light
 tracks do not share.
 
-## Correction (2026-08-22): the measurement did not survive a real repository
+## Measurement note (2026-08-22): the counts depend on what is dirty
 
-The dispatch counts above were taken "on a throwaway project". Re-measured on a
-**git repository with an actual scoped change dirty**, the central claim
-inverts.
+An earlier revision of this file claimed the table above "does not survive a
+real repository" and recommended against accepting. **That claim was wrong, and
+it was wrong because it measured the wrong scenario.** The correction is kept
+here rather than deleted, because the mechanism it uncovered is worth
+understanding before anyone re-measures these numbers.
 
-The mechanism is `expectedRolesForStage()` in `core/pipeline/right-sizing.js`:
+`expectedRolesForStage()` in `core/pipeline/right-sizing.js` reads:
 
 ```js
 if (active.size === 0) return roles;          // no discovery → every role
@@ -64,67 +65,28 @@ return roles.filter((role) => ... active.has(role) ...);
 ```
 
 `activeRoles` comes from `candidateActiveRoles()`, which reads
-`gitChangedFiles()`. On a throwaway project with nothing dirty — or nothing in
-git at all — discovery returns `[]`, that first line fires, and **every track
-gets the full four-area build matrix**. The "4" in the table above is not
-`nano`'s cost; it is the cost of measuring a track against a project that has no
-change to right-size.
+`gitChangedFiles()`. So the build matrix a plan reports depends on **what is
+dirty at preflight**, and there are three distinct scenarios:
 
-Measured on a real repository, dispatches per track by the shape of the change:
+| Scenario | `loop` | `nano` | When it happens |
+|---|---:|---:|---|
+| clean tree | 4 | **6** | `devteam run --feature` on a new change — the tree is clean because nothing has been written yet |
+| one area dirty | 3 | 2 | resuming, or running against work already in progress |
+| four areas dirty | 4 | 6 | a cross-cutting change |
 
-| Change shape | `loop` | `nano` | `refactor` | `quick` |
-|---|---:|---:|---:|---:|
-| one backend file dirty — *this ADR's own example, "rename a helper function"* | 3 | **2** | **2** | 7 |
-| five files across backend, frontend, tests, infra | 4 | **6** | — | 16 |
-| throwaway project, nothing dirty (as originally measured) | 4 | 6 | 6 | 15 |
+The earlier correction measured row 2 and generalized from it. But **row 1 is the
+scenario this ADR is about**: a run plan is materialized at preflight, before any
+stage dispatches, so on a new feature the working tree is clean, discovery
+returns `[]`, and every track falls through to the full four-area matrix. That is
+the ordinary way a `nano` change starts, and there `nano` genuinely does cost 50%
+more than `loop`.
 
-**`nano` does not cost 50% more than `loop`. On the change `nano` exists for, it
-costs less — 2 dispatches against `loop`'s 3.** Right-sizing already scopes the
-build matrix to the roles the change actually touches; the scoping this ADR
-proposes to add is, on real projects, already happening dynamically.
-
-The claim holds only in the third row — no change to right-size — and in the
-second, where four build workstreams are the *correct* answer to a change
-spanning four areas, not ceremony to be trimmed.
-
-### What the re-measurement did surface
-
-`loop` dispatches **one** builder for a change spanning four areas, because
-`loopBuildRole(config)` pins it to a single role unconditionally rather than
-deriving it from what changed. Every other track scales its build matrix with
-the change; `loop` — the default track — does not. Whether that is the right
-trade is a separate question from this ADR's, and a more interesting one, since
-it points at under-assurance on the most-used track rather than over-ceremony on
-a rarely-used one.
-
-### What this means for the decision below
-
-The decision as written would add a *static* scoping rule on top of a *dynamic*
-one that already produces the same result whenever the project is a real
-repository with a scoped change. On the cross-cutting case it would reduce a
-four-area build to one — which is the assurance reduction the Consequences
-section describes, but bought against a cost that measurement says is not
-being paid.
-
-**It should not be accepted in its current form.** A revised version would need
-to state which of these it is actually for:
-
-1. the no-git / nothing-dirty case, where discovery finds nothing and every
-   track falls through to the full matrix — arguably a right-sizing defect
-   rather than a track-sizing one;
-2. the cross-cutting case, where it is a deliberate assurance reduction and
-   should be argued as one, not as removing waste;
-3. `loop`'s unconditional single-builder pin, which is the opposite problem and
-   the one the numbers actually point to.
-
-The measurement method is the transferable lesson: a track's cost cannot be
-measured on a project with no change in it, because right-sizing has nothing to
-size.
+The original table was measured correctly for the case it describes. Rows 2 and 3
+are added above so the number is never re-derived from the wrong starting state.
 
 ## Decision
 
-**Proposed (premise corrected above — not ready to accept):** extend
-single-workstream build scoping to the specialist tracks
+**Accepted:** extend single-workstream build scoping to the specialist tracks
 whose change shape already justifies a single reviewer.
 
 Concretely: a track that declares a scoped `PEER_REVIEW_SIZING` should scope its

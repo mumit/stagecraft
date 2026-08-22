@@ -17,7 +17,7 @@ const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
 
-const { STAGES_BY_TRACK } = require(path.join(ROOT, "core", "pipeline", "stages.js"));
+const { STAGES_BY_TRACK, STAGES, rolesForStage } = require(path.join(ROOT, "core", "pipeline", "stages.js"));
 
 // ── Column abbreviations ────────────────────────────────────────────────────
 // A two-or-three character label per stage for the matrix columns.
@@ -68,14 +68,12 @@ function symbol(track, stageName) {
     return "✓⁺";
   }
 
-  // Nano peer-review is scoped (single reviewer). Loop's build and
-  // peer-review are both scoped to a single config-overridable workstream
-  // (29.1). review-pr (35.2) is scoped the same way as nano — a single
-  // "reviewer" workstream, required_approvals=1 (PEER_REVIEW_SIZING).
-  if (stageName === "peer-review" && (track === "nano" || track === "loop" || track === "review-pr")) {
-    return "✓ˢ";
-  }
-  if (stageName === "build" && track === "loop") {
+  // Scoped stages are derived from rolesForStage rather than a hardcoded list
+  // of track names, so the matrix cannot drift from the sizing tables. It
+  // already had: refactor's peer-review has been single-reviewer since 35.5 and
+  // this matrix still drew it as a four-area ✓.
+  if ((stageName === "build" || stageName === "peer-review")
+      && rolesForStage(STAGES[stageName], track, {}).length === 1) {
     return "✓ˢ";
   }
 
@@ -113,10 +111,10 @@ function renderMatrix() {
   lines.push("   Legend:");
   lines.push("   ✓⁺ = conditional stage — only runs when stage-04a triggers it");
   lines.push("       (security-review: security_review_required; migration-safety: migration_safety_required)");
-  lines.push("   ✓ˢ = scoped to a single workstream — nano and review-pr peer-review (single");
-  lines.push("       reviewer, required_approvals=1); loop build + peer-review (single config-");
-  lines.push("       overridable role, default backend). See PEER_REVIEW_SIZING / loopBuildRole");
-  lines.push("       in core/pipeline/stages.js.");
+  lines.push("   ✓ˢ = scoped to a single workstream. A track that scopes peer-review scopes its");
+  lines.push("       build to the same role (ADR-025), so the area that was built is the area");
+  lines.push("       that gets reviewed. Derived from rolesForStage() — see PEER_REVIEW_SIZING /");
+  lines.push("       scopedBuildRole / loopBuildRole in core/pipeline/stages.js.");
   lines.push("   ✓ᵐ = mechanical script (preflight/stage-04e), not an LLM dispatch.");
   lines.push("   3b = executable-spec (Gherkin scenarios from acceptance criteria)");
   lines.push("   4a = pre-review (lint + dep review + SCA + trigger heuristics)");

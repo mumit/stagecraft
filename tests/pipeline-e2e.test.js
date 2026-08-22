@@ -153,14 +153,19 @@ describe("e2e: nano track walks init → ... → pipeline-complete", () => {
 
     // Every stage in the nano track should appear in the trace at least
     // once. (May appear twice: "run-stage" then "merge" for multi-role
-    // stages; on nano, peer-review is single-role so no merge.)
+    // stages; on nano, neither build nor peer-review is multi-role.)
     assert.ok(stageNames.includes("build"), "build not in trace");
     assert.ok(stageNames.includes("peer-review"), "peer-review not in trace");
     assert.ok(stageNames.includes("qa"), "qa not in trace");
 
-    // Build is multi-role on nano → expect a merge after run-stage
+    // ADR-025: build is scoped to one workstream on nano, the same as
+    // peer-review, so it no longer needs a merge. This assertion previously
+    // required one — the change is deliberate, and the disappearance of a
+    // whole merge round-trip is part of the ceremony reduction, not just the
+    // dispatch count.
     const buildActions = trace.filter((t) => t.name === "build").map((t) => t.action);
-    assert.ok(buildActions.includes("merge"), `build should require merge; got actions: ${buildActions.join(",")}`);
+    assert.ok(!buildActions.includes("merge"),
+      `nano build should NOT require merge; got actions: ${buildActions.join(",")}`);
 
     // Peer-review on nano is scoped to one workstream → no merge needed
     const peerActions = trace.filter((t) => t.name === "peer-review").map((t) => t.action);
