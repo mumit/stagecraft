@@ -83,11 +83,18 @@ function check() {
   const examplePath = path.join(REPO_ROOT, "EXAMPLE.md");
   if (fs.existsSync(examplePath)) {
     const exampleContent = fs.readFileSync(examplePath, "utf8");
-    const stampMatch = exampleContent.match(/captured at v(\d+)\.(\d+)/i);
+    // Match the Freshness marker specifically, not any "captured at vX.Y".
+    // EXAMPLE.md describes three provenance tiers -- live evidence re-captured
+    // this release, illustrative output originally captured at v0.9.0, and
+    // timings carried over from v0.7.0 -- and the loose pattern matched the
+    // oldest of them. It reported the doc as three minors stale when the live
+    // capture was one, which is the kind of warning a release engineer learns
+    // to ignore.
+    const stampMatch = exampleContent.match(/\*\*Freshness:\*\*\s*verified at v(\d+)\.(\d+)/i);
     if (!stampMatch) {
-      warnings.push("EXAMPLE.md has no freshness stamp — add \"captured at vX.Y\" near the top");
+      warnings.push("EXAMPLE.md has no freshness stamp — add \"**Freshness:** verified at vX.Y\" near the top");
     } else {
-      warnings.push(`EXAMPLE.md re-capture: stamp is v${stampMatch[1]}.${stampMatch[2]} — if pipeline behavior changed since that release, re-run the traced pipeline and update the stamp`);
+      warnings.push(`EXAMPLE.md re-capture: verified at v${stampMatch[1]}.${stampMatch[2]} — if pipeline behavior changed since that release, re-run the traced pipeline and update the stamp`);
     }
   }
 
