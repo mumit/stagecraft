@@ -100,6 +100,22 @@ pipeline:
   loop_build_role: frontend   # backend (default) | frontend | platform | qa
 ```
 
+The pin never consults what changed, so a change outside the pinned role's area
+would be built and reviewed by the wrong specialist. `devteam run` reports that
+before dispatching ([ADR-026](adr/026-pinned-build-role-mismatch.md)) — a
+warning by default, or a `build-role-mismatch` halt when a project opts in:
+
+```yaml
+autonomy:
+  require_matching_build_role: true
+```
+
+`--force` bypasses either way, and the decision is recorded in
+`pipeline/run-log.jsonl` in all three cases. The same check covers `nano` and
+`refactor`, which pin their build role the same way (ADR-025) but take it from
+`PEER_REVIEW_SIZING` and have no config override — for those tracks the remedy
+is a track that derives its build matrix from the change.
+
 For a known documentation-only file set, `devteam assess` recommends `loop`
 and carries `candidate_active_roles: ["documentation"]`. The PM turn must then
 approve the exact files in the Stage 1 gate with

@@ -37,6 +37,7 @@ const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require(".
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { STAGES } = require("./pipeline/stages");
 const { resolveStageOrder } = require("./driver-stage-order");
+const { buildRoleMismatch, buildRoleMismatchMessage } = require("./pipeline/build-role-match");
 const { resolvePlanInputs, materializeRunPlan } = require("./driver-plan");
 const { blockerFiles, normalizeOwnershipPath, resolveRetryOwnership } = require("./retry-ownership");
 const { gitChangedFiles } = require("./pipeline/right-sizing");
@@ -1154,6 +1155,39 @@ async function run(opts = {}) {
       // --force bypasses the unconfirmed-track halt; still log for the audit trail
       logEvent(cwd, changeId, { outcome: "track-confidence-check", source: trackSource, confidence: trackConfidence, bypassed: "force" });
       onEvent({ type: "track-confidence-check", source: trackSource, confidence: trackConfidence, bypassed: "force" });
+    }
+
+    // ADR-026: loop, nano, and refactor pin build to one role and never consult
+    // what changed, so a frontend change is built and reviewed by an agent
+    // reading roles/backend.md. Same shape as the track-confidence check above:
+    // warn by default, halt under autonomy.require_matching_build_role, --force
+    // bypasses and is logged either way. Placed before the --plan-only halt so
+    // reviewing a plan surfaces it, and after the track check so an unconfirmed
+    // track still wins.
+    const _buildRoleMismatch = trackHalted ? null : buildRoleMismatch({
+      track: effectiveTrack,
+      config,
+      activeRoles: activeRoleCandidates.roles,
+    });
+    if (_buildRoleMismatch) {
+      const message = buildRoleMismatchMessage(_buildRoleMismatch);
+      const requireMatch = !!(config.autonomy && config.autonomy.require_matching_build_role);
+      if (opts.force) {
+        logEvent(cwd, changeId, { outcome: "build-role-mismatch", ..._buildRoleMismatch, bypassed: "force" });
+        onEvent({ type: "build-role-mismatch", ..._buildRoleMismatch, bypassed: "force" });
+      } else if (requireMatch) {
+        logEvent(cwd, changeId, { outcome: "build-role-mismatch", ..._buildRoleMismatch, halted: true, reason: message });
+        onEvent({ type: "build-role-mismatch", ..._buildRoleMismatch, halted: true });
+        summary.halted = true;
+        summary.halt_action = "build-role-mismatch";
+        summary.halt_failure_class = "build-role-mismatch";
+        summary.halt_reason = message;
+        trackHalted = true;
+      } else {
+        logEvent(cwd, changeId, { outcome: "build-role-mismatch", ..._buildRoleMismatch, warned: true });
+        onEvent({ type: "build-role-mismatch", ..._buildRoleMismatch, warned: true });
+        process.stderr.write(`[devteam] ${message}\n`);
+      }
     }
 
     // ADR-018 calls run-plan.json "an inspectable execution contract", but the
