@@ -277,6 +277,21 @@ describe("run prologue: the plan fingerprint is the contract", () => {
   });
 });
 
+describe("run prologue: the run records how it ended", () => {
+  it("persists the halt action and reason, not just the counters", () => {
+    // halt_action and halt_reason used to exist only on the in-memory summary,
+    // so they reached the operator's terminal and nothing else. run-state.json
+    // recorded that a run had happened but never that it stopped, or why --
+    // which is why `devteam chat` reported halted: null on every run.
+    const { state } = planOnly(["--budget-usd", "5"]);
+    assert.equal(state.halted, true);
+    assert.equal(state.completed, false);
+    assert.equal(state.halt_action, "plan-only");
+    assert.match(state.halt_reason, /plan materialized at/);
+    assert.equal(state.failed, false);
+  });
+});
+
 describe("run prologue: --plan-only leaves a resumable state", () => {
   it("reconciles run identity across a resume rather than starting over", () => {
     // The prologue's resume path was invisible to this suite until slice 4:

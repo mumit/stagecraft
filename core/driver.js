@@ -1024,6 +1024,7 @@ async function run(opts = {}) {
   // diagnosis gate's affected_files after stage-01 passes.
   let repairPatchItems = opts.repair ? [opts.repair] : null;
 
+  let runError = null;
   try {
     const { planPath } = materializeRunPlan({
       cwd,
@@ -2277,6 +2278,12 @@ async function run(opts = {}) {
       summary.halt_reason = `reached max iterations (${maxIterations})`;
       logEvent(cwd, changeId, { iteration: state.iterations, outcome: "max-iterations-halt" });
     }
+  } catch (error) {
+    // Recorded, not handled: the throw still propagates. A run that ends by
+    // crashing -- an unroutable host, an unreadable gate -- ended just as
+    // surely as one that halted, and previously left nothing on disk saying so.
+    runError = error;
+    throw error;
   } finally {
     summary.iterations = state.iterations || 0;
     // Phase-28 item 28.4: cost_basis is recorded once per run, here, onto both
@@ -2306,6 +2313,19 @@ async function run(opts = {}) {
     state.token_coverage_complete = finalTokens.coverage_complete;
     state.token_observations = finalTokens.observations;
     state.token_missing = finalTokens.missing;
+    // How this run ended, persisted alongside the cost and token totals above.
+    // halt_action and halt_reason were only ever set on the in-memory summary,
+    // so they reached the operator's terminal and nothing else: run-state.json
+    // recorded that a run had happened but never that it stopped, or why. The
+    // conversational coordinator already read `halted` from run-state
+    // (core/coordinator.js) and therefore always reported null -- it could not
+    // tell a halted run from a running one while answering "why did this stop?".
+    state.completed = summary.completed === true;
+    state.halted = summary.halted === true;
+    state.halt_action = summary.halt_action || null;
+    state.halt_reason = summary.halt_reason || null;
+    state.failed = runError !== null;
+    state.failure_reason = runError ? String(runError.message || runError).slice(0, 400) : null;
     if (!assertedCostWarned && (finalCost.basis === "model-asserted" || finalCost.basis === "mixed")) {
       assertedCostWarned = true;
       const msg = `cost total includes model-asserted (self-reported) cost_usd, not just orchestrator-observed usage (cost_basis: "${finalCost.basis}")`;

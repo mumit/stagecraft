@@ -85,6 +85,24 @@ function commandForAction(action) {
   }
 }
 
+// How the described run ended, from what run-state.json actually records.
+//
+//   "completed"   — the pipeline finished
+//   "halted"      — it stopped at a boundary or a blocker; halt_reason says which
+//   "failed"      — it ended by throwing; failure_reason carries the message
+//   "in-progress" — a lock is held, so a run is executing right now. The state
+//                   read above is the previous invocation's: run() saves it once,
+//                   on the way out.
+//   null          — a run-state written before these fields existed. The caller
+//                   marks that unavailable rather than presenting it as "no halt".
+function runStatus(runState, root) {
+  if (runState.completed === true) return "completed";
+  if (runState.halted === true) return "halted";
+  if (runState.failed === true) return "failed";
+  if (fs.existsSync(path.join(root, "run.lock"))) return "in-progress";
+  return null;
+}
+
 function projectSnapshot(cwd, { feature } = {}) {
   const config = loadConfig(cwd);
   const changeId = config.pipeline.isolation === "bounded"
@@ -97,11 +115,16 @@ function projectSnapshot(cwd, { feature } = {}) {
   let pipelineSummary = { track, rows: [] };
   let nextAction = null;
   const unavailable = [];
+  // A run-state predating the run-outcome fields cannot say how the run ended.
+  // The system prompt tells the model to call out missing evidence, so the
+  // absence has to be stated -- otherwise "halted: false" reads as "it did not
+  // halt" when the truth is "nobody recorded whether it did".
+  if (runState && typeof runState.halted !== "boolean") unavailable.push("run-outcome");
   try { pipelineSummary = summary({ cwd, track, feature, changeId }); } catch { unavailable.push("stage-summary"); }
   try { nextAction = compactAction(next({ cwd, track, feature, changeId, config })); } catch { unavailable.push("next-action"); }
 
   return {
-    schema_version: "1",
+    schema_version: "2",
     generated_at: new Date().toISOString(),
     unavailable,
     pipeline: {
@@ -119,14 +142,22 @@ function projectSnapshot(cwd, { feature } = {}) {
       ),
     },
     run: runState ? {
-      run_id: runState.run_id ? safeText(runState.run_id, 120) : null,
-      status: runState.status ? safeText(runState.status, 80) : null,
+      // run_id is the invocation; a --resume mints a new one and carries the
+      // lineage root forward as logical_run_id (42.5). Neither was ever stored
+      // under the key this used to read, so run_id reported null on every run
+      // ever made.
+      run_id: runState.started_at ? safeText(runState.started_at, 120) : null,
+      logical_run_id: runState.logical_run_id ? safeText(runState.logical_run_id, 120) : null,
+      status: runStatus(runState, root),
       current_stage: runState.current_stage ? safeText(runState.current_stage, 80) : null,
       last_action: runState.last_action ? safeText(runState.last_action, 240) : null,
       iterations: runState.iterations || 0,
       cost_usd: typeof runState.cost_usd === "number" && Number.isFinite(runState.cost_usd) ? runState.cost_usd : null,
       cost_basis: runState.cost_basis ? safeText(runState.cost_basis, 80) : null,
-      halted: runState.halted ? safeText(runState.halted, 240) : null,
+      halted: runState.halted === true,
+      halt_action: runState.halt_action ? safeText(runState.halt_action, 80) : null,
+      halt_reason: runState.halt_reason ? safeText(runState.halt_reason, 240) : null,
+      failure_reason: runState.failure_reason ? safeText(runState.failure_reason, 400) : null,
     } : null,
     next: nextAction ? {
       ...nextAction,
