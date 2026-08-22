@@ -58,7 +58,7 @@ listed under [Evidence reviews](#evidence-reviews).
 | 39 | [phase-39-evidence-performance-calibration.md](phase-39-evidence-performance-calibration.md) | — | Cross-run latency/cost calibration, usefulness signals, right-sizing feedback, bottleneck timeline | ✅ complete (PR #414) |
 | 40 | [phase-40-conversational-artifact-refinement.md](phase-40-conversational-artifact-refinement.md) | — | Proposal-first requirements/design conversation with exact diff, explicit apply, and deterministic invalidation | ✅ complete (PR #415) |
 | 41 | [phase-41-evidence-gated-learning-routing.md](phase-41-evidence-gated-learning-routing.md) | — | Shadow routing and controlled recipe candidates after explicit multi-project thresholds | ⛔ 41.1 no-go review complete; activation stays gated |
-| 42 | [phase-42-dogfood-reliability.md](phase-42-dogfood-reliability.md) | — | Resume safety, compatible retry routing, docs ownership, layout-aware QA, and evidence semantics from real dogfood | 🚧 42.1–42.3 implemented; 42.4 next |
+| 42 | [phase-42-dogfood-reliability.md](phase-42-dogfood-reliability.md) | v0.12.0 | Resume safety, compatible retry routing, docs ownership, layout-aware QA, and evidence semantics from real dogfood | ✅ complete (42.1–42.6) |
 
 **Execution format:** older phases with prompt packs retain their paste-ready prompts for
 historical use. Phases 38–41 use the plan itself as the contract and deliberately avoid
@@ -79,7 +79,7 @@ reconciled against upstream on 2026-08-19.
 | **Phase 25 — Omnigent director hardening** | [phase-25](phase-25-omnigent-director-hardening.md) | Proposed and parked ([#305](https://github.com/telus-labs/stagecraft/issues/305)). |
 | **Phase 26 — performance/observability overhaul** | [phase-26](phase-26-performance-observability-usability.md) | Superseded as an execution plan. Phases 28, 32, 37, and 39 shipped its useful measurement and live-timeline scope. |
 | **Phase 41 — learning/routing activation** | [phase-41](phase-41-evidence-gated-learning-routing.md) | Blocked until the plan's per-route and cross-project evidence thresholds are met. Test fixtures do not count. |
-| **Phase 42 — dogfood reliability** | [phase-42](phase-42-dogfood-reliability.md) | 42.1–42.3 implemented; 42.4–42.6 remain and do not depend on opening Phase 41. |
+| **Phase 42 — dogfood reliability** | [phase-42](phase-42-dogfood-reliability.md) | Complete in v0.12.0. Three of 42.6's four criteria were already met by #431 and the existing `--profile dogfood` work; only `doctor`'s install-mode reporting was open. |
 
 Capability gates that stay shut for lack of real-project data — not for lack of code —
 are listed under [Evidence reviews](#evidence-reviews). Phase 28 removed the telemetry
@@ -109,7 +109,7 @@ They document why certain capability gates remain shut and what would open them.
 | [pipeline-speed-opportunities.md](pipeline-speed-opportunities.md) | End-to-end pipeline critical path and safe acceleration roadmap | Proposed; no implementation authorized — items #1/#5/#10 superseded by phase-32 |
 | [landscape-review-2026-07.md](landscape-review-2026-07.md) | Full competitive review vs the mid-2026 coding-agent landscape; strategy ("the auditable agent SDLC that learns") and the phase 28–34 roadmap | Largely delivered — phases 28–31, 33–36 shipped |
 | [experience-review-2026-08.md](experience-review-2026-08.md) | Developer experience, productivity, and token cost measured by running the CLI after phases 28–36. Finds capability strong and the interface lagging: 44 commands, 244 flags, a 343-line help with no per-command help, and a 268-byte cacheable prompt prefix against ~22 KB re-read per dispatch | Proposed; produced [phase-37](phase-37-interface-and-token-efficiency.md) |
-| [builder-review-2026-08.md](builder-review-2026-08.md) | Architecture, implementation, and roadmap review at Phase 42.2, measured by running the CLI. Eight findings (F1–F8): goal-loop convergence dropped on every build/qa dispatch, a stale pricing table blocking the Phase 41 evidence gates rather than thin collection, and Stagecraft's own install read as the operator's diff by three subsystems — inflating a trivial change from `loop` to `full` | Wave 0 delivered (PRs #429–#433); F1/F4/F5 open, roadmap in §6 |
+| [builder-review-2026-08.md](builder-review-2026-08.md) | Architecture, implementation, and roadmap review at Phase 42.2, measured by running the CLI. Eight findings (F1–F8): goal-loop convergence dropped on every build/qa dispatch, a stale pricing table blocking the Phase 41 evidence gates rather than thin collection, and Stagecraft's own install read as the operator's diff by three subsystems — inflating a trivial change from `loop` to `full` | Wave 0 delivered (#429–#433); F5's prologue decomposition and the `devteam chat` audit delivered in v0.12.0. F1–F8 all closed or fixed; §5's proposal/apply table corrected — two of its three rows were written without checking where the data lives. Roadmap in §6, §8 records what shipped |
 
 ---
 

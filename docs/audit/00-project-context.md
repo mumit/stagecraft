@@ -35,7 +35,7 @@ framework. The project deliberately uses Node built-ins and `node:test`.
 - Runtime dependencies: `js-yaml` and six OpenTelemetry packages.
 - Builtin memory retrieval has no dependency; `@huggingface/transformers` can be installed separately for the opt-in `local` provider.
 - Development dependencies: ESLint, `@eslint/js`, and `eslint-plugin-security`.
-- Package version: `0.11.0`; package remains `private: true`.
+- Package version: `0.12.0`; package remains `private: true`.
 
 ## Commands
 

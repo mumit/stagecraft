@@ -44,7 +44,7 @@ jobs:
     env:
       # CUSTOMIZE — point at your Stagecraft fork / release.
       STAGECRAFT_REPO: telus-labs/stagecraft
-      STAGECRAFT_REF:  v0.11.0
+      STAGECRAFT_REF:  v0.12.0
       # Optional. Add this repository secret and set
       # pipeline.require_signed_gates: true for authenticated enforcement.
       DEVTEAM_SIGNING_SECRET: ${{ secrets.DEVTEAM_SIGNING_SECRET }}

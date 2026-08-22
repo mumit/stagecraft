@@ -1,6 +1,6 @@
 {
   "name": "stagecraft",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Stagecraft — a model-agnostic AI dev team pipeline across Claude Code, Codex, and Gemini CLI. Staged work, multi-host peer review, audit gates.",
   "bin": {
