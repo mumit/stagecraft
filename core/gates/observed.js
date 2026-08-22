@@ -15,9 +15,7 @@
 // whose cost the orchestrator had observed — the same drift the framework-owned
 // path list produced before it was centralized (core/paths.js).
 
-function nonNegativeNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
+const { nonNegativeNumber } = require("../numbers");
 
 // Strongest evidence first: a cost the host reported, then one derived from
 // host-observed tokens and core/pricing.js, then the model's own claim.
