@@ -1023,9 +1023,36 @@ function isAdversarialReviewMode(config) {
 // Track-aware roles list for a stage. stage-04 (build) and stage-05
 // (peer-review) vary by track; every other stage uses its base `roles`
 // array unchanged.
+// ADR-025: a track that scopes peer-review to one area scopes its build to the
+// same one. PEER_REVIEW_SIZING already says "one reviewer is the right amount of
+// scrutiny for this change shape"; without this, `nano` ran a four-area build
+// matrix and then had a single reviewer look at all of it — the funnel narrowed
+// after the cost was already spent.
+//
+// Derived from the sizing table rather than a second list, so the built area and
+// the reviewed area cannot drift apart. Guarded on the role actually being a
+// build workstream, which excludes `review-pr`'s "reviewer" (a review panel
+// name, not a build area) — that track has no build stage, so the guard is
+// belt-and-braces rather than load-bearing.
+//
+// This is the same pairing `loop` has had since 29.1, generalized. It is a
+// deliberate assurance reduction on the cross-cutting case: a `nano` change that
+// touches four areas now gets one builder. The protection is that `assess` picks
+// the track from the change shape and the stoplist refuses `nano` for anything
+// consequential — see the ADR's Consequences.
+function scopedBuildRole(track) {
+  const sizing = PEER_REVIEW_SIZING[track];
+  if (!sizing || sizing.roles.length !== 1) return null;
+  return LOOP_BUILD_WORKSTREAMS.includes(sizing.roles[0]) ? sizing.roles[0] : null;
+}
+
 function rolesForStage(stageDef, track, config) {
   if (track === "loop" && stageDef.stage === "stage-04") {
     return [loopBuildRole(config)];
+  }
+  if (stageDef.stage === "stage-04") {
+    const scoped = scopedBuildRole(track);
+    if (scoped) return [scoped];
   }
   if (stageDef.stage === "stage-05") {
     if (track === "loop") return [loopBuildRole(config)];

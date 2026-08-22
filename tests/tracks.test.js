@@ -175,11 +175,32 @@ describe("tracks: loop build/peer-review sizing (29.1)", () => {
     assert.equal(requiredApprovalsFor(reviewDef, "loop"), 1);
   });
 
-  it("build (stage-04) on every OTHER track is unaffected (still the four-role matrix)", () => {
+  it("build (stage-04) keeps the four-role matrix on every unscoped track", () => {
+    // ADR-025 moved nano and refactor out of this list deliberately: a track
+    // that scopes peer-review to one area now scopes its build to the same one.
+    // The tracks below declare the full four-area review matrix, so their build
+    // matrix is unchanged.
     const buildDef = getStage("build");
-    for (const t of ["full", "quick", "nano", "config-only", "dep-update", "hotfix"]) {
+    for (const t of ["full", "quick", "config-only", "dep-update", "hotfix"]) {
       assert.deepEqual(rolesForStage(buildDef, t), ["backend", "frontend", "platform", "qa"], `build roles changed for track ${t}`);
     }
+  });
+
+  it("ADR-025: a track that scopes peer-review scopes its build to the same role", () => {
+    const buildDef = getStage("build");
+    const reviewDef = getStage("peer-review");
+    for (const t of ["nano", "refactor"]) {
+      assert.deepEqual(rolesForStage(buildDef, t), ["backend"], `build not scoped for ${t}`);
+      assert.deepEqual(rolesForStage(reviewDef, t), rolesForStage(buildDef, t),
+        `${t}: the reviewed area must be the built area`);
+    }
+  });
+
+  it("does not scope a build from a review panel name", () => {
+    // review-pr's sizing is ["reviewer"] -- a panel name, not a build area.
+    // It has no build stage, so this guards the derivation rather than a run.
+    assert.deepEqual(rolesForStage(getStage("build"), "review-pr"),
+      ["backend", "frontend", "platform", "qa"]);
   });
 });
 

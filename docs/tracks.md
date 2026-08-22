@@ -32,14 +32,14 @@ Or override per-invocation: `devteam stage build --track quick`.
 | Change type | Track | Ceremony cost | Why |
 |---|---|---|---|
 | Small bounded iteration, no deploy needed yet — **the day-to-day default** | `loop` | Lightest — 4 dispatches | Minimal brief → single-workstream build → qa → scoped peer-review (1 reviewer, 1 approval); no design, no red-team, no sign-off/deploy. See [§ The `loop` track](#the-loop-track) |
-| Mechanical change with obvious scope (rename a function, bump padding) | `nano` | Minimal | Build + scoped peer-review (1 reviewer, 1 approval) + qa |
+| Mechanical change with obvious scope (rename a function, bump padding) | `nano` | Minimal — 3 dispatches | Scoped build (1 workstream) + scoped peer-review (1 reviewer, 1 approval) + qa. [ADR-025](adr/025-scope-build-not-just-review.md) pairs the two so the built area is the reviewed area |
 | Bounded feature or fix that is moving toward sign-off/deploy but has no cross-cutting design concerns | `quick` | Light | Skips design, clarification, pre-review, and red-team; PM brief is still required. Prefer `loop` while iterating; choose `quick` when the same bounded change needs delivery stages |
 | Tweaking config/feature-flag values, no code | `config-only` | Light, conditional security review | Build + pre-review + (security if triggered) + qa + sign-off + deploy |
 | Dependency bump or library upgrade | `dep-update` | Light | Build + peer-review + qa + sign-off + deploy |
 | Urgent production incident | `hotfix` | Moderate — pre-review and peer-review are mandatory | Build + pre-review + (security if triggered) + peer-review + qa + sign-off + deploy + retro |
 | Complex feature, cross-cutting architecture change, or anything needing formal design or adversarial review — the **audited** path for regulated/high-stakes changes | `full` | Heaviest — all 18 stages | Full rigor: requirements → design → build → review → red-team → tests → sign-off → deploy → retro. The resulting gate chain can be exported as an in-toto-shaped attestation with `devteam evidence export --attestation` |
 | Reviewing code that already exists — a brownfield repo, an inherited module, a subtree you didn't build with Stagecraft | `review-only` | Light — 3 dispatches, no build | Security-review + red-team + peer-review only; no requirements/design/build/sign-off/deploy. Works on a repo with zero `pipeline/` history. Narrow it with `--scope <path>` (repeatable). See [§ The `review-only` track](#the-review-only-track) |
-| Behavior-preserving structural change | `refactor` | Minimal | Build + peer-review + QA with characterization and mutation checks focused on preserving behavior rather than adding acceptance criteria |
+| Behavior-preserving structural change | `refactor` | Minimal — 3 dispatches | Scoped build (1 workstream) + scoped peer-review + QA with characterization and mutation checks focused on preserving behavior rather than adding acceptance criteria |
 
 These are relative sizings, not bills. Run `devteam assess --json` (or watch `devteam run`'s pre-flight output) for stage slots, dispatches, and token estimates. A static preview prices explicit routing model pins immediately, falling back to the latest observed model for an unpinned `(role, host)` route. Its dollars are labeled `input-only-floor` because output length is unknowable before execution. Once the run corpus has ≥5 comparable runs for a track, the estimate switches to an empirical median (`observed-total`) and says so. See [`core/ceremony-preview.js`](../core/ceremony-preview.js) (phase-29.3).
 
@@ -50,22 +50,22 @@ These are relative sizings, not bills. Run `devteam assess --json` (or watch `de
               req des cla 3b  bld 4a  4b  4c  4d  5   qa  6b  6c  6d  6e  7   8   9   
 full          ✓   ✓   ✓   ✓   ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓   ✓   ✓   ✓   ✓   ✓   ✓   
 quick         ✓           ✓   ✓                   ✓   ✓   ✓           ✓   ✓   ✓   ✓   
-nano                          ✓                   ✓ˢ  ✓                               
+nano                          ✓ˢ                  ✓ˢ  ✓                               
 config-only                   ✓   ✓   ✓⁺      ✓⁺      ✓                   ✓   ✓       
 dep-update                    ✓                   ✓   ✓                   ✓   ✓       
 hotfix                        ✓   ✓   ✓⁺  ✓   ✓⁺  ✓   ✓   ✓   ✓       ✓   ✓   ✓   ✓   
 loop          ✓               ✓ˢ                  ✓ˢ  ✓                               
 review-only                           ✓⁺  ✓       ✓                                   
 review-pr                                         ✓ˢ                                  
-refactor                      ✓                   ✓   ✓                               
+refactor                      ✓ˢ                  ✓ˢ  ✓                               
 
    Legend:
    ✓⁺ = conditional stage — only runs when stage-04a triggers it
        (security-review: security_review_required; migration-safety: migration_safety_required)
-   ✓ˢ = scoped to a single workstream — nano and review-pr peer-review (single
-       reviewer, required_approvals=1); loop build + peer-review (single config-
-       overridable role, default backend). See PEER_REVIEW_SIZING / loopBuildRole
-       in core/pipeline/stages.js.
+   ✓ˢ = scoped to a single workstream. A track that scopes peer-review scopes its
+       build to the same role (ADR-025), so the area that was built is the area
+       that gets reviewed. Derived from rolesForStage() — see PEER_REVIEW_SIZING /
+       scopedBuildRole / loopBuildRole in core/pipeline/stages.js.
    ✓ᵐ = mechanical script (preflight/stage-04e), not an LLM dispatch.
    3b = executable-spec (Gherkin scenarios from acceptance criteria)
    4a = pre-review (lint + dep review + SCA + trigger heuristics)
