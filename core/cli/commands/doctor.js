@@ -85,6 +85,18 @@ function run(positional, _flags) {
   const configFile = configPath(cwd);
   check(".devteam/config.yml exists", fs.existsSync(configFile),
     fs.existsSync(configFile) ? null : "run `devteam init --host <name>`");
+  // 42.6: which of the two install shapes this is. Reported rather than
+  // checked -- a checkout-local install is a deliberate choice, not a fault --
+  // except for "untracked", which is neither shape and is usually an install
+  // nobody finished. Without this, a deliberately-local setup and a committed
+  // one that lost its files looked identical here, and they need opposite fixes.
+  {
+    const { resolveInstallMode, describeInstallMode } = require(path.join(__dirname, "..", "..", "install-mode"));
+    const resolved = resolveInstallMode(cwd);
+    const described = describeInstallMode(resolved);
+    check("install mode", resolved.mode === "untracked" ? "warn" : "info",
+      described.advice ? `${described.text} — ${described.advice}` : described.text);
+  }
   check("pipeline/gates/ exists", fs.existsSync(path.join(cwd, "pipeline", "gates")));
 
   if (!fs.existsSync(configFile)) {
