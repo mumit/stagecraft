@@ -29,7 +29,7 @@ const flags = {
   "timeout-ms": { type: "number", description: "Per-turn host timeout in milliseconds" },
   json:         { type: "boolean", description: "JSON output for a one-shot question" },
   "dry-run":    { type: "boolean", description: "Print the grounded prompt without calling a host" },
-  refine:        { type: "string", description: "Propose a requirements or design artifact refinement" },
+  refine:        { type: "string", description: "Propose a refinement: requirements | design | ruling" },
   proposal:      { type: "string", description: "Inspect, apply, or reject a proposal id" },
   apply:         { type: "boolean", description: "Explicitly apply --proposal after rechecking hash/invalidation" },
   reject:        { type: "boolean", description: "Reject --proposal without changing the artifact" },
