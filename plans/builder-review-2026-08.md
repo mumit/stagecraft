@@ -488,7 +488,7 @@ shape:
 |---|---|---|
 | `judgment-gate` | Read the gate, write a ruling by hand | Chat drafts the ruling with its `[class:]`; operator applies or rejects |
 | `retry-ownership` | Halt names the incompatible roles; operator reconciles manually | ~~Chat proposes the owner or scope change~~ — **retracted, see below** |
-| `patterns review` | Read candidates, hand-write `prompt_text` | Chat drafts prevention text from the observations; promotion stays explicit |
+| `patterns review` | Read candidates, hand-write `prompt_text` | ~~Chat drafts prevention text from the observations~~ — **not from observations; see below** |
 | track choice | `assess` heuristics, low confidence on generic descriptions | Chat explains the tradeoff against this repo and proposes a track record |
 
 Each is a bounded schema, each keeps the model advisory, and each removes a place where the
@@ -512,6 +512,26 @@ gains an execution path.
 > with no indication that the obvious reading breaks the chain, and nothing checks the chain
 > during a run — only `verify-chain`, `verify`, and attestation do, so the break surfaces at
 > export with no memory of the cause. Fixed in the same PR.
+
+> **`patterns review` corrected (2026-08-22).** "Chat drafts prevention text from the
+> observations" assumed observations contain the finding. They do not, deliberately:
+> `observationFor` computes the blocker text, uses it to derive `domain` and `detector`, and
+> discards it. Observations are classification only — `pattern_key`, `tier`, `domain`,
+> `stage`, `workstream`, `language`, `framework`, `detector`, `fingerprint` — which is what
+> makes them safe to export. Verified: the raw finding text appears nowhere in
+> `observations.jsonl`.
+>
+> So no drafting turn, model or otherwise, can be grounded in what actually failed. The
+> useful finding was that the layer already records `detector` — the blocker's own
+> `signal`/`code`/`id` — and the proposed text ignored it, switching only on `domain`. A
+> recurring `no-console` blocker at stage-04a inferred the "tooling" domain and proposed
+> *"ensure configured lint/test scripts exist"*: true of the stage, useless as guidance for
+> the rule the agent keeps breaking. The detector now leads the sentence. Deterministic, no
+> model, no schema change, and no effect on what gets exported.
+>
+> **Two of these three rows were written without checking where the data lives.** That makes
+> §5's table the least-verified part of this review, and it is the part that produced Wave 3
+> item 3. `ruling` (#474) was the one that survived contact.
 
 One smaller thing: chat holds eight turns in process memory and starts fresh every
 invocation. For an operator working a halted run across several commands, the session that
