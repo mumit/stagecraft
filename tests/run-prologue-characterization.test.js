@@ -124,6 +124,39 @@ describe("run prologue: stage dispositions", () => {
       + plan.stages_skipped_by_right_sizing, plan.stages_total);
   });
 
+  it("right-sizes the full track down by naming the stages it drops", () => {
+    // The identity above still holds when right-sizing produces nothing at all
+    // (18 included, 0 skipped), so it has to be pinned by value. These five are
+    // what preflight drops on a project with no frontend, no migrations, and
+    // no observability surface.
+    const { plan } = planOnly(["--track", "full"]);
+    assert.equal(plan.stages_total, 18);
+    assert.equal(plan.stages_included, 13);
+    assert.equal(plan.stages_skipped_by_right_sizing, 5);
+    assert.deepEqual(plan.right_sized_stage_names, [
+      "clarification", "accessibility-audit", "observability-gate",
+      "verification-beyond-tests", "performance-budget",
+    ]);
+  });
+
+  it("counts expected workstreams against the right-sized stage list", () => {
+    // Not the raw track shape: an estimate that ignored the skips would price
+    // stages preflight has already decided not to dispatch.
+    const { plan } = planOnly(["--track", "full"]);
+    assert.equal(plan.expected_workstreams, 20);
+    assert.equal(plan.base_workstreams, 20);
+  });
+
+  it("scopes the ceremony preview to the stages that will actually dispatch", () => {
+    const { plan } = planOnly(["--track", "full"]);
+    assert.ok(plan.ceremony_preview, "the preview reaches the plan");
+    assert.equal(plan.ceremony_preview.stage_slots, plan.stages_included);
+    assert.deepEqual(
+      plan.ceremony_preview.per_stage.map((row) => row.name).sort(),
+      plan.stages.filter((st) => st.disposition !== "skipped").map((st) => st.name).sort(),
+    );
+  });
+
   it("records the --until boundary and what it puts out of reach", () => {
     const withUntil = planOnly(["--track", "full", "--until", "build", "--budget-usd", "5"]).plan;
     const without = planOnly(["--track", "full", "--budget-usd", "5"]).plan;
