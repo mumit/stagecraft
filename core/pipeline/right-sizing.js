@@ -238,11 +238,23 @@ function expectedRolesForStage(stage, track, { activeRoles = [], config } = {}) 
     return [DOCUMENTATION_ROLE];
   }
   if (active.size === 0) return roles;
-  return roles.filter((role) =>
+  const filtered = roles.filter((role) =>
     !WORKSTREAM_RULES.some((rule) => rule.role === role) ||
     active.has(role) ||
     (stage.alwaysDispatch || []).includes(role),
   );
+  // Never report a stage as dispatching nothing, because runtime never does.
+  // core/orchestrator.js's inferActiveRoles applies the same filter and then
+  // refuses an empty result outright -- "an empty result ... would produce a
+  // zero-workstream plan that completes in 0ms and loops" -- so it keeps the
+  // unfiltered roles. Without the same guard here the two disagreed, and the
+  // disagreement was reachable on the default track: `loop` pins build and
+  // peer-review to a single role (loopBuildRole, default "backend"), so a
+  // frontend-only change filtered that role out and the plan reported zero
+  // build dispatches for a run that dispatches one. ADR-018 calls run-plan.json
+  // an inspectable execution contract; a contract that disagrees with the
+  // runtime is worse than no contract.
+  return filtered.length > 0 ? filtered : roles;
 }
 
 function expectedWorkstreamCount(order, track, { skipped = [], activeRoles = [], config } = {}) {
