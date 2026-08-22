@@ -31,7 +31,10 @@ Stagecraft computes a schema-versioned snapshot locally on every turn:
 
 - selected track, artifact-isolation mode, workstream-isolation mode, routing,
   and right-sizing setting;
-- bounded fields from `run-state.json`, including iteration and recorded cost;
+- bounded fields from `run-state.json`: the run id and its lineage root, how the
+  run ended (`status` is one of `completed`, `halted`, `failed`, `in-progress`,
+  with `halt_action`/`halt_reason` or `failure_reason` saying which and why),
+  iteration count, and recorded cost;
 - the stage summary's state, workstream state, warnings, and blockers;
 - the pure `next()` action plus the narrow command that would apply it.
 
@@ -39,7 +42,10 @@ The snapshot does not contain the project path, raw gate objects, artifact
 contents, logs, source code, or arbitrary config. Strings are whitespace-bounded,
 length-capped, and removed wholesale when the secret scanner recognizes a
 credential shape. The prompt labels all snapshot strings as untrusted data.
-Missing evidence stays missing; the model is instructed not to infer it.
+Missing evidence stays missing; the model is instructed not to infer it. A
+run-state written before the run-outcome fields existed reports
+`unavailable: ["run-outcome"]` rather than an unqualified `halted: false`, so
+"nobody recorded whether it stopped" is never presented as "it did not stop".
 
 Only the last eight user/assistant turns, capped at 2,000 characters each, are
 retained in process memory. The prompt includes at most the two most recent
