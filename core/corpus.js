@@ -24,6 +24,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { scanContent } = require("./hooks/secret-scan");
+const { nonNegativeNumber } = require("./numbers");
 
 const FRAMEWORK_VERSION = (() => {
   try { return require("../package.json").version; } catch { return "0.0.0"; }
@@ -49,10 +50,6 @@ function corpusDir(cwd) {
 
 function corpusPath(cwd) {
   return path.join(corpusDir(cwd), CORPUS_FILE_NAME);
-}
-
-function nonNegativeNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 // Reuses the secret-scan sanitizer core/patterns.js collection uses

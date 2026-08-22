@@ -31,6 +31,7 @@ const { collect: collectPatterns } = require("./patterns");
 const { runReflector } = require("./learning/reflector");
 const { ingest: ingestMemory } = require("./memory");
 const { readCorpus } = require("./corpus");
+const { nonNegativeNumber } = require("./numbers");
 const { loadConfig, changeIdFromFeature, changeIdFromSymptom, resolveRoute } = require("./config");
 const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require("./scheduler");
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
@@ -167,10 +168,6 @@ function logEvent(cwd, changeId, entry) {
     fs.mkdirSync(path.dirname(runLogPath(cwd, changeId)), { recursive: true });
     fs.appendFileSync(runLogPath(cwd, changeId), JSON.stringify({ ts: nowIso(), ...entry }) + "\n");
   } catch { /* logging must never break the run */ }
-}
-
-function nonNegativeNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 // Phase-28 item 28.4: a gate's cost contribution prefers the orchestrator-
