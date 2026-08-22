@@ -112,6 +112,14 @@ downstream gates; design keeps stage-01 and invalidates stage-02 onward.
 Proposal lifecycle counters and provenance are appended to `pipeline/proposals/events.jsonl`;
 instructions and transcripts are never written there.
 
+If an apply is interrupted mid-transaction, the gates it had already moved sit in
+`pipeline/proposals/.apply-<id>/`. The next apply restores them first and logs a
+`recovered` event, so the retry is judged against the state the proposal was created
+against rather than being marked stale for a gate set the tool itself disturbed. A gate
+that exists now is never overwritten by one an interrupted transaction set aside, and any
+file that is not a gate is left in place — with the directory — and reported by name
+instead of being deleted.
+
 ## What it is not
 
 - It is not a replacement for `devteam next --json`; automation should consume

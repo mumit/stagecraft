@@ -168,8 +168,50 @@ function updateProposal(file, proposal) {
   atomicWrite(file, `${JSON.stringify(proposal, null, 2)}\n`);
 }
 
+// An apply that is interrupted -- a crash, a kill, a full disk during the
+// artifact write -- leaves its transaction directory behind holding the gates
+// it had already moved out of the way. applyProposal's rollback deliberately
+// preserves that directory rather than risk losing them ("recovery remains
+// visible in .apply directory"), but nothing ever put them back.
+//
+// The consequence was worse than a stranded directory. The next apply computed
+// affectedGatePaths from a gates/ directory that was now missing those files,
+// found a smaller set than the proposal recorded, and marked the proposal
+// permanently stale -- reporting "its invalidation set changed" while the
+// operator's gate sat inside a dotted directory nothing mentions. They lost the
+// proposal and, as far as the pipeline could tell, the stage that produced the
+// gate.
+//
+// So recovery runs first, before status or staleness is judged, and puts the
+// gates back where the proposal was created against. Only files named like
+// gates are moved, and never over a gate that already exists -- a live file is
+// always newer than one an interrupted transaction set aside. Anything else in
+// the directory is left there, and the directory with it, so an unexplained
+// leftover stays visible rather than being silently deleted.
+const GATE_FILE = /^stage-\d{2}[a-z]?(\.[^.]+)?\.json$/;
+
+function recoverInterruptedApply(cwd, changeId, id) {
+  const transaction = path.join(proposalDir(cwd, changeId), `.apply-${id}`);
+  let names;
+  try { names = fs.readdirSync(transaction); } catch { return []; }
+  const restored = [];
+  for (const name of names) {
+    if (!GATE_FILE.test(name)) continue;
+    const target = path.join(gatesDir(cwd, changeId), name);
+    if (fs.existsSync(target)) continue;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.renameSync(path.join(transaction, name), target);
+    restored.push(name);
+  }
+  // rmdir, not rm -r: it succeeds only when the directory is genuinely empty.
+  try { fs.rmdirSync(transaction); } catch { /* something unexplained remains */ }
+  return restored;
+}
+
 function applyProposal(cwd, changeId, id) {
   const { proposal, file } = loadProposal(cwd, changeId, id);
+  const recovered = recoverInterruptedApply(cwd, changeId, id);
+  if (recovered.length > 0) appendProposalEvent(cwd, changeId, proposal, "recovered");
   if (proposal.status !== "pending") throw new Error(`proposal ${id} is ${proposal.status}, not pending`);
   if (Date.parse(proposal.expires_at) <= Date.now()) {
     proposal.status = "stale";
@@ -202,7 +244,24 @@ function applyProposal(cwd, changeId, id) {
   }
 
   const transaction = path.join(proposalDir(cwd, changeId), `.apply-${id}`);
-  fs.mkdirSync(transaction, { recursive: false });
+  try {
+    fs.mkdirSync(transaction, { recursive: false });
+  } catch (err) {
+    // recoverInterruptedApply above removes this directory whenever it can
+    // account for everything inside. Reaching here means it could not, so the
+    // contents are something neither an interrupted apply nor this code put
+    // there. Say what is in the way instead of surfacing a bare EEXIST and an
+    // absolute path.
+    if (err.code !== "EEXIST") throw err;
+    let leftovers = [];
+    try { leftovers = fs.readdirSync(transaction); } catch { /* unreadable */ }
+    throw new Error(
+      `proposal ${id} cannot be applied: an interrupted apply left `
+      + `${path.relative(cwd, transaction).replace(/\\/g, "/")} behind holding `
+      + `${leftovers.length > 0 ? leftovers.join(", ") : "no recognizable gate files"}. `
+      + "Move anything you need out of that directory, then remove it and retry.",
+    );
+  }
   try {
     for (const relative of currentGates) {
       const source = path.join(cwd, relative);
