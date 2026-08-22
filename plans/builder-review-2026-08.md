@@ -1,8 +1,12 @@
 # Builder Review — August 2026
 
-Status: **Wave 0 delivered** (2026-08-20). An architecture, implementation, and roadmap
-review taken at Phase 42.2, from a builder's perspective: what is costing money, what is
-costing quality, and what is blocking the roadmap's own gates.
+Status: **Wave 0 delivered** (2026-08-20); **F5 decomposition and the `devteam chat` audit
+delivered** (2026-08-22). An architecture, implementation, and roadmap review taken at Phase
+42.2, from a builder's perspective: what is costing money, what is costing quality, and what
+is blocking the roadmap's own gates.
+
+Kept current as the work lands — see [§8](#8-what-shipped-after-wave-0) for everything
+merged since, and what running the code found that reading it had not.
 
 Like [`experience-review-2026-08.md`](experience-review-2026-08.md), this review is
 **measured rather than read**. Every number below came from running the CLI against
@@ -10,8 +14,8 @@ throwaway projects on 2026-08-20 — a fresh `git init`, `npm init`, one source 
 `devteam init --host claude-code`. Where a claim is about code rather than behavior, the
 file and line are cited so it can be re-checked.
 
-Findings carry IDs (F1–F8) so they can be referenced from commits and PRs. Six are fixed, one
-was closed by measurement rather than built, and F5 is a refactor in progress.
+Findings carry IDs (F1–F8) so they can be referenced from commits and PRs. Seven are fixed,
+one was closed by measurement rather than built.
 
 - [1. Headline](#1-headline)
 - [2. Findings](#2-findings)
@@ -20,6 +24,7 @@ was closed by measurement rather than built, and F5 is a refactor in progress.
 - [5. DX and the conversational opening](#5-dx-and-the-conversational-opening)
 - [6. Roadmap](#6-roadmap)
 - [7. What Wave 0 changed, measured](#7-what-wave-0-changed-measured)
+- [8. What shipped after Wave 0](#8-what-shipped-after-wave-0)
 
 ---
 
@@ -70,7 +75,7 @@ of the roadmap.
 | F2 | The changed-file manifest treats Stagecraft's own install as the user's diff | High | Fixed (#431) |
 | F3 | Cost telemetry is structurally impossible, which is what blocks the Phase 41 gates | High | Fixed (#429, #430) |
 | F4 | Prompt budget is ~99% process and ~1% project | Medium | **Closed — not worth doing**; see §4 |
-| F5 | The driver's core loop is a 1,730-line function | Medium | In progress — slice 1 extracted |
+| F5 | The driver's core loop is a 1,730-line function | Medium | Fixed — prologue fully extracted (#445, #456, #459, #461, #463) |
 | F6 | The factory default contradicts the documentation | Medium | Fixed (#432) |
 | F7 | CLI vocabulary drifts across commands | Medium | Fixed (#433) |
 | F8 | Track inference promoted every new project to `full` because of the word "authoring" | High | Fixed (#431) |
@@ -214,34 +219,50 @@ trade: a byte-identical prefix is worth extra bytes if a cache reuses it.
 > cost is the agentic loop re-reading its accumulated context every turn, not the prompt.
 > See §4.
 
-### F5 — `run()` is a 1,730-line function (open)
+### F5 — `run()` is a 1,730-line function (fixed: prologue extracted)
 
-`run()` spans `core/driver.js:872–2602`. The audit's P2-2 decomposition extracted the
+`run()` spanned `core/driver.js:872–2602`. The audit's P2-2 decomposition extracted the
 dispatch, transient, and fix/ruling transitions and explicitly left `run()` owning "lock,
-loop, effect, and final persistence" — but that residue is larger than most projects'
-entire orchestrators. `driver.js` is 2,604 lines; `orchestrator.js` is 2,754.
+loop, effect, and final persistence" — but that residue was larger than most projects'
+entire orchestrators.
 
-This is not causing bugs today; the suite is thorough. It is a velocity tax on exactly the
-work Phase 42 has left — resume semantics, retry ownership, and evidence accounting all
-live inside that function.
+Five slices later the whole prologue — everything between entry and the first dispatch —
+lives in named modules:
 
-> **Slice 1 landed (2026-08-21).** The run-end side-effect phase — pattern auto-collection,
-> the opt-in Reflector pass, memory auto-ingest, and the resolution linker — moved to
-> `core/driver-runend.js`. It was the cleanest available seam: four fire-and-forget passes
-> after the lock releases, none of which touches `summary`. `run()` is 1,725 lines, down
-> from 1,780. The whole suite passed with **no test changes**, which is the evidence the
-> extraction was behavior-preserving; 13 characterization tests now pin the seam so the next
-> slice has something to break.
->
-> **Slice 2 landed (2026-08-21).** The effective safety policy — cap resolution plus the two
-> operator warnings that go with it — moved to `core/driver-safety.js`, split into a pure
-> `resolveRunSafety` that returns the warnings and an `emitSafetyWarnings` that writes them,
-> so the policy is testable without capturing process output. `run()` is 1,721 lines. Again
-> no test changes, and 9 characterization tests pin the seam. `run()` deliberately keeps
-> ownership of the mid-prologue reassignment when a stoplist bypass is authorized.
-> Remaining candidates: the rest of the ~300-line prologue (config pinning, track
-> resolution, changeId derivation, dependency injection) and the ~35-line final-persistence
-> `finally` block.
+| Slice | Module | What it owns | PR |
+|---|---|---|---|
+| 1 | `core/driver-runend.js` | run-end side effects | #445 |
+| 2 | `core/driver-safety.js` | cap resolution and its warnings | #456 |
+| 3 | `core/driver-stage-order.js` | ADR-009 stage order, `--until` validation | #459 |
+| 4 | `core/driver-run-state.js` | run state and its token accounting | #461 |
+| 5 | `core/driver-plan.js` | plan inputs and materialization | #463 |
+
+`run()` is **1,629 lines**, down from 1,780; `core/driver.js` is 2,367, down from 2,604.
+
+**What actually made this safe was not the extraction discipline — it was measurement.**
+Two characterization suites landed *before* the slices they protected (#457, #462), using
+`--plan-only` as a harness because it runs the entire prologue and halts before the first
+dispatch. Then every slice was mutation-tested: perturb the extracted logic, confirm a test
+fails.
+
+That found four things a passing suite had not:
+
+- **A test that constrained a relationship but never a value.** The stage-disposition
+  assertion checked `included + skipped_by_config + skipped_by_right_sizing == total`, which
+  holds just as well when right-sizing produces nothing at all. Deleting right-sizing passed
+  it. Three mutations escaped through that one gap (#463).
+- **A fixture too bare to exercise the code.** The shared test project has no source files,
+  so right-sizing and active-role discovery answer `[]` whatever they do. `makeRealisticProject`
+  fixed that; a project with a frontend keeps 15 of 18 stages where a bare one keeps 13 (#466).
+- **A whole path the suite never touched.** Six mutations of resume reconciliation — resetting
+  the run lineage, dropping the `prior_run_id` link, inheriting a dead wave — all passed,
+  because the suite only ever compared plan fingerprints across a resume (#461).
+- **Real defects in the code being extracted**, described in [§8](#8-what-shipped-after-wave-0).
+
+**Not done:** the dispatch loop itself, which is most of the remaining 1,629 lines. It needs
+a different harness — it is stateful, mutates `state` and `summary` throughout, and has no
+equivalent of `--plan-only` as an observation point. That harness should be designed
+deliberately rather than approached with more cutting.
 
 ### F6 — Factory default contradicted the docs (fixed, #432)
 
@@ -467,6 +488,15 @@ understands the halt evaporates between questions. A run-scoped, on-disk session
 and redacted the way the snapshot already is — would fix it without changing the authority
 model.
 
+> **Corrected by measurement (2026-08-22).** The paragraph above was written from reading
+> the code, and the audit in [§8](#8-what-shipped-after-wave-0) found the priority inverted.
+> The architecture is as sound as claimed — ids are validated against traversal, apply and
+> reject are status-guarded, history is bounded three ways, the artifact write is a
+> transaction with rollback. But three of the snapshot's `run` fields were reading keys
+> **nothing had ever written**, so the coordinator could not tell a halted run from a
+> running one while answering "why did this stop?". Session persistence is worth less than
+> making the current turn tell the truth, and that is now fixed. Re-rank accordingly.
+
 ---
 
 ## 6. Roadmap
@@ -520,9 +550,9 @@ that two of its four items were optimizing the wrong 0.26% of a dispatch.
    and `loop --deploy` fills the 4-to-15 dispatch gap. Shares an ADR review with 42.4.
 4. **42.5 / 42.6** — logical-run evidence semantics and dogfood bootstrap isolation. Note
    that #431 removes much of 42.6's motivation on its own.
-5. **F5 — continue the P2-2 decomposition.** Extract `run()`'s effect/persistence phase
-   behind the transition-object seam already proven three times, one behavior-preserving
-   slice per PR.
+5. ~~**F5 — continue the P2-2 decomposition.**~~ **Done 2026-08-22** for the prologue —
+   five slices, #445/#456/#459/#461/#463. The dispatch loop remains and needs a harness
+   designed first; see F5 above.
 
 ### Wave 3 — Make the agents senior
 
@@ -535,7 +565,8 @@ because that is what distinguishes an improvement from a regression.
    `source: auto`, reversible through the quarantine path that already works.
 3. **Extend proposal/apply to rulings, retry ownership, and pattern text.**
 4. **Run-scoped chat sessions** so the context that understands a halt survives between
-   commands.
+   commands. Demoted after the §8 audit: the per-turn snapshot was the real gap, and it is
+   fixed. This is now a convenience, not a correctness item.
 5. ~~**Re-run the Phase 41 review.**~~ **Done 2026-08-21** —
    [`phase-41-evidence-review-2026-08-21.md`](phase-41-evidence-review-2026-08-21.md).
    Still NO-GO, and it found that F3's fix is incomplete: the gate-level cost telemetry
@@ -574,3 +605,82 @@ Suite after all five: 3,297 passing, 408 consistency checks, lint clean.
 software — only that it now costs what it was designed to cost and can report what it
 spent. Whether the D5 and H3 gates open is a question for the next evidence review, run
 against real collection rather than against these numbers.
+
+---
+
+## 8. What shipped after Wave 0
+
+Eleven PRs merged 2026-08-21 to 2026-08-22, in two arcs: finishing F5's decomposition, and
+auditing `devteam chat` — the one shipped command that had no test file of its own.
+
+| PR | What | Kind |
+|---|---|---|
+| [#456](https://github.com/telus-labs/stagecraft/pull/456) | `core/driver-safety.js` — cap resolution | refactor |
+| [#457](https://github.com/telus-labs/stagecraft/pull/457) | 19 prologue characterization tests | test |
+| [#458](https://github.com/telus-labs/stagecraft/pull/458) | `--until` honesty; `--plan-only` exits 0 | fix |
+| [#459](https://github.com/telus-labs/stagecraft/pull/459) | `core/driver-stage-order.js` | refactor |
+| [#460](https://github.com/telus-labs/stagecraft/pull/460) | one home for `nonNegativeNumber` | refactor |
+| [#461](https://github.com/telus-labs/stagecraft/pull/461) | `core/driver-run-state.js` | refactor |
+| [#462](https://github.com/telus-labs/stagecraft/pull/462) | 6 resume-drift characterization tests | test |
+| [#463](https://github.com/telus-labs/stagecraft/pull/463) | `core/driver-plan.js` | refactor |
+| [#464](https://github.com/telus-labs/stagecraft/pull/464) | chat can see how the run ended | fix |
+| [#465](https://github.com/telus-labs/stagecraft/pull/465) | recover an interrupted proposal apply | fix |
+| [#466](https://github.com/telus-labs/stagecraft/pull/466) | a test fixture with real files | test |
+| [#467](https://github.com/telus-labs/stagecraft/pull/467) | `/status` says why the run stopped | fix |
+
+Suite: **3,518 passing** in 79 seconds, 411 consistency checks, lint clean — up from 3,297.
+
+### Four defects, all found by running the code
+
+Every one was invisible to reading, and each was found by exercising a surface rather than
+reasoning about it.
+
+**`--until` silently ran the whole track.** Dispatch reads `untilIndex < 0` as "no limit",
+and `order.indexOf()` returns `-1` for any stage the resolved track does not contain. So
+`--until buidl`, or a stage borrowed from another track, did not stop the run early — it
+removed the boundary entirely and ran through to `deploy`, without a warning. The run plan
+never recorded the boundary either, so ADR-018's "inspectable execution contract" reported
+all 13 stages of `full` as included with `--until build` set (#458).
+
+**Three chat snapshot fields were structurally dead.** `run_id`, `status`, and `halted` read
+keys nothing in the codebase has ever written to `run-state.json`. A user asking "why did the
+run stop?" got `halted: null` and `unavailable: []` — nothing missing, said the snapshot,
+while the prompt instructed the model to call out missing evidence. `halt_reason` was set by
+all thirteen halt paths but only on the in-memory summary, so it reached the terminal and
+nothing else. A run that ended by *throwing* left no record anywhere at all (#464).
+
+**An interrupted proposal apply cost the operator both the proposal and a gate.** Apply moves
+invalidated gates into `pipeline/proposals/.apply-<id>/`, rewrites the artifact, then removes
+the directory. Its rollback deliberately preserves that directory rather than risk losing the
+gates — but nothing put them back, and the damage compounded: the next apply saw a smaller
+gate set, marked the proposal **permanently stale**, and reported "its invalidation set
+changed" while the gate sat in a dotted directory nothing mentions (#465).
+
+**`/status` contradicted itself.** It labelled `next().reason` as "why", so a failed run
+printed `run: failed; stage requirements` directly above `why: stage not started` (#467).
+
+### What this says about the test suite
+
+The suite is large and it is not the same thing as coverage. Mutation testing every extracted
+module — perturb the logic, confirm a test fails — found gaps a green run never would:
+
+- an assertion that pinned a **relationship between numbers but never the numbers**, through
+  which three mutations escaped
+- a **fixture too bare to exercise the code**: no source files, so right-sizing and role
+  discovery return `[]` regardless of whether they work
+- an entire **untested path** — resume reconciliation — where six mutations all passed
+
+Two of these were in characterization tests *I had written two PRs earlier*. Writing the test
+first is necessary and not sufficient; the test also has to be shown to fail.
+
+### The pattern worth keeping
+
+Nine times across this work, measurement overturned something reasoned from the code — the
+121× `--budget-tokens` error, `/goal`'s real behavior, the 3.75× track gap that was not one,
+cost coverage that was `0/2` because neither host could report, `--repair`'s stoplist
+escalation, `--plan-only`'s exit code, the legacy-plan fingerprint fallback, right-sizing's
+deliberate absence from the execution fingerprint, and every defect above.
+
+The corrections are left inline throughout this document rather than edited away, because
+the pattern is the finding: **on this codebase, reading is a hypothesis and running is
+evidence.**
