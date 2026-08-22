@@ -569,8 +569,35 @@ function candidatesFromObservations(observations, seedTexts = {}) {
   })).sort((a, b) => (b.observations - a.observations) || a.id.localeCompare(b.id));
 }
 
+// The domain template says what class of thing to do; the detector says which
+// finding actually recurred. Naming it matters because the domain is inferred
+// from the stage id and can be a poor fit: a recurring `no-console` blocker at
+// stage-04a maps to the "tooling" domain, whose sentence is about whether lint
+// scripts exist -- true of the stage, useless as prevention guidance for that
+// rule. An agent injected with the template alone learns nothing about the rule
+// it keeps breaking.
+//
+// Only when the detector is specific. detectorFrom() falls back to
+// slugify(source) when a blocker carries no signal/code/id, and quoting "qa" or
+// "reflector" back at the agent is noise, not evidence.
+function detectorPrefix(obs) {
+  const detector = obs.detector ? String(obs.detector) : "";
+  if (!detector || detector === slugify(obs.source || "")) return "";
+  return `Prevent recurring "${detector}" findings — `;
+}
+
 function proposedPromptText(obs) {
   const lang = obs.language && obs.language !== "unknown" ? `${obs.language} ` : "";
+  const detail = detectorPrefix(obs);
+  if (detail) return detail + lowerFirst(domainGuidance(obs, lang));
+  return domainGuidance(obs, lang);
+}
+
+function lowerFirst(text) {
+  return text ? text[0].toLowerCase() + text.slice(1) : text;
+}
+
+function domainGuidance(obs, lang) {
   switch (obs.domain) {
     case "observability":
       return `For ${lang}${obs.workstream} work, implement required structured logs, metrics, or traces during build so the observability gate can verify them.`;
