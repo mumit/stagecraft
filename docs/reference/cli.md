@@ -30,7 +30,7 @@ Grounded, read-only conversation about current pipeline state and the safest nex
 | --timeout-ms     | number | Per-turn host timeout in milliseconds                          |
 | --json           | bool   | JSON output for a one-shot question                            |
 | --dry-run        | bool   | Print the grounded prompt without calling a host               |
-| --refine         | string | Propose a requirements or design artifact refinement           |
+| --refine         | string | Propose a refinement: requirements | design | ruling           |
 | --proposal       | string | Inspect, apply, or reject a proposal id                        |
 | --apply          | bool   | Explicitly apply --proposal after rechecking hash/invalidation |
 | --reject         | bool   | Reject --proposal without changing the artifact                |

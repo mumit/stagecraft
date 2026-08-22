@@ -94,7 +94,25 @@ conversational turn still has tools disabled and cannot edit the checkout:
 ```bash
 devteam chat "make AC-3 measurable" --refine requirements
 devteam chat "make the retry boundary explicit" --refine design
+devteam chat "resolve the lint conflict" --refine ruling
 ```
+
+`--refine ruling` puts ADR-003's escalation contract behind the same split.
+`devteam ruling --headless` dispatches the Principal with write access to
+`pipeline/context.md`, so the ruling lands in the file and `devteam
+fix-escalation` acts on it — a binding ruling authorizes an autonomous
+re-dispatch, and its `[class:]` is what `--auto-rule` may pre-authorize, yet it
+was the one artifact in the escalation path with no review step. The refine
+path grounds the turn in the escalating gate's `escalation_reason`,
+`decision_needed`, and blockers, and returns a proposal instead of a write.
+
+Two properties differ from an artifact refinement. The model returns a narrow
+envelope (`{topic, decision, class}`) and Stagecraft renders the line and
+computes the appended file, so `context.md` is never rewritten wholesale — it
+accumulates the escalation history. And the rendered line must round-trip
+through `escalation.js`'s own parser or the proposal is refused, so a stored
+ruling can never read differently to `devteam fix-escalation` than it did to
+the operator reviewing it. A ruling invalidates no gates.
 
 The host receives the current artifact plus a bounded stage snapshot and project knowledge
 facts, then must return one versioned full-replacement envelope. Stagecraft validates it,

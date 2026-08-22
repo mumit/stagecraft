@@ -12,6 +12,12 @@ const MAX_ARTIFACT_BYTES = 64 * 1024;
 const KINDS = {
   requirements: { artifact: "brief.md", root_stage: "stage-01" },
   design: { artifact: "design-spec.md", root_stage: "stage-02" },
+  // A ruling resolves an escalation rather than restating an artifact, so it
+  // invalidates nothing: root_stage null means "no downstream gates depend on
+  // this". It is also appended rather than replaced -- see appendRuling in
+  // core/rulings-proposal.js, which computes the replacement locally so the
+  // model never rewrites pipeline/context.md wholesale.
+  ruling: { artifact: "context.md", root_stage: null, append: true },
 };
 
 function digest(content) {
@@ -68,12 +74,30 @@ function atomicWrite(file, content, mode = 0o600) {
 function unifiedReplacementDiff(relative, before, after) {
   const oldLines = before.endsWith("\n") ? before.slice(0, -1).split("\n") : before.split("\n");
   const newLines = after.endsWith("\n") ? after.slice(0, -1).split("\n") : after.split("\n");
+
+  // Trim the lines both sides share at the head and tail. For a whole-file
+  // rewrite there is usually nothing in common and the output is unchanged --
+  // every line removed, every line added, which is what a replacement is. For
+  // an append (the `ruling` kind) it collapses to the lines that actually
+  // changed. Reviewing a one-line addition rendered as "the entire file was
+  // replaced" defeats the point of having a review step.
+  let head = 0;
+  while (head < oldLines.length && head < newLines.length && oldLines[head] === newLines[head]) head++;
+  let tail = 0;
+  while (
+    tail < oldLines.length - head
+    && tail < newLines.length - head
+    && oldLines[oldLines.length - 1 - tail] === newLines[newLines.length - 1 - tail]
+  ) tail++;
+
+  const oldChanged = oldLines.slice(head, oldLines.length - tail);
+  const newChanged = newLines.slice(head, newLines.length - tail);
   const out = [
     `--- a/${relative}`,
     `+++ b/${relative}`,
-    `@@ -1,${oldLines.length} +1,${newLines.length} @@`,
-    ...oldLines.map((line) => `-${line}`),
-    ...newLines.map((line) => `+${line}`),
+    `@@ -${head + 1},${oldChanged.length} +${head + 1},${newChanged.length} @@`,
+    ...oldChanged.map((line) => `-${line}`),
+    ...newChanged.map((line) => `+${line}`),
   ];
   return out.join("\n") + "\n";
 }
@@ -83,6 +107,11 @@ function stageIndex(stageId) {
 }
 
 function affectedGatePaths(cwd, changeId, rootStage) {
+  // A kind with no root stage invalidates nothing. Without this, stageIndex()
+  // returns -1 for a null stage and the `index >= rootIndex` filter below
+  // matches every stage -- so "invalidates nothing" would have silently meant
+  // "invalidates everything".
+  if (!rootStage) return [];
   const rootIndex = stageIndex(rootStage);
   let names;
   try { names = fs.readdirSync(gatesDir(cwd, changeId)); } catch { return []; }
