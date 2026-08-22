@@ -1,7 +1,8 @@
 # Phase 42 — Dogfood Reliability and Recovery Fit
 
-**Status:** in progress from two-project dogfood evidence (2026-08-19); 42.1–42.3
-implemented and unreleased.
+**Status:** complete (2026-08-22). 42.1–42.3 were the reliability-critical path;
+42.4–42.6 followed independently. See each item's acceptance list for what
+delivered it — several criteria were satisfied by work done elsewhere.
 
 **Goal:** remove the control-plane friction observed while completing a real
 `loop` change, without activating any Phase 41 learning capability or weakening
@@ -136,11 +137,30 @@ reported as local and must not pretend another clone is initialized.
 
 **Acceptance:**
 
-- peer review sees only the product diff by default in local dogfood mode;
-- `doctor` distinguishes committed from checkout-local initialization;
+- peer review sees only the product diff by default in local dogfood mode
+  — ✅ delivered by [#431](https://github.com/telus-labs/stagecraft/pull/431)
+  rather than by this item: `FRAMEWORK_OWNED_PREFIXES` in `core/paths.js`
+  excludes `pipeline/`, `.devteam/`, and every host install surface from the
+  changed-file manifest, verified against `isFrameworkOwnedPath`;
+- `doctor` distinguishes committed from checkout-local initialization
+  — ✅ `core/install-mode.js` classifies from git itself (tracked → committed,
+  ignored → checkout-local, neither → untracked, plus no-git and absent) and
+  `devteam doctor` reports it. Only `untracked` warns; both deliberate shapes
+  are informational;
 - evidence/pipeline state remains ignored without repeatedly mutating the
-  repository's tracked `.gitignore`;
-- the existing committed-install workflow remains available.
+  repository's tracked `.gitignore` — ✅ `writeDogfoodGitignoreBlock` is
+  marker-delimited and idempotent: first call writes or updates, every
+  subsequent call returns `skipped`;
+- the existing committed-install workflow remains available — ✅ unchanged; the
+  dogfood shape is opt-in behind `devteam init --profile dogfood`.
+
+**Status: 42.6 complete**, and with it Phase 42. Three of the four criteria were
+already satisfied when this item was picked up — the first by #431, the third and
+fourth by the `--profile dogfood` work that shipped with the item's own
+scaffolding. Only `doctor`'s reporting was genuinely open. That is worth
+recording rather than presenting four fresh ticks: the review's note that "#431
+removes much of 42.6's motivation on its own" was correct, and checking it first
+turned a phase-sized item into a small one.
 
 ## Explicit non-goals
 
