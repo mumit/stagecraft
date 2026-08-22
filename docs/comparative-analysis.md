@@ -70,7 +70,7 @@ parity drift and enables one run to route different workstreams through differen
 
 ## 4. Stagecraft in August 2026
 
-Stagecraft is v0.11.0: 18 ordered stages, 10 tracks, 7 first-party host adapters
+Stagecraft is v0.12.0: 18 ordered stages, 10 tracks, 7 first-party host adapters
 (claude-code, codex, antigravity, openai-compat, acp, omnigent, generic — gemini-cli
 moved to the `@devteam/host-gemini-cli` plugin package after Google deprecated it
 upstream), 42 CLI command modules, 132 test files, and 2,816 passing runtime tests. The

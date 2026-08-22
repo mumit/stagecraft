@@ -1,1 +1,0 @@
-- **Keep the local UI alive when file watching is exhausted.** Asynchronous `fs.watch` errors such as `EMFILE` now disable live gate refresh with a warning instead of becoming uncaught exceptions that fail the HTTP server and its tests.

@@ -10,6 +10,852 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ---
 
+## [0.12.0] — 2026-08-22
+
+- **Keep on-demand verification inside the audit chain.** `devteam verify` now
+  re-stamps the active run's gate chain after rewriting a gate and refuses to touch signed
+  history without `DEVTEAM_SIGNING_SECRET`. Verify/stamp-chain commands prefer the
+  materialized run-plan track over a mutable config default, preventing repair or assessed
+  runs from being checked against an order they did not execute.
+
+- **Reuse unchanged project tests across verification stages.** Build, pre-review, and
+  QA now share a content-addressed project-test receipt scope, avoiding repeated full
+  suite executions when code, tests, commands, configuration, environment, toolchain,
+  and verifier version are unchanged. Repair reproduction remains separately scoped,
+  failed runs are never reused, and `pipeline.verify.receipts: false` still forces fresh
+  execution for projects whose tests depend on external state.
+
+- **Repair-mode spec verification and committed-change red-team coverage.** `devteam spec verify --strict` now accepts `pipeline/diagnosis.md` regression criteria (`RC-N`) when no feature brief exists, including the common single `## Regression Criterion` + `@regression` form. The stage-04c mechanical secret scan now falls back to the latest commit after build agents commit their changes, and the CLI version test no longer leaks temporary directories.
+
+- **A track that pins its build role now says so when the change is somewhere
+  else** ([ADR-026](../docs/adr/026-pinned-build-role-mismatch.md)). `loop`
+  (29.1) and, since [ADR-025](../docs/adr/025-scope-build-not-just-review.md),
+  `nano` and `refactor` build and review with a single static role that never
+  consults what changed — so a frontend-only change on any of the three was
+  built by an agent reading `roles/backend.md` and reviewed by the same role.
+  Measured on a repository with one frontend file dirty, `loop`, `nano`, and
+  `refactor` all dispatched `["backend"]` where `quick` and `full` dispatched
+  `["frontend"]`.
+  `devteam run` now reports the mismatch before the first dispatch: a warning by
+  default, a `build-role-mismatch` halt under
+  `autonomy.require_matching_build_role: true`, and `--force` bypasses — the
+  same escalation shape [ADR-006](../docs/adr/006-track-confidence.md)'s
+  track-confidence check uses. All three outcomes are recorded in
+  `pipeline/run-log.jsonl`.
+  The message names a remedy that actually exists for the track it fires on:
+  `pipeline.loop_build_role` for `loop`, and a different track for `nano` and
+  `refactor`, whose role comes from a static table with no config override.
+  *Honest scope note:* no dispatch behavior changes and no track gets cheaper or
+  more expensive — this reports a condition rather than fixing it. Deriving the
+  pinned role from the change is the obvious alternative and is deliberately not
+  done here: `loop`'s contract is one build workstream predictably, and deriving
+  it means a two-area change either dispatches two or picks one arbitrarily.
+  That belongs in its own ADR with dispatch evidence from real runs. Warning
+  rather than halting by default is also deliberate — halting would break every
+  project running `loop` against a frontend change today, without notice.
+
+- **Claude Code cache telemetry is now observed.** `core/performance/calibration.js`
+  has computed a prompt-cache hit rate from
+  `_orchestrator_observed.cached_tokens` since phase 39, but the claude-code
+  stream-json parser read only `input_tokens`/`output_tokens`/`total_cost_usd`
+  — so the host carrying the largest inlined prefix contributed zero samples to
+  it. The parser now captures `cache_read_input_tokens` and
+  `cache_creation_input_tokens` (field names verified against claude-code
+  2.1.207's own result message), the orchestrator records them on the gate as
+  `cached_tokens` / `cache_creation_tokens`, and the corpus and calibration
+  report carry them through. `devteam performance` gains
+  `cache.cache_creation_tokens` and `cache.read_per_write` — a prefix written to
+  cache on every dispatch and rarely read back is not paying for itself, and
+  cache writes cost more than plain input. This is what makes phase-32.1's
+  byte-stable prompt prefix measurable rather than assumed. *Honest scope note:*
+  observation only — no caching behavior changes, and no breakpoints are
+  enabled. Both counters are omitted rather than zero-filled when a host does
+  not report them, so an older CLI stays distinguishable from a genuine cache
+  miss (a reported `0` is recorded as `0`).
+
+- **`devteam assess` accepts `--feature`.** `run` and `stage` both name this
+  string `--feature`, but `assess` — usually the first command typed after
+  `init` — accepted only `--description` and exited 2 on the spelling the
+  quickstart teaches. Both now resolve to the same value; `--description`
+  remains supported so existing scripts keep working.
+- **`devteam run --plan-only`.** ADR-018 calls `pipeline/run-plan.json` an
+  inspectable execution contract, but inspecting it meant starting the run it
+  governs. `--plan-only` halts immediately after the plan is built,
+  fingerprinted, and persisted, before any stage dispatches, and reports
+  `halt_action: "plan-only"` with the plan path. Because it halts after the
+  same build/persist path a real run uses, the previewed plan *is* the plan
+  that would execute rather than a parallel estimate that can drift from it.
+  The halt leaves the ordinary interrupted-before-first-dispatch state, so
+  `devteam run --resume` executes the reviewed plan unchanged. *Honest scope
+  note:* it is not a read-only preview — it acquires the run lock and writes
+  `run-plan.json`, `run-state.json`, and `track.json` exactly as a real run
+  does. It also does not mask an `unconfirmed-track` halt: a track the operator
+  was meant to confirm still surfaces as its own typed halt first.
+
+- **Token-derived cost for hosts that report usage but no dollars.** codex's
+  `exec --json` stream carries token counts and neither a model id nor a cost,
+  so `_orchestrator_observed.cost_usd` stayed `null`, `--budget-usd` enforced
+  nothing on that host, and every cost denominator read zero — one of the two
+  reasons the 2026-08-19 Phase 41 review recorded
+  `projects-with-cost-telemetry: 0/2`. `patchGateForObservedUsage` now derives a
+  figure from the observed tokens and `core/pricing.js`, priced by the
+  host-reported model when there is one and otherwise by the routing-resolved
+  pin (already passed to the CLI as `--model` since phase-32 item 32.3).
+  `devteam run`'s budget check and cost total include it, and `cost_basis`
+  gains a `derived` value. *Honest scope note:* the derived figure is written
+  to `cost_usd_derived` with the pricing id in `cost_model` — never to
+  `cost_usd`. A product of observed tokens and a table Stagecraft maintains is
+  a weaker evidence class than a cost the host itself reported, and the two are
+  kept separable so `cost_basis` cannot present a mixed total as single-source.
+  With no model id, or no pricing entry for it, both fields stay absent and the
+  existing D7 unpriced-model warning is still the only signal — nothing is
+  fabricated.
+
+- **`devteam patterns seed` — start from the conventions a project already
+  documents ([ADR-024](docs/adr/024-cold-start-pattern-seeding.md)).** Pattern
+  learning only learned from pain: every gate-derived observation begins as a
+  blocker, warning, or follow-up, so a project's first run had an empty pattern
+  store and agents rediscovered the house rules by failing a gate — even when
+  those rules had been written down for years. Seeding reads `AGENTS.md`,
+  `CONTRIBUTING.md`, `CLAUDE.md`, `docs/project-conventions.md`, and
+  `docs/CONVENTIONS.md`, extracts the statements carrying normative language
+  (*must*, *never*, *always*, *prefer*, *avoid*, *require*), and lands them as
+  candidates in the same review queue gate-derived ones use. A seeded candidate
+  proposes the project's own sentence as its `proposed_prompt_text` and records
+  `proposed_from` so a reviewer sees the source document; the per-domain
+  templates cannot express a specific house rule. *Honest scope note:*
+  candidates only — nothing is promoted and nothing reaches a prompt without the
+  existing human `devteam patterns promote`, and seeded candidates enter as
+  `nudge` because a documented preference is not evidence of a defect. Headings,
+  tables, and fenced code are skipped; wrapped prose is rejoined so fragments are
+  never emitted; statements are capped at 40 and bounded to 24–240 characters;
+  and every one is secret-scanned at the same bar promotion applies to
+  operator-authored text. Re-running is idempotent, and seeded proposals survive
+  a later `patterns collect` (they live in their own `seeded.json`, since
+  `pending-review.json` is rewritten on every collection).
+
+- **Dispatches made outside a run are now excluded explicitly rather than
+  silently (Phase 42.5).** `devteam stage --headless` — the direct-remediation
+  path — records a run-corpus entry with no `run_id` and writes no run-log
+  event, so the run-log-derived `durable_dispatch_observations` count
+  structurally could not see it. A reviewer weighing D5's "≥5 durable dispatches
+  per (role, host) pair" had no way to tell a complete count from a partial one.
+  `devteam evidence status` and exported bundles now carry
+  `quality.dispatches_outside_run`, sourced from the corpus, so the gap is
+  stated: "12 this evidence path can see, plus 3 it cannot". *Honest scope
+  note:* this reports the exclusion, it does not fold those dispatches into the
+  durable count — they carry no run-log provenance, and quietly merging the two
+  populations would be the opposite of the fix. The key is omitted rather than
+  zero-filled when the corpus was not consulted, keeping "none outside a run"
+  distinct from "this export could not tell", and it uses the same optional-key
+  validation pattern as `durable_dispatch_observations`, so a bundle exported
+  before this change validates unchanged.
+
+- **`devteam doctor` reports how the project was initialized.** A committed
+  install tracks `.devteam/` so teammates share the configuration and framework
+  changes appear in the diff; a checkout-local (dogfood) install gitignores it so
+  the framework stays out of the product diff under review. `doctor` reported the
+  install's *health* and never which shape it was looking at — so a deliberately
+  local setup and a committed one that had lost its files looked identical, and
+  they need opposite fixes.
+  The mode is classified from git itself rather than a recorded flag, because a
+  flag drifts from what the repository actually does: tracked → `committed`,
+  ignored → `checkout-local`, neither → `untracked`, plus `no-git` and `absent`.
+  The dogfood profile is recognized by its `.gitignore` marker block.
+  *Honest scope note:* only `untracked` warns — both deliberate shapes are
+  informational, since a checkout-local install is a choice and not a fault. This
+  completes Phase 42.6, and with it Phase 42; three of that item's four
+  acceptance criteria were already satisfied when it was picked up (the manifest
+  one by #431, the other two by the existing `--profile dogfood` work), which the
+  plan now records rather than claiming as new.
+
+- **Convergence conditions moved from `/goal` into the prompt body
+  ([ADR-023](docs/adr/023-goal-condition-in-prompt-body.md)).** `build` and `qa`
+  declare a `goalCondition`, which was delivered as claude-code's
+  `/goal "<condition>"` slash command. That handler rejects input over 4,000
+  characters — and in `--print` mode the limit applies to the whole piped
+  prompt, not the condition — so the orchestrator's fallback chain **discarded
+  the inlined framework from every `build` and `qa` dispatch** to make room,
+  dropping `patchItems` first. Measured on the dispatch path, that bought a
+  directive which survived only when few files were dirty: at 3 changed files
+  `/goal` fit, at 12 it did not. The condition is now rendered as a
+  `## Done when` section in the prompt itself, so it survives at any prompt
+  size and reaches all seven hosts rather than the two that declared
+  `goalLoop`. On a four-file project the bytes actually sent to `build` go from
+  3,621 to 23,369, with the framework inlined again.
+- **`capabilities.goalLoop` and `capabilities.promptCharLimit` are removed from
+  the adapter contract.** Both described one Claude Code slash-command handler
+  rather than a host property; prompts are piped to stdin, so no host has an
+  argv ceiling. `codex` had declared `goalLoop: true` despite `codex exec`
+  having no slash-command layer, so it was paying the full content-dropping
+  cost for a directive it could not act on. The `shrinkComposedPrompt` fallback
+  chain is removed with them. `devteam chat`'s prompt budgets, which read
+  `promptCharLimit` incidentally, are now explicit named constants instead of
+  inheriting a 4,000-char bound that never applied to them. *Honest scope note:*
+  convergence is now advisory — a prompt line asks the model to keep going where
+  `/goal` asked the host's own loop to. The mechanism that actually re-dispatches
+  a stage whose gate does not pass is the driver's fix-and-retry loop (ADR-003),
+  and always was.
+
+- **`run_count` counts logical runs, not invocations (Phase 42.5).** `run_id` is
+  the invocation timestamp and every `devteam run --resume` mints a new one, so
+  evidence counted one run per `run-start` event — a single feature change
+  driven through two resumes appeared three times in the denominator that
+  readiness logic divides by. This is the conflation the
+  [2026-08-19 Phase 41 review](plans/phase-41-evidence-review-2026-08.md) flagged
+  when it declined to treat its 10 run records as 10 feature changes. The driver
+  now sets a `logical_run_id` — the lineage root, preserved across resumes in
+  `run-state.json` — and emits it on every `run-start`; the analyzer groups by
+  it, so three invocations of one change report `run_count: 1` with one
+  completion. *Honest scope note:* the id is local. `pipeline/run-log.jsonl` is
+  gitignored operational state, the exported bundle gains no field and stays a
+  count, and the privacy boundary (timestamps are never copied) is unchanged. A
+  run log written before this field counts exactly as it did before, one run per
+  `run-start`, so no historical bundle changes meaning. Two of 42.5's four
+  acceptance criteria remain open: durable counting of every dispatch including
+  direct remediation, and a typed CLI path for recording manual Principal
+  rulings.
+
+- **A pattern candidate's proposed prevention text names the finding that
+  recurred.** The text an agent is injected with, so it stops relearning a rule
+  from failed gates, was a per-domain template with the workstream interpolated
+  — and the domain is inferred from the stage id, so it could be a poor fit for
+  what actually failed. A recurring `no-console` blocker at `stage-04a` inferred
+  the `tooling` domain and proposed *"ensure configured lint/test scripts exist
+  or the gate records an explicit skip reason"*: true of the stage, and useless
+  as guidance for the rule being broken.
+  The observation already recorded `detector` — the blocker's own
+  `signal`/`code`/`id` — and nothing used it. It now leads the sentence:
+  *"Prevent recurring "no-console" findings — before pre-review, …"*.
+  *Honest scope note:* only when the detector is specific. `detectorFrom` falls
+  back to `slugify(source)` for a blocker carrying no identifier, and quoting
+  `"gate-blocker"` or `"reflector"` back at an agent is noise; those candidates
+  keep the generic sentence. Deterministic — no model, no schema change, and no
+  effect on what an evidence bundle exports. An operator's own
+  `devteam patterns promote --text` still wins.
+  *Not yet verified against a live host:* the new sentence has not been read by a
+  model in a real dispatch, so whether naming the detector measurably changes
+  agent behavior is unmeasured. The change is deterministic and reviewable, and
+  the claim here is only that the text is more specific — not that it works.
+
+- **`devteam evidence record-ruling` — a typed path for a Principal ruling a
+  human applied (Phase 42.5, completes the item).** `--auto-rule` already writes
+  a durable `auto-ruled` event, so rulings the driver applied under a standing
+  grant are evidence. A ruling the operator made themselves left no typed trace,
+  and the plan explicitly forbids inferring one from prose — which is part of
+  why the [2026-08-19 Phase 41 review](plans/phase-41-evidence-review-2026-08.md)
+  recorded `granted ruling events: 0 / 1` against ADR-005. Record it instead:
+  `devteam evidence record-ruling --class doc-only --yes`.
+  The record binds to a real observed `judgment-gate` halt, the same safeguard
+  ADR-012 gives resolution acceptance, so ruling evidence cannot be minted for an
+  escalation that never happened and the same escalation cannot be recorded
+  twice. Only the normalized class is stored; the halt's free-form reason is not.
+- **Recorded rulings are reported as a separate population.** ADR-005 asks which
+  grants operators routinely approve: an auto-applied ruling is evidence a
+  standing grant already exists, while a hand-recorded one is evidence about what
+  a human chose, so merging them would answer a different question than the gate
+  poses. `devteam evidence status` and exported bundles gain a
+  `recorded_rulings` section alongside `rulings`. *Honest scope note:* the
+  section is optional and omitted when empty, uses the same optional-key
+  validation pattern as `resolutions`, and applies the same k-anonymity
+  suppression floor as every other exported section — so a bundle exported
+  before this change validates unchanged, and the new section is not a way
+  around the export boundary.
+
+- **`devteam chat --refine ruling` puts ADR-003 rulings behind propose/review/apply.**
+  `devteam ruling --headless` dispatches the Principal with `allowedWrites:
+  ["pipeline/context.md"]`, so the ruling is written straight into the file and
+  `devteam fix-escalation` acts on it. A binding ruling authorizes an autonomous
+  re-dispatch and its `[class:]` is what an operator may later pre-authorize
+  through `--auto-rule` — it was the highest-authority artifact in the escalation
+  path and the only one with no review step. A brief edit needed approval; a
+  ruling did not.
+  The refine turn grounds itself in the escalating gate's `escalation_reason`,
+  `decision_needed`, and blockers, and returns a proposal. Inspect, apply, and
+  reject are the existing commands unchanged.
+  **The model never rewrites `context.md`.** It returns a narrow envelope
+  (`{topic, decision, class}`); Stagecraft renders the ADR-003 line and computes
+  the appended file itself, so the accumulated escalation history cannot be lost
+  to a wholesale replacement. The rendered line must round-trip through
+  `core/escalation.js`'s own `parseRulingLine` or the proposal is refused — a
+  stored ruling can never read differently to `devteam fix-escalation` than it
+  did to the operator who reviewed it. A missing class defaults to
+  `unclassified`, which is never auto-applied.
+  *Not yet verified against a live host:* whether a real model returns a usable
+  ruling for a real escalation. Every layer below that is exercised — envelope
+  validation, line rendering, the parser round-trip, the append, apply, reject,
+  and the prompt itself via `--dry-run` against a real `ESCALATE` gate — but the
+  model-facing half has not run. Treat this feature as unproven until it has.
+- **A proposal kind can now invalidate nothing.** `affectedGatePaths` returned
+  *every* gate for a kind with no `root_stage`, because `stageIndex(null)` is
+  `-1` and the `index >= rootIndex` filter then matched everything. Rulings
+  invalidate no gates, so "nothing" had to stop meaning "everything".
+- **Proposal diffs trim common context.** `unifiedReplacementDiff` emitted every
+  old line as removed and every new line as added. That is honest for a
+  whole-file replacement and actively misleading for an append — a one-line
+  ruling rendered as "the entire file was replaced" defeats the review step it
+  exists for. Whole-file rewrites are unchanged; there is a test for both.
+
+- **A track that scopes peer-review now scopes its build to the same role**
+  ([ADR-025](../docs/adr/025-scope-build-not-just-review.md), accepted). `nano`
+  and `refactor` declared a single reviewer but still ran the four-area build
+  matrix, so the funnel narrowed *after* the cost was already spent — one
+  reviewer looking at the output of four builders. Both now cost **3 dispatches
+  instead of 6** on the case they exist for, which makes `nano` cheaper than
+  `loop` (4) and matches the documented ordering for the first time. The scoped
+  build also removes a merge round-trip, since a single-workstream stage has
+  nothing to merge.
+  The build role is derived from `PEER_REVIEW_SIZING` rather than a second list,
+  so the built area and the reviewed area cannot drift apart, and it is guarded
+  on the role being a real build workstream — which excludes `review-pr`'s
+  "reviewer" panel name.
+  *Honest scope note:* this is a deliberate assurance reduction on the
+  cross-cutting case. A `nano` change that touches four areas now gets one
+  builder instead of four. The protection is unchanged: `assess` picks the track
+  from the change shape, and the stoplist still refuses `nano` for anything
+  consequential. Two superseded tests are updated rather than weakened — one
+  asserted `nano` kept the four-area matrix, the other that `nano`'s build
+  required a merge; both were correct before this ADR and are wrong after it.
+- **The tracks matrix derives its "scoped" marker from `rolesForStage()`.**
+  `scripts/generate-tracks-matrix.js` listed track names inline, and had already
+  drifted: `refactor`'s peer-review has been a single reviewer since 35.5 and the
+  published matrix still drew it as a four-area stage.
+
+- **`devteam spec verify` distinguishes "not in this track" from drift (Phase
+  42.4).** `executable-spec` is absent from `loop`, `nano`, `refactor`, and every
+  review track, so `pipeline/spec.feature` is something nothing was ever going
+  to produce there — yet verification reported `❌ MISSING` and counted it as
+  drift, indistinguishable from a spec that should exist and does not. It now
+  resolves the project's active track and exits 0 with a `not-applicable`
+  verdict, naming the track and where that decision came from. A new `--track`
+  flag verifies against a specific track, and `--json` carries `track`,
+  `track_source`, and `applicable`.
+  Track resolution reuses the existing `resolveActiveTrack`
+  (`core/pipeline/active-track.js`) that `verify`, `verify-chain`,
+  `stamp-chain`, and `stage` already share, so verification reports against the
+  track that would actually execute — including a materialized `run-plan.json`,
+  which outranks the mutable config default. *Honest scope note:* `full` and
+  `quick` behavior is unchanged, and an unrecognized track name still reports
+  drift rather than passing, so a typo in `default_track` cannot become a silent
+  pass.
+
+- **`devteam evidence export` warns when it mints an identity for a project that
+  already has evidence.** `.devteam/evidence-project-id` ties a project's
+  bundles together across checkouts and is gitignored by design, so a clone, a
+  cleaned `.devteam/`, or an identity restored one command too late silently
+  gets a *fresh* id. `getOrCreateIdentity` has always returned `created: true`
+  and nothing surfaced it — so bundles exported under the new ref read as a
+  second, independent project, inflating every `N / 2` readiness threshold and
+  quietly breaking the Phase 41 rule against treating one project's bundles as
+  two. Export now warns on stderr when it mints an id for a project that already
+  has dispatch records, gate files, or a run log, naming what it found and how
+  to restore. *Honest scope note:* advisory and non-blocking, and it fires on the
+  *combination* rather than on minting alone — minting is correct for a genuinely
+  new project, which is the common case, and warning on that would train
+  operators to ignore it. The warning goes to stderr so `--json` stdout stays
+  machine-readable, and a probe failure never blocks an export. No `--import`
+  subcommand was added: restoring is a file copy, and a command for it would make
+  identity *reassignment* convenient, which the pseudonymous bundle model wants
+  to stay deliberate.
+
+- **`devteam evidence accept-resolution --stage <stage>`.** The command took the
+  newest unaccepted fix/retry and nothing else. On a run that retried `stage-04`
+  successfully and then escalated at `stage-06`, the newest slot held a retry
+  that never resolved; `assertPassingGate` correctly refused it, and there was
+  then **no way to accept `stage-04`'s genuine, derivable resolution at all** —
+  a real acceptance was blocked by an unrelated later failure. Observed on a
+  real run while collecting H3 evidence, and part of why accepted-resolution
+  evidence stayed at zero. `--stage` selects which resolution to consider, and
+  when the default is refused the error now names the stages that would work
+  instead of leaving a dead end. *Honest scope note:* the selector chooses among
+  candidates; it does not bypass ADR-012's requirement that the named stage's
+  current gate is PASS, and a stage whose retry did not resolve is still
+  refused.
+
+- **`devteam chat` can see how the run ended.** Three fields of the grounded
+  snapshot's `run` block — `run_id`, `status`, and `halted` — read keys that
+  nothing in the codebase has ever written to `run-state.json`, so they were
+  `null` on every project, on every run, since the feature shipped. A user
+  asking the conversational coordinator "why did the run stop?" got a snapshot
+  that could not tell a halted run from a running one, alongside
+  `unavailable: []` telling the model nothing was missing.
+  The driver now persists how a run ended next to the cost and token totals it
+  already records: `completed`, `halted`, `halt_action`, `halt_reason`. Those
+  last two previously existed only on the in-memory summary, so they reached the
+  operator's terminal and nothing else.
+  A run that ends by **throwing** is recorded too (`failed`, `failure_reason`) —
+  an unroutable host or an unreadable gate ends a run as surely as a halt, and
+  left nothing on disk saying so. The error still propagates unchanged; it is
+  recorded on the way out, not handled.
+  `run_id` now reports the invocation (`started_at`) and `logical_run_id` the
+  lineage root a `--resume` carries forward (42.5). `status` is one of
+  `completed`, `halted`, `failed`, `in-progress`, or `null`.
+  *Honest scope note:* snapshot `schema_version` goes to `"2"`. A `run-state.json`
+  written before this change cannot say how its run ended, so it reports
+  `unavailable: ["run-outcome"]` rather than an unqualified `halted: false` —
+  the prompt instructs the model to call out missing evidence, and silence there
+  would read as "it did not halt" instead of "nobody recorded whether it did".
+
+- **Evidence now reports the cost and model the orchestrator observed.** Both
+  routing readers recorded the *model-asserted* `gate.cost_usd` and `gate.model`
+  rather than the orchestrator's own `_orchestrator_observed` / `model_requested`
+  fields, so a dispatch whose cost the orchestrator had actually observed still
+  contributed `cost_obs: 0` and `model=unknown` to D5's denominator. The
+  [2026-08-21 Phase 41 re-review](plans/phase-41-evidence-review-2026-08-21.md)
+  found this still blocking the gate after the gate-level telemetry (#429, #430)
+  was working — a fresh run's corpus carried $1.88 while the evidence path
+  reported nothing. A gate carrying cost only in `_orchestrator_observed` and a
+  model only in `model_requested` now reports `model=claude-opus-5`,
+  `cost_obs=1`, `$0.53`.
+- **The precedence lives in one place: `core/gates/observed.js`.** Three readers
+  wanted the same answer and two had drifted — `core/driver.js`'s run cost total
+  was correct, while its dispatch-observation writer and
+  `core/evidence/analyzer.js`'s gate-snapshot fallback were not. This is the same
+  drift the framework-owned path list produced before it was centralized in
+  `core/paths.js`, so it is centralized the same way, with a drift-guarding test
+  suite. *Honest scope note:* observation only — no historical record changes,
+  because a model id and cost that were never captured cannot be reconstructed.
+  Durable dispatch-observation events additionally carry `cost_basis`
+  (`observed` / `derived` / `asserted`) in the local run log; the exported bundle
+  still carries the number, not the basis, so no bundle schema changes.
+
+- **`devteam init` writes `pipeline.default_track: loop`.** The generated config
+  said `full`, contradicting ADR-016/ADR-018 (which already infer `loop` for a
+  generic change) and `docs/tracks.md` (which tells operators to pick `loop` for
+  day-to-day work). An operator following the quickstart without running
+  `assess` paid 23–25 dispatches where 4 was the documented answer. Lighter
+  tracks remain stoplist-guarded, so a change touching auth, payments, crypto,
+  or migrations still refuses to run and points at `full`. *Honest scope note:*
+  only the value written into a **new** project changed. A config file that
+  names no `default_track` still resolves to `full` — picking a default for a
+  fresh project and silently reducing rigor for an existing one that never
+  chose are different decisions, and only the first is being made here.
+
+- **Stagecraft's own install is no longer mistaken for the change under review.**
+  Three separate readers — the changed-file manifest, right-sizing's role
+  inference, and the file list `devteam assess` scores a track from — each
+  carried their own copy of the "framework-owned path" prefix list, and all
+  three had drifted the same way: they covered `.codex/` and no other host. A
+  project initialized with any other host reported the framework's own install
+  as the operator's diff until those files were committed. The list now lives
+  once in `core/paths.js` as `FRAMEWORK_OWNED_PREFIXES` /
+  `isFrameworkOwnedPath()`, covers every host surface (`.claude/`, `.acp/`,
+  `.agents/`, `.omnigent/`, `.openai-compat/` alongside the existing entries),
+  and matches on a full path segment so a project's own `.claude-notes/` or
+  `src/agents/` is never swallowed.
+- **Track inference no longer promotes a trivial change because of the
+  framework's own filenames.** The leak above was not just prompt noise in
+  `assess`: `.claude/skills/qa-test-authoring/SKILL.md` matches the security
+  heuristic's `/auth/i` on the word "authoring", so the first run in a fresh
+  claude-code project was promoted from `loop` (4 dispatches) to `full` (20+)
+  and reported "security review required" for files Stagecraft had just written
+  itself. On a sample project the assessed file count drops from 75 to 4 and the
+  recommendation returns to `loop`. *Honest scope note:* only the path filter
+  changed — the security heuristic itself is untouched, and a genuinely
+  security-relevant project file such as `src/auth/session.js` still promotes to
+  `full`, as does a changed `package.json`. A new drift-guard test reads every
+  `hosts/*/capabilities.json` and fails when a declared `skillsDir` or
+  `rolePromptsDir` root is missing from the shared list.
+
+- **claude-code dispatches now record which model served them.**
+  `modelFromResultMessage` required `modelUsage` to name exactly one model and
+  returned `null` otherwise, "rather than guessing". That assumption is
+  empirically false: claude-code 2.1.207 reports **two** models even for a
+  one-line `--print` prompt, because it routes auxiliary work (titles, quick
+  classifications) to a cheaper model alongside the main turn. So
+  `model_observed` was `null` on essentially every claude-code dispatch, and
+  every routing row in D5's evidence read `model=unknown` — which is not
+  routing evidence at all. Verified against a real `loop` run on a 615-file
+  Python project: 4/4 dispatches had cost, 0/4 had a model.
+  The parser now records the **highest-cost** entry, preferring its
+  `canonicalModel` over a dated key. That is not a guess — `modelUsage` carries
+  per-model `costUSD`, and on a real dispatch the auxiliary model is two orders
+  of magnitude cheaper ($0.0010 haiku vs $0.0693 sonnet). Ties and cost-less
+  payloads fall back to declaration order so the result is deterministic.
+  *Honest scope note:* a superseded test asserted the old null-on-multiple
+  behavior and is updated, not weakened. Historical records are unchanged —
+  a model id that was never captured cannot be reconstructed.
+
+- **`observed-total` in the ceremony preview now totals.** The empirical
+  estimate summed only `tokens_in + tokens_out`, excluding the cache counters.
+  On an agentic host those dominate: a measured `stage-04` dispatch reported 66
+  uncached input and 14,866 output against 2,049,649 cache reads and 49,888
+  cache writes, so a field named `observed-total` reported 14,932 for 2,114,469
+  tokens actually touched — low by a factor of 140. The counters only became
+  visible on claude-code once the parser began capturing them, which is why
+  this surfaced now. `tokens_breakdown` keeps the uncached and cached halves
+  separable, because a large total is not proportionally a large bill — cache
+  reads bill well below uncached input, and `cost_usd` remains the authoritative
+  money figure.
+- **The static estimate's input-floor caveat prints whenever the estimate is
+  static**, not only when a dollar figure happens to be resolvable. The no-cost
+  case is exactly where a reader has least to go on: a `loop` build dispatch
+  touched ~2.1M tokens against a ~21k static prompt estimate, because the host's
+  agentic loop re-reads its accumulated context every turn. The wording now says
+  so.
+
+- **`pipeline/run-plan.json` no longer promises a dispatch that will not happen —
+  or omits one that will.** Two functions answered "which roles will dispatch":
+  `expectedRolesForStage` (the plan preview) and `inferActiveRoles` (the
+  runtime). Both filter a stage's roles to the change's active workstreams, but
+  only the runtime refused an empty result — "an empty result … would produce a
+  zero-workstream plan that completes in 0ms and loops" — and kept the unfiltered
+  roles instead. The preview did not, so the two disagreed.
+  The disagreement was reachable on the **default track**. `loop` pins build and
+  peer-review to a single role (`loopBuildRole`, default `backend`), so a
+  frontend-only change filtered that role out and the plan reported **zero build
+  dispatches, zero qa, zero peer-review, and `expected_workstreams: 1`** for a
+  run that dispatches four. ADR-018 calls that file an inspectable execution
+  contract; a contract that disagrees with the runtime is worse than no contract.
+  The preview now applies the same guard, and a parity test asserts the two
+  functions agree rather than testing them separately.
+  *Honest scope note:* this changes the preview only — no dispatch behavior
+  changes, and the suite passed unchanged. It also makes a real design question
+  visible that the zero was hiding: on `loop`, a frontend-only change is built
+  and reviewed by the `backend` role, because `loopBuildRole` does not consider
+  what changed. That is a separate decision and needs its own ADR.
+
+- **Project discovery works for non-JavaScript projects (Phase 42.4).** On a
+  Python project with `pyproject.toml`, `app/`, and `tests/test_*.py`,
+  `devteam standards discover` reported `test_runner: null`,
+  `package_manager: null`, an empty `test_config`, and a naming convention of
+  `camelCase`. The Project Knowledge Pack every agent reads therefore carried
+  two facts, one of them wrong. It now carries four correct ones: stack and
+  package manager, filename convention, test runner and pattern, and the verify
+  command.
+  - **Test runner** is read through `hasPythonTests` in `core/verify/runner.js`
+    — the detector that decides what `devteam verify` actually runs — instead of
+    grepping `requirements.txt` for the string `pytest`. Discovery and execution
+    can no longer disagree.
+  - **Package manager** resolves `poetry` / `uv` / `pipenv` / `pip` for Python.
+    The JavaScript branch still wins on a repo carrying both manifests.
+  - **`camelCase` now requires an actual hump.** The old pattern
+    `/^[a-z][a-zA-Z0-9]+$/` matched any single lowercase word, so `calc.py`,
+    `utils.js`, and `main.go` all counted as camelCase — this misreported
+    JavaScript projects too, not only Python ones. A bare lowercase word is
+    reported as `lowercase`, a new style, rather than being claimed by a
+    convention it does not demonstrate.
+- **Stagecraft's own directories no longer appear in a project's discovered
+  structure.** `pipeline/` was listed as a top-level directory of the project it
+  was orchestrating. Discovery is the fourth reader to route through
+  `isFrameworkOwnedPath` (`core/paths.js`), after the changed-file manifest,
+  right-sizing, and `assess`.
+- **Knowledge-pack `schema_version` bumped to 1.1** so existing projects
+  regenerate once and pick up the corrected facts. The stored fingerprint covers
+  only the project's own files, so without this an existing pack would keep
+  serving output from the older detector. *Honest scope note:* this covers 42.4's
+  discovery half. Track-aware `devteam spec verify` and the treatment of a
+  missing test root are separate concerns in separate files and are not in this
+  change.
+
+- **Pricing table refreshed against current provider rates (2026-08-20).**
+  `core/pricing.js` was last updated in May and had no entry for any current
+  frontier model, so `pricingFor()` returned `null` for every routed model, the
+  D7 unpriced-model warning fired on every dispatch, and `--budget-usd`
+  enforced nothing. Added the Claude 5 family (Fable 5, Mythos 5, Opus 5,
+  Sonnet 5) plus Opus 4.8, the GPT-5.5/5.6 tiers and GPT-4.1/o3, and the Gemini
+  3.x Flash tiers. Corrected several stale rates that were materially wrong,
+  not just missing: Opus 4.7/4.6 were listed at $15/$75 against an actual
+  $5/$25, GPT-5 at $10/$30 against $1.25/$10, Gemini 2.5 Flash at
+  $0.075/$0.30 against $0.30/$2.50, and Haiku 4.5 at $0.80/$4.00 against
+  $1.00/$5.00.
+- **Model-id prefix matching now requires a name boundary.** `pricingFor()`
+  fell back to a bare `startsWith()`, so `gpt-5.6-sol` matched the `gpt-5`
+  entry and was priced at a quarter of its real input rate. The remainder must
+  now begin with `-`, which keeps dated snapshots
+  (`claude-opus-4-7-2025-05` → `claude-opus-4-7`) resolving while an unlisted
+  sibling returns `null` and raises the honest unpriced-model warning instead
+  of a silently low number. *Honest scope note:* list price only — introductory
+  and promotional rates are recorded as comments and never encoded, because an
+  expired promo under-reports every downstream cost and budget check.
+
+- **An interrupted `devteam chat --proposal <id> --apply` no longer costs the
+  operator the proposal and a gate.** Apply moves the gates a refinement
+  invalidates into `pipeline/proposals/.apply-<id>/`, rewrites the artifact,
+  then removes the directory. If the process died in between, the rollback
+  deliberately preserved that directory rather than risk losing the gates — but
+  nothing put them back, and the damage compounded: the next apply computed the
+  invalidation set from a `gates/` directory now missing those files, found a
+  smaller set than the proposal recorded, and marked the proposal **permanently
+  stale** — reporting "its invalidation set changed" while the operator's gate
+  sat inside a dotted directory nothing mentions. The pipeline read as though
+  the stage that produced it had never run.
+  Recovery now runs before status or staleness is judged, restores the gates,
+  and appends a `recovered` event. A gate that exists now is never overwritten
+  by one an interrupted transaction set aside — a live file is always newer.
+  *Honest scope note:* only files named like gates are moved. Anything else is
+  left in place, the directory with it, and reported by name — previously a
+  leftover directory surfaced as a bare `EEXIST: file already exists, mkdir`
+  against an absolute path, which said nothing about what it was or how to
+  recover. A proposal already marked stale by the old behavior stays stale; the
+  gates come back, but the proposal itself cannot be un-staled, and rebasing it
+  is exactly what this workflow refuses to do.
+
+- **The retry-ownership halt no longer advises an edit that silently breaks the
+  gate chain.** It said to "correct stage-02 `file_ownership`". That field lives
+  inside `pipeline/gates/stage-02.json`, and stage gates are chained — each
+  records a hash of its predecessor, which is what makes the provenance
+  tamper-evident. Opening the gate and editing it, the obvious reading, changes
+  its hash so the next gate's recorded `prev_hash` stops matching. Nothing checks
+  the chain during a run; only `devteam verify-chain`, `devteam verify`, and
+  evidence attestation do — so an operator following the advice could discover
+  the break much later, at export, with no memory of causing it.
+  The halt now points at re-running design, which re-attests the gate legitimately,
+  and states the cost of a hand edit along with the `devteam stamp-chain` repair.
+  *Honest scope note:* wording only — no halt behavior, evidence, or chain logic
+  changes. The chain already detected this correctly; the guidance was what sent
+  operators into it.
+
+- **`/status` in `devteam chat` says why the run stopped.** It printed
+  `next().reason` under the label `why`, so a run that died on its first
+  dispatch reported `run: failed; stage requirements` immediately followed by
+  `why: stage not started` — two contradictory lines — while the actual reason
+  sat in the snapshot unprinted. `next()` describes what to do next, not what
+  went wrong.
+  `why` is now the halt or failure reason, and `next()`'s reasoning is labelled
+  `note` so the two questions stay distinct. This is the human-facing half of
+  the fix that gave the model the same evidence; a run-state predating that
+  change reports the outcome as not recorded rather than silently omitting the
+  line.
+  *Honest scope note:* `next()` itself still reports "stage not started" after a
+  failed dispatch — the stage genuinely has no gate, which is the right answer to
+  the question `next()` is asked. Only the labelling and the added stop reason
+  change here; no snapshot field and no `next()` behavior is altered.
+
+- **`--budget-tokens` now counts cache reads and writes.** The run's token total
+  summed only `tokens_in + tokens_out`, which on an agentic host is a rounding
+  error: a measured `loop` run reported 52 uncached input and 11,293 output
+  against 1,363,880 cache tokens, so the counter read **121× low** and the cap
+  could not bind — the same shape as a stale pricing table making
+  `--budget-usd` inert. `tokenEntryForGate` now includes
+  `cached_tokens` and `cache_creation_tokens`, so `tokens_used` reports what a
+  dispatch actually consumed and a `--budget-tokens` cap halts when it should.
+  The run summary and `run-state.json` gain `tokens_cached` alongside the
+  existing `tokens_in` / `tokens_out`, keeping the parts separable: cache reads
+  bill well below uncached input, so a large total is not a proportionally
+  large bill, and `--budget-usd` remains the control for money. *Honest scope
+  note:* this is a **behavioral change to a safety control** — a run with an
+  existing `--budget-tokens` value will now halt far earlier than before,
+  because before it effectively never halted. It also removes a drift the
+  ceremony preview's `observed-total` fix introduced, where the estimate counted
+  cache and the live budget did not. Gates without cache counters (older hosts,
+  older runs) contribute zero rather than NaN and are unaffected.
+
+- **`--until` naming a stage the track does not contain no longer removes the
+  boundary.** Dispatch reads `untilIndex < 0` as "no limit", and
+  `order.indexOf()` returns `-1` for any unknown stage — so `--until buidl`, or
+  a stage borrowed from another track (`--track loop --until red-team`), did not
+  stop the run early. It ran the whole track through to `deploy` while the
+  operator believed they had stopped at `build`, and said nothing. The flag is
+  now rejected before the lock is acquired, so a bad boundary leaves no lockfile
+  behind, and the error lists the resolved track's stages in order.
+- **`pipeline/run-plan.json` records the stopping boundary.** ADR-018 calls the
+  plan "an inspectable execution contract", but `--until` was read into
+  `untilIndex` in the dispatch loop and never reached the plan built ~350 lines
+  later: `--until build` on `full` still reported all 13 stages as included, and
+  two plans differing only by `--until` were byte-identical. The plan now
+  carries `until` and `stages_after_until`.
+  *Honest scope note:* both are deliberately excluded from `execution_fingerprint`
+  **and** `plan_fingerprint`. `--until` is where the operator paused, not what
+  the plan is; fingerprinting it would make the ordinary "run `--until build`,
+  review, `--resume`" cycle report policy drift and refuse to continue.
+  `stages_included` therefore keeps its existing meaning — what the track
+  executes — and the boundary is reported beside it rather than folded into it.
+  Reasoning recorded in `docs/reproducibility.md`.
+- **`devteam run --plan-only` exits 0.** It was exiting 1, so it could not be
+  used as a CI preflight without `|| true`, even though the exit-code rule
+  directly above the check already covered it ("stopped at a boundary the
+  operator configured").
+- **`--until`'s CLI help matches its behavior.** It advertised "Stop before this
+  stage" for a boundary that is inclusive — the named stage runs.
+
+- **A verification that did not run now says so on the gate (Phase 42.4).** When
+  no test or lint command could be discovered, the orchestrator recorded
+  `_orchestrator_stamped.runs.test = { skipped: … }` and left the model's claim
+  untouched — so a stage-06 gate in a project with no tests at all could read
+  `status: PASS`, `tests_passed: 12`, `tests_failed: 0` with no blocker and no
+  warning, and every downstream consumer (sign-off, deploy, peer review, the
+  evidence bundle) saw a clean pass. The skip is now also recorded as a
+  `warnings[]` entry on the gate itself: `test unverified by orchestrator: no
+  test command configured or discovered`. *Honest scope note:* non-blocking, and
+  the model's assertion is left standing rather than overwritten — the
+  orchestrator is reporting an absence of evidence, not manufacturing a verdict.
+  This is the shape C3 already used to close the same hole for
+  `license_check_passed`. Applies to the test and lint skips at stage-04a,
+  stage-04, and stage-06; stage-03b's repair-mode `reproduction_pre_build`
+  snapshot is deliberately unchanged, since its absence is expected and it
+  validates no model claim. Re-stamping a gate does not duplicate the warning.
+
+### Added
+
+- Add `devteam run --budget-tokens <count>` as a provider-neutral usage cap for hosts that report tokens without billable dollars. Accounting trusts orchestrator-observed or explicitly estimated usage, includes retries and resumes, and exposes basis and coverage in run, status, corpus, and HTML report output.
+
+- Add ADR-022's optional documentation-only `loop` workstream: Stage 1 approves an exact docs file list that is carried unchanged through build, QA, scoped peer review, worktree reconciliation, and retry ownership; `devteam assess` recommends the route without widening any coding role or default matrix.
+
+- **Resume-bound safety policy and active-track remediation** (Phase 42.1 / E13).
+  `devteam run --resume` now inherits the original token/USD caps, rejects
+  conflicting cap or track flags before dispatch, and fingerprints an audited
+  `--force` stoplist bypass against the feature, active brief, and stoplist
+  policy. Unchanged resumes and direct remediation stages reuse the ruling;
+  changed inputs invalidate it. Direct `devteam stage` commands also inherit
+  the materialized run-plan track, and their displayed workstream count now
+  reflects the actual track-sized dispatch. Legacy run state/plan files migrate
+  compatibly on their first post-upgrade resume. *Honest scope note:* this does
+  not make other per-run grants such as `--auto-rule` or consequence-ceiling
+  approvals durable.
+
+- **Pre-dispatch retry ownership proof** (Phase 42.2 / E13). Structured
+  fix/retry targets are now compared with the actual candidate build roles'
+  existing `roleWrites` before gates are cleared. Stagecraft prefers a compatible
+  `stage-02.file_ownership` owner and otherwise uses stable stage order; when no
+  single candidate owns every target it halts as `retry-ownership` with target
+  paths and candidate role names, leaves gates intact, and spends no host turn.
+  Requested artifact fields participate in the same check, bounded feature roots
+  use the same logic, and no role gains a broader write surface. *Honest scope
+  note:* blockers with no structured target path retain the existing bounded
+  retry behavior; Phase 42.3 still owns first-class exact-file documentation
+  workstreams.
+
+- **Preserve deploy authorization when sign-off workstreams merge.** The Stage 7 merger now carries PM-owned sign-off, deploy request, documentation, and follow-up fields plus platform-owned runbook readiness into the stage-level gate, preventing Stage 8 from rejecting a fully approved sign-off—or inferring authorization from aggregate PASS alone.
+
+- **`run()`'s run-plan construction moves to `core/driver-plan.js`.** Slice 5 of
+  the P2-2 decomposition, and the one #462 was written to make safe.
+  `resolvePlanInputs()` answers "what will this run actually dispatch, and what
+  should that cost?" — right-sizing skips, active-role candidates, expected
+  workstreams, ceremony preview. `materializeRunPlan()` turns that into the
+  fingerprinted ADR-018 contract on disk and announces it. The two are one job
+  that `run()` had separated by ~80 lines of unrelated setup.
+  `run()` drops from 1,652 to 1,609 lines; `core/driver.js` from 2,396 to 2,348.
+  Neither the drift reconciliation nor the plan schema changes — `persistRunPlan`
+  stays in `core/run-plan.js`, and it still throws rather than returning a
+  verdict, so the caller's lock-releasing `finally` continues to cover a
+  rejection.
+- **The characterization suite now pins stage dispositions by value, not by
+  identity.** Its stage-disposition test asserted only that
+  `included + skipped_by_config + skipped_by_right_sizing == total`, which holds
+  just as well when right-sizing produces nothing at all (18 included, 0
+  skipped) — so deleting right-sizing entirely passed it. It now pins the five
+  stages preflight drops from `full` by name, the expected-workstream count
+  against the right-sized list rather than the raw track shape, and that the
+  ceremony preview covers exactly the stages that will dispatch.
+  *Honest scope note:* two of eight mutations still pass, and both are no-ops on
+  the test fixture rather than gaps — a bare project discovers no active roles
+  and never makes `ceremonyPreview` throw, so discarding discovery and making
+  the advisory preview fatal change nothing there. Covering them needs a fixture
+  with real source files, which is a separate piece of work.
+
+- **`run()` decomposition, slice 1 (builder review F5, continuing audit P2-2).**
+  The run-end side-effect phase — pattern auto-collection, the opt-in Reflector
+  pass, memory auto-ingest, and the resolution linker — moved out of
+  `core/driver.js` into `core/driver-runend.js`. It was the cleanest available
+  seam: four fire-and-forget passes that run after the loop finishes, the run
+  state is saved, and the lock is released, none of which touches `summary`.
+  `run()` drops from 1,780 to 1,725 lines. *Honest scope note:* behavior-
+  preserving and nothing more — conditions, ordering, log outcomes, and the
+  swallow-and-log contract are identical to the inline version, and the full
+  suite passes with no test changes, which is the evidence. 13 characterization
+  tests now pin the seam (firing conditions per pass, `memory.inject` as the
+  single off switch, the reflector's exactly-`true` gate and never-on-halt rule,
+  and that `summary` is unaffected even when every pass throws). `run()` retains
+  lock, loop, and final-persistence ownership exactly as P2-2 left it; the
+  prologue and the final-persistence block remain as future slices.
+
+- **`run()`'s run-state initialization moves to `core/driver-run-state.js`.**
+  Slice 4 of the P2-2 decomposition. `initRunState()` answers one question —
+  what does a run carry across invocations, and how is that reconciled when the
+  `run-state.json` on disk predates a field this version expects? `run()` drops
+  from 1,703 to 1,652 lines and `core/driver.js` from 2,623 to 2,396.
+  The token-accounting helpers (`tokenUsageDetail`, `combineTokenUsage`,
+  `tokenUsageForRunIds`, `tokenEntryForGate`) move with it: `token_usage_baseline`,
+  `token_run_ids`, and `token_dispatches_expected` are run-state fields and those
+  functions exist to populate and read them. `tokenUsageDetail` is re-exported
+  from `core/driver.js`, so its public API is unchanged.
+  `nowTs` is now passed in rather than read from the clock inside, which makes
+  the initializer deterministic to test.
+  *Honest scope note:* behavior-preserving, and verified as such rather than
+  asserted — the prologue characterization suite passes unchanged, and six
+  mutations of the reconciliation logic each fail at least one suite.
+- **The prologue characterization suite covers resume reconciliation.** It did
+  not before: all six mutations above — resetting the logical run lineage on
+  every resume, dropping the `prior_run_id` back-link, resetting the wave
+  counter, overwriting a resumed track, inheriting a dead wave's workstreams,
+  duplicating a run id — passed the end-to-end suite untouched, because it only
+  ever compared plan fingerprints across a resume. It now asserts the identity
+  fields a resumed run's accounting and evidence grouping depend on, which
+  catches two of the six directly; the rest are covered by 17 new unit tests.
+
+- **`run()` decomposition, slice 2 (builder review F5, continuing audit P2-2).**
+  Effective safety-policy resolution — the caps that bind a run, plus the two
+  operator warnings that accompany resolving them — moved out of `run()`'s
+  prologue into `core/driver-safety.js`. Split deliberately into a pure
+  `resolveRunSafety` that returns the warnings it thinks should be emitted and
+  an `emitSafetyWarnings` that writes them, so the policy can be tested without
+  capturing process output and *what* to warn about stays separate from *where*
+  it goes. `run()` drops from 1,725 to 1,721 lines. *Honest scope note:*
+  behavior-preserving — the full suite passes with no test changes, which is the
+  evidence. `run()` keeps ownership of the mid-prologue reassignment when a
+  stoplist bypass is authorized (ADR-018 binds a bypass to a hashed
+  feature/brief/stoplist), so the extraction covers resolution and not the
+  policy's whole lifetime. 9 characterization tests pin the seam, including that
+  a zero cap counts as a cap rather than as absent.
+
+- **`run()`'s stage-order decision moves to `core/driver-stage-order.js`.**
+  Slice 3 of the P2-2 decomposition, after `core/driver-safety.js` and
+  `core/driver-runend.js`. `resolveStageOrder()` answers one question — given
+  the resolved track, the run's intent, and the operator's flags, which stages
+  will this run execute and is the `--until` boundary one the run can honor —
+  and it is pure: no filesystem, no lock, no run state. `run()` drops from 1,735
+  to 1,703 lines.
+  The `--until` validation moves with the order it validates against, so the two
+  cannot drift apart. That matters for repair runs, where ADR-009 injects
+  `executable-spec` into a track that does not otherwise contain it: the
+  boundary is checked against the order that will actually be applied, not the
+  bare track order.
+  *Honest scope note:* behavior-preserving by construction and verified as such
+  — the 23-test prologue characterization suite passes unchanged, and eight
+  mutations of the extracted logic each fail at least one suite. `resolveStageOrder`
+  deliberately does not return the diagnosis-prepend flag even though `run()`
+  computed one: it is a step in building `order`, and `order[0] === "requirements"`
+  already states its outcome. A second way to ask the same question is how the
+  drift this decomposition exists to fix got started.
+- **New: 15 unit tests for the ADR-009 stage-order rules** at the level they are
+  decided, covering branches the end-to-end suite reaches only indirectly —
+  `--repair-at`, `--force` opting out of the stoplist upgrade, double-prepend
+  guarding, and repair on a track with no `build` stage (`review-only`,
+  `review-pr`), where `executable-spec` leads the order instead of preceding
+  `build`. That last branch was covered by neither suite before this change.
+
+- **`nonNegativeNumber` has one home (`core/numbers.js`).** `core/driver.js`,
+  `core/corpus.js`, and `core/gates/observed.js` each carried a byte-identical
+  private copy of the predicate that decides whether a telemetry figure from a
+  model or a host CLI can be trusted.
+  *Honest scope note:* the three copies had **not** drifted, so this is a
+  cleanup, not a bug report — no behavior changes. It is filed because it is the
+  same shape as two defects this codebase already shipped: three readers of
+  framework-owned paths that disagreed (#431) and two readers of observed
+  cost/model precedence that disagreed (#450). Both were found only after they
+  had returned wrong answers in production evidence. The rule this predicate
+  encodes — absent telemetry is `null`, never `0`, so a budget reports no
+  coverage instead of silently understating spend — is now stated once and
+  covered by tests.
+
+- **Make learning zero-setup and pre-review scope-aware.** Stagecraft memory now
+  defaults to a dependency-free feature-hash retriever, while the larger local
+  transformer stack is an explicit opt-in. This removes its high-severity audit
+  findings, native binary, and LGPL transitive package from normal installs
+  without making project memory fail on first use. Security and migration
+  content heuristics now inspect added lines from the active or latest build
+  diff, retaining conservative path triggers and full-file fallback for
+  untracked/non-Git inputs. This prevents historical crypto/DDL prose from
+  launching irrelevant conditional stages after unrelated edits. *Honest scope
+  note:* builtin retrieval is lexical rather than neural semantic matching;
+  operators who need conceptual similarity can install the transformer provider
+  after reviewing its current dependency policy and must reindex when switching.
+
+- **Keep the local UI alive when file watching is exhausted.** Asynchronous `fs.watch` errors such as `EMFILE` now disable live gate refresh with a warning instead of becoming uncaught exceptions that fail the HTTP server and its tests.
+
+---
+
 ## [0.11.0] — 2026-08-09
 
 ### Added
