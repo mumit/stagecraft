@@ -68,6 +68,7 @@ New here? Read **[START-HERE.md](START-HERE.md)** first — five documents, not 
 - [adr/023-goal-condition-in-prompt-body.md](adr/023-goal-condition-in-prompt-body.md) — build/qa convergence conditions move from claude-code's `/goal` directive into the prompt body
 - [adr/024-cold-start-pattern-seeding.md](adr/024-cold-start-pattern-seeding.md) — read a project's documented conventions into the pattern review queue, so agents do not relearn them from failed gates
 - [adr/025-scope-build-not-just-review.md](adr/025-scope-build-not-just-review.md) — why `nano` costs more than `loop`, and where ceremony reduction actually belongs
+- [adr/026-pinned-build-role-mismatch.md](adr/026-pinned-build-role-mismatch.md) — when a track pins its build to one role and the change is somewhere else, say so instead of dispatching the wrong specialist
 - [autonomous-execution-design.md](autonomous-execution-design.md) — design notes for the bounded autonomous driver (companion to ADR-003)
 - [openai-compat-design.md](openai-compat-design.md) — options analysis and design notes for the openai-compat host adapter (companion to ADR-013)
 - [../plans/phase-24-omnigent-runtime.md](../plans/phase-24-omnigent-runtime.md) — completed phased plan for Omnigent runtime integration
