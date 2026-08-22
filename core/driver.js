@@ -37,16 +37,11 @@ const { mapByHostConcurrency, hostConcurrencyLimit, waveMemberKey } = require(".
 const { pipelineRoot, gatesDir: getGatesDir, logsDir: getLogsDir, prefixPipelineRelative } = require("./paths");
 const { STAGES } = require("./pipeline/stages");
 const { resolveStageOrder } = require("./driver-stage-order");
+const { resolvePlanInputs, materializeRunPlan } = require("./driver-plan");
 const { blockerFiles, normalizeOwnershipPath, resolveRetryOwnership } = require("./retry-ownership");
-const {
-  candidateActiveRoles,
-  deterministicSkipsForOrder,
-  expectedWorkstreamCount,
-  gitChangedFiles,
-} = require("./pipeline/right-sizing");
+const { gitChangedFiles } = require("./pipeline/right-sizing");
 const { assess } = require("./stage-shopping/assess");
-const { ceremonyPreview } = require("./ceremony-preview");
-const { buildRunPlan, persistRunPlan, portableRelative, updateRunPlanSafetyPolicy } = require("./run-plan");
+const { updateRunPlanSafetyPolicy } = require("./run-plan");
 const {
   assertResumeTrack,
   stoplistContext,
@@ -943,41 +938,13 @@ async function run(opts = {}) {
     token_basis: null,
     token_coverage_complete: false,
   };
-  const discoveredActiveRoles = config.pipeline.right_sizing === false
-    ? { roles: [], trigger_inputs: {} }
-    : candidateActiveRoles(cwd);
-  const activeRoleCandidates = discoveredActiveRoles.roles.length > 0 || !Array.isArray(assessedActiveRoles)
-    ? discoveredActiveRoles
-    : {
-        roles: assessedActiveRoles,
-        trigger_inputs: {
-          ...discoveredActiveRoles.trigger_inputs,
-          source: "pipeline/track.json assessment",
-        },
-      };
-  const rightSizedSkips = config.pipeline.right_sizing === false
-    ? {}
-    : deterministicSkipsForOrder(order, cwd, { changeId });
-  const skippedForExpected = [
-    ...((config.pipeline && config.pipeline.skip_stages) || []),
-    ...Object.keys(rightSizedSkips),
-  ];
-  const expectedWorkstreams = expectedWorkstreamCount(order, effectiveTrack, {
-    skipped: skippedForExpected,
-    activeRoles: activeRoleCandidates.roles,
-    config,
-  });
-  // 29.3: ceremony cost preview for the pre-flight run-plan event. Scoped to
-  // the same right-sized stage list used by the materialized plan (not the
-  // raw track shape) so the estimate matches what will actually dispatch.
-  // Advisory only — a preview failure must never block a run.
-  const includedStageNames = order.filter((name) =>
-    !((config.pipeline && config.pipeline.skip_stages) || []).includes(name)
-    && !Object.prototype.hasOwnProperty.call(rightSizedSkips, name));
-  let ceremony = null;
-  try {
-    ceremony = ceremonyPreview(cwd, effectiveTrack, config, { stageNames: includedStageNames });
-  } catch { /* preview is advisory — the run proceeds without it */ }
+  // Slice 5 of the P2-2 decomposition -- see core/driver-plan.js.
+  const {
+    activeRoleCandidates,
+    rightSizedSkips,
+    expectedWorkstreams,
+    ceremony,
+  } = resolvePlanInputs({ order, effectiveTrack, config, cwd, changeId, assessedActiveRoles });
   const applyTransition = (result) => applyTransitionResult(result, {
     summary,
     state,
@@ -1058,11 +1025,8 @@ async function run(opts = {}) {
   let repairPatchItems = opts.repair ? [opts.repair] : null;
 
   try {
-    // ADR-018: make the exact deterministic preflight decision inspectable
-    // before any model dispatch. A resume reuses the original file only when
-    // its execution fingerprint still matches; routing/stage drift is a hard
-    // error instead of silently changing the run under an existing state.
-    const proposedRunPlan = buildRunPlan({
+    const { planPath } = materializeRunPlan({
+      cwd,
       changeId,
       order,
       track: effectiveTrack,
@@ -1071,29 +1035,17 @@ async function run(opts = {}) {
       intent,
       config,
       rightSizedSkips,
-      candidateActiveRoles: activeRoleCandidates.roles,
+      activeRoleCandidates,
       expectedWorkstreams,
-      ceremonyPreview: ceremony,
-      assessInline: assessInline || null,
+      ceremony,
+      assessInline,
       runId: state.started_at,
       trustProfile,
       safetyPolicy,
-      until: opts.until || null,
-    });
-    const persistedRunPlan = persistRunPlan(cwd, changeId, proposedRunPlan, { resume: opts.resume });
-    const runPlan = persistedRunPlan.plan;
-    const planPath = portableRelative(cwd, persistedRunPlan.path);
-    logEvent(cwd, changeId, {
-      outcome: "run-plan",
-      plan_path: planPath,
-      plan_reused: persistedRunPlan.reused,
-      ...runPlan,
-    });
-    onEvent({
-      type: "run-plan",
-      plan_path: planPath,
-      plan_reused: persistedRunPlan.reused,
-      ...runPlan,
+      until: opts.until,
+      resume: opts.resume,
+      logEvent: (entry) => logEvent(cwd, changeId, entry),
+      onEvent,
     });
 
     // Log the repair stoplist upgrade event (computed before lock/state were set up).
