@@ -245,6 +245,27 @@ describe("run prologue: the plan fingerprint is the contract", () => {
 });
 
 describe("run prologue: --plan-only leaves a resumable state", () => {
+  it("reconciles run identity across a resume rather than starting over", () => {
+    // The prologue's resume path was invisible to this suite until slice 4:
+    // six mutations of the reconciliation logic all passed it. These are the
+    // fields a resumed run's accounting and evidence grouping depend on.
+    const cwd = track(makeTargetProject({ config: CONFIG }));
+    const args = ["run", "--feature", "add a subtract helper", "--budget-usd", "5", "--plan-only"];
+    runCLI(args, { cwd });
+    const readState = () =>
+      JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-state.json"), "utf8"));
+    const first = readState();
+    runCLI(["run", "--resume", "--budget-usd", "5", "--plan-only"], { cwd });
+    const second = readState();
+
+    assert.notEqual(second.started_at, first.started_at, "a resume mints a new run id");
+    assert.equal(second.prior_run_id, first.started_at, "and links back to its predecessor");
+    assert.equal(second.logical_run_id, first.logical_run_id,
+      "42.5: the lineage root is stable, so one change is not counted as two runs");
+    assert.deepEqual(second.token_run_ids, [first.started_at, second.started_at],
+      "token accounting spans both invocations");
+  });
+
   it("produces a plan a resume continues unchanged", () => {
     // The reason --plan-only is a trustworthy preview: it stops after the same
     // build-and-persist path a real run uses, so what you reviewed is what runs.
