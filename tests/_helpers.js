@@ -20,7 +20,42 @@ function makeTargetProject(opts = {}) {
   if (opts.gates !== false) {
     fs.mkdirSync(path.join(cwd, "pipeline", "gates"), { recursive: true });
   }
+  // Right-sizing and active-role discovery both read the project's own files
+  // (core/pipeline/right-sizing.js: gitChangedFiles, with listProjectFiles as
+  // the non-repo fallback). The default fixture has none -- only framework-owned
+  // paths, which isRightSizingInputPath filters out -- so on a bare project
+  // every discovery answer is [] and every assertion about one passes whether
+  // the logic works or not. `files` opts in to a project that can actually be
+  // right-sized. Not the default: 3,500 existing tests are written against the
+  // bare shape and should keep their fast, empty fixture.
+  if (opts.files) {
+    for (const [relative, content] of Object.entries(opts.files)) {
+      const target = path.join(cwd, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content);
+    }
+  }
   return cwd;
+}
+
+// A project with a real shape: backend source, a frontend component, a test,
+// and infrastructure -- one file per WORKSTREAM_RULES role, so discovery has
+// something to find and a wrong answer is visibly wrong. Callers override or
+// extend via `files`.
+const REALISTIC_FILES = {
+  "package.json": '{\n  "name": "fixture",\n  "version": "1.0.0"\n}\n',
+  "src/backend/api.js": "function handler(req, res) { res.end('ok'); }\nmodule.exports = { handler };\n",
+  "src/frontend/App.jsx": "export default function App() { return null; }\n",
+  "tests/api.test.js": "require('node:test');\n",
+  "infra/main.tf": 'resource "null_resource" "noop" {}\n',
+  "README.md": "# Fixture\n\nA project with enough shape to right-size.\n",
+};
+
+function makeRealisticProject(opts = {}) {
+  return makeTargetProject({
+    ...opts,
+    files: { ...REALISTIC_FILES, ...(opts.files || {}) },
+  });
 }
 
 function seedGate(cwd, name, gate) {
@@ -100,4 +135,4 @@ function runCLI(args, opts = {}) {
   };
 }
 
-module.exports = { REPO_ROOT, BIN, makeTargetProject, seedGate, cleanup, runCLI, installGeminiCliPluginFixture, writeMutationScript };
+module.exports = { REPO_ROOT, BIN, makeTargetProject, makeRealisticProject, REALISTIC_FILES, seedGate, cleanup, runCLI, installGeminiCliPluginFixture, writeMutationScript };
