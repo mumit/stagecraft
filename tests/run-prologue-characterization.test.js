@@ -277,3 +277,104 @@ describe("run prologue: --plan-only leaves a resumable state", () => {
     assert.equal(JSON.parse(before).plan_fingerprint, JSON.parse(after).plan_fingerprint);
   });
 });
+
+// The resume path decides whether a plan on disk still describes the run about
+// to continue. It is the one prologue branch whose failure mode is silent: a
+// drift check that stops firing does not throw, it quietly runs a different
+// pipeline than the one the operator reviewed. These pin all four outcomes
+// before the plan/preview block is extracted.
+describe("run prologue: resume reconciles against the plan on disk", () => {
+  const FULL = "routing:\n  default_host: generic\npipeline:\n  default_track: full\n";
+  const FULL_SKIP = FULL + "  skip_stages: [red-team]\n";
+
+  function seeded(config = FULL) {
+    const cwd = track(makeTargetProject({ config }));
+    const r = runCLI(["run", "--feature", "add a subtract helper", "--track", "full",
+      "--budget-usd", "5", "--plan-only"], { cwd });
+    assert.equal(r.status, 0, "the seeding run must succeed");
+    return cwd;
+  }
+  const planPath = (cwd) => path.join(cwd, "pipeline", "run-plan.json");
+  const readPlan = (cwd) => JSON.parse(fs.readFileSync(planPath(cwd), "utf8"));
+  const setConfig = (cwd, text) =>
+    fs.writeFileSync(path.join(cwd, ".devteam", "config.yml"), text);
+  const resume = (cwd, args = []) =>
+    runCLI(["run", "--resume", "--budget-usd", "5", "--plan-only", ...args], { cwd });
+  const lockExists = (cwd) => fs.existsSync(path.join(cwd, "pipeline", "run.lock"));
+
+  it("reuses the plan when nothing drifted", () => {
+    const cwd = seeded();
+    const before = readPlan(cwd);
+    const r = resume(cwd);
+    assert.equal(r.status, 0);
+    assert.equal(readPlan(cwd).plan_fingerprint, before.plan_fingerprint);
+    assert.equal(readPlan(cwd).run_id, before.run_id, "the reused plan keeps its original run_id");
+  });
+
+  it("rejects a resume whose configured stage selection changed", () => {
+    const cwd = seeded();
+    const before = fs.readFileSync(planPath(cwd), "utf8");
+    setConfig(cwd, FULL_SKIP);
+    const r = resume(cwd);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /run plan changed since the original run/);
+    assert.match(r.stderr, /Restart without --resume/);
+    assert.equal(fs.readFileSync(planPath(cwd), "utf8"), before,
+      "a rejected resume must not overwrite the plan the operator reviewed");
+  });
+
+  it("rejects a resume that changes the caps", () => {
+    const cwd = seeded();
+    const r = runCLI(["run", "--resume", "--budget-usd", "9", "--plan-only"], { cwd });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /conflicts with the original run \(5 -> 9\)/);
+  });
+
+  it("releases the lock on every drift rejection", () => {
+    // A rejection throws from inside the locked region. If the lock outlived it,
+    // the operator's next run would need --force to recover from a refusal that
+    // changed nothing.
+    const a = seeded();
+    setConfig(a, FULL_SKIP);
+    resume(a);
+    assert.equal(lockExists(a), false, "stage-selection drift left a lock behind");
+
+    const b = seeded();
+    runCLI(["run", "--resume", "--budget-usd", "9", "--plan-only"], { cwd: b });
+    assert.equal(lockExists(b), false, "cap drift left a lock behind");
+  });
+
+  it("migrates a pre-ADR-018 plan in place instead of rejecting it", () => {
+    // Before ADR-018 there was no execution_fingerprint and plan_fingerprint
+    // carried the execution identity, with no safety policy folded in. The
+    // fallback comparison exists so those plans resume rather than reading as
+    // drift.
+    const cwd = seeded();
+    const legacy = readPlan(cwd);
+    legacy.plan_fingerprint = legacy.execution_fingerprint;
+    delete legacy.execution_fingerprint;
+    delete legacy.safety_policy;
+    delete legacy.planning_semantics;
+    fs.writeFileSync(planPath(cwd), JSON.stringify(legacy, null, 2) + "\n");
+
+    const r = resume(cwd);
+    assert.equal(r.status, 0);
+    const migrated = readPlan(cwd);
+    assert.ok(migrated.execution_fingerprint, "the upgrade backfills the execution fingerprint");
+    assert.ok(migrated.safety_policy, "and the safety policy");
+    assert.ok(migrated.planning_semantics);
+  });
+
+  it("still rejects a legacy plan whose execution identity does not match", () => {
+    // The fallback must not become a way to bypass the drift check.
+    const cwd = seeded();
+    const legacy = readPlan(cwd);
+    legacy.plan_fingerprint = "0".repeat(64);
+    delete legacy.execution_fingerprint;
+    delete legacy.safety_policy;
+    fs.writeFileSync(planPath(cwd), JSON.stringify(legacy, null, 2) + "\n");
+    const r = resume(cwd);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /run plan changed since the original run/);
+  });
+});
