@@ -18,6 +18,10 @@ devteam chat                         # interactive TTY
 
 Interactive local commands are `/status`, `/context`, `/next`, `/refresh`,
 `/help`, and `/quit`. They are parsed by Stagecraft and do not call a model.
+`/status` reports how the run ended — its `why` line is the halt or failure
+reason, and `note` is the separate question of what `next()` would do now. A
+run-state written before run outcomes were recorded reports the `why` as not
+recorded rather than leaving the line off.
 Every natural-language message is one new headless host call; observed host,
 model, token, cache, and cost fields are printed when the adapter reports them.
 

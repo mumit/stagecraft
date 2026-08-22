@@ -41,9 +41,22 @@ function printSnapshot(snapshot) {
   const run = snapshot.run;
   process.stdout.write(`track: ${snapshot.pipeline.track}\n`);
   process.stdout.write(`run:   ${run ? `${run.status || "present"}; stage ${run.current_stage || "—"}; ${run.iterations} iteration(s)` : "none"}\n`);
+  // Why the run stopped, which is what "why" should mean when it stopped.
+  // This used to print next.reason under that label, so a failed run read:
+  //   run:   failed; stage requirements; 1 iteration(s)
+  //   why:   stage not started
+  // -- two contradictory lines, while the actual reason sat in the snapshot
+  // unprinted. next() is describing what to do next, not what went wrong.
+  const stopped = run?.failure_reason || run?.halt_reason;
+  if (stopped) process.stdout.write(`why:   ${stopped}\n`);
+  else if (snapshot.unavailable?.includes("run-outcome")) {
+    process.stdout.write("why:   not recorded (run-state predates run-outcome tracking)\n");
+  }
   process.stdout.write(`cost:  ${run?.cost_usd != null ? `$${run.cost_usd.toFixed(4)} (${run.cost_basis || "basis unavailable"})` : "unavailable"}\n`);
   process.stdout.write(`next:  ${snapshot.next ? `${snapshot.next.action}${snapshot.next.name ? ` — ${snapshot.next.name}` : ""}` : "unavailable"}\n`);
-  if (snapshot.next?.reason) process.stdout.write(`why:   ${snapshot.next.reason}\n`);
+  // Labelled as a note about the next action rather than "why", which now
+  // belongs to the stop reason above.
+  if (snapshot.next?.reason) process.stdout.write(`note:  ${snapshot.next.reason}\n`);
   if (snapshot.next?.suggested_command) process.stdout.write(`try:   ${snapshot.next.suggested_command}\n`);
 }
 
