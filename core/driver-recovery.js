@@ -85,10 +85,20 @@ function blockedFixTransition({ action, base, archived }) {
 function retryOwnershipTransition({ action, base, archived, ownership }) {
   const targets = ownership.target_paths.join(", ");
   const candidates = ownership.candidate_roles.join(", ") || "none";
+  // "correct stage-02 file_ownership" was the whole of the second remedy, and
+  // the obvious way to do that -- open pipeline/gates/stage-02.json and edit it
+  // -- silently breaks the tamper-evident gate chain (core/gates/chain.js): the
+  // next stage's recorded prev_hash no longer matches, and nothing surfaces
+  // that during a run. Only `devteam verify-chain`, `devteam verify`, and
+  // evidence attestation check it, so an operator following this advice could
+  // discover the break much later, at export, with no memory of causing it.
+  // Name the re-attesting path instead, and the cost if they hand-edit anyway.
   const reason =
     `automatic retry for "${action.name}" targets ${targets}, but no candidate build role ` +
-    `can write every target (considered: ${candidates}). Fix the files manually, correct ` +
-    `stage-02 file_ownership, or add a narrowly scoped owner before resuming; no host was invoked.`;
+    `can write every target (considered: ${candidates}). Fix the files manually, or re-run ` +
+    `design so stage-02 file_ownership covers them; no host was invoked. Editing ` +
+    "pipeline/gates/stage-02.json by hand breaks the gate chain — run `devteam stamp-chain` " +
+    "afterwards if you do.";
   const evidence = {
     target_paths: ownership.target_paths,
     candidate_roles: ownership.candidate_roles,
