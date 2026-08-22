@@ -20,7 +20,7 @@ const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { makeTargetProject, cleanup, runCLI } = require("./_helpers");
+const { makeTargetProject, makeRealisticProject, cleanup, runCLI } = require("./_helpers");
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -424,5 +424,77 @@ describe("run prologue: resume reconciles against the plan on disk", () => {
     const r = resume(cwd);
     assert.equal(r.status, 1);
     assert.match(r.stderr, /run plan changed since the original run/);
+  });
+});
+
+// Everything above runs against the bare fixture: config and an empty gates
+// directory, no source. On a project with no files, right-sizing and
+// active-role discovery answer [] no matter what they do, so an assertion
+// about either passes whether the logic works or not -- two mutations in #463
+// went uncaught for exactly that reason. These run against a project with a
+// real shape: backend, frontend, tests, infra, docs.
+describe("run prologue: right-sizing on a project with real files", () => {
+  const CONFIG_FULL = "routing:\n  default_host: generic\npipeline:\n  default_track: full\n";
+
+  function realisticPlan(files) {
+    const cwd = track(makeRealisticProject({ config: CONFIG_FULL, ...(files ? { files } : {}) }));
+    const r = runCLI(["run", "--feature", "add a subtract helper", "--track", "full",
+      "--budget-usd", "5", "--plan-only"], { cwd });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"));
+  }
+
+  it("discovers one active role per workstream the project actually has", () => {
+    // The bare fixture reports [] here, which is why discarding discovery
+    // entirely was invisible to this suite.
+    const plan = realisticPlan();
+    assert.deepEqual([...plan.candidate_active_roles].sort(),
+      ["backend", "documentation", "frontend", "platform", "qa"]);
+  });
+
+  it("keeps the stages the project's shape justifies", () => {
+    // The bare project right-sizes full down to 13 stages; this one keeps 15.
+    // accessibility-audit and performance-budget survive here precisely
+    // because there is a frontend, and that difference is the evidence that
+    // right-sizing is reading the project rather than a constant.
+    const plan = realisticPlan();
+    assert.equal(plan.stages_included, 15);
+    assert.equal(plan.stages_skipped_by_right_sizing, 3);
+    assert.deepEqual(plan.right_sized_stage_names,
+      ["clarification", "observability-gate", "verification-beyond-tests"]);
+  });
+
+  it("drops the frontend stages again when the frontend is removed", () => {
+    // Same fixture, one file's worth of difference. If right-sizing were
+    // ignoring the project, these two plans would be identical.
+    const withFrontend = realisticPlan();
+    const backendOnly = (() => {
+      const cwd = track(makeRealisticProject({ config: CONFIG_FULL }));
+      fs.rmSync(path.join(cwd, "src", "frontend"), { recursive: true, force: true });
+      const r = runCLI(["run", "--feature", "add a subtract helper", "--track", "full",
+        "--budget-usd", "5", "--plan-only"], { cwd });
+      assert.equal(r.status, 0, r.stderr);
+      return JSON.parse(fs.readFileSync(path.join(cwd, "pipeline", "run-plan.json"), "utf8"));
+    })();
+
+    assert.equal(withFrontend.candidate_active_roles.includes("frontend"), true);
+    assert.equal(backendOnly.candidate_active_roles.includes("frontend"), false);
+    assert.ok(backendOnly.stages_skipped_by_right_sizing > withFrontend.stages_skipped_by_right_sizing,
+      "a project with no frontend right-sizes further");
+    assert.ok(backendOnly.right_sized_stage_names.includes("accessibility-audit"),
+      "the a11y audit is what the frontend was holding open");
+    // ...but the execution fingerprint does NOT move, deliberately. run-plan.js
+    // binds resume to stable configured controls, not to observations that
+    // evolve as earlier stages write code: "preflight right-sizing skips ...
+    // are snapshots; stage readiness re-evaluates them at runtime." If this
+    // moved, a resume would report drift every time a stage created a file.
+    assert.equal(withFrontend.execution_fingerprint, backendOnly.execution_fingerprint,
+      "right-sizing is a snapshot, not part of the execution identity");
+  });
+
+  it("counts workstreams against the roles it discovered", () => {
+    const plan = realisticPlan();
+    assert.equal(plan.expected_workstreams, 22);
+    assert.equal(plan.base_workstreams, 22);
   });
 });
