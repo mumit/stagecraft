@@ -487,13 +487,31 @@ shape:
 | Where you get stuck | Today | Proposal/apply version |
 |---|---|---|
 | `judgment-gate` | Read the gate, write a ruling by hand | Chat drafts the ruling with its `[class:]`; operator applies or rejects |
-| `retry-ownership` | Halt names the incompatible roles; operator reconciles manually | Chat proposes the owner or scope change, bounded by existing `roleWrites` |
+| `retry-ownership` | Halt names the incompatible roles; operator reconciles manually | ~~Chat proposes the owner or scope change~~ — **retracted, see below** |
 | `patterns review` | Read candidates, hand-write `prompt_text` | Chat drafts prevention text from the observations; promotion stays explicit |
 | track choice | `assess` heuristics, low confidence on generic descriptions | Chat explains the tradeoff against this repo and proposes a track record |
 
 Each is a bounded schema, each keeps the model advisory, and each removes a place where the
 human is transcribing rather than judging. The core still never spawns a model, and nothing
 gains an execution path.
+
+> **`retry-ownership` retracted (2026-08-22), and the row above was wrong.** The table was
+> written from the halt message without checking where the data lives. `file_ownership` is a
+> field inside `pipeline/gates/stage-02.json` — a **gate**, not a markdown artifact — and
+> stage gates are chained: each records a hash of its predecessor, which is what makes the
+> provenance tamper-evident ("the EU AI Act / SOC 2 ask", `core/gates/chain.js`). Measured:
+> adding one key to `file_ownership` and re-verifying gives `ok: false` with the break
+> located at stage-04, recorded hash against recomputed.
+>
+> So extending propose/apply here would let a conversational turn edit an evidence record
+> the orchestrator attested, and break the chain the compliance story rests on. It should
+> not be built. `ruling` (shipped, #474) and `pattern text` remain good candidates —
+> `context.md` and `pipeline/patterns/` are both outside the chain.
+>
+> The real defect nearby is that the halt used to advise "correct stage-02 `file_ownership`"
+> with no indication that the obvious reading breaks the chain, and nothing checks the chain
+> during a run — only `verify-chain`, `verify`, and attestation do, so the break surfaces at
+> export with no memory of the cause. Fixed in the same PR.
 
 One smaller thing: chat holds eight turns in process memory and starts fresh every
 invocation. For an operator working a halted run across several commands, the session that
