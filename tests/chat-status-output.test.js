@@ -35,8 +35,8 @@ describe("chat /status: why the run stopped", () => {
       status: "failed", current_stage: "requirements", failed: true,
       failure_reason: 'host "generic" cannot drive workstream "pm" headlessly',
     }));
-    assert.match(out, /^why:   host "generic" cannot drive workstream "pm" headlessly$/m);
-    assert.doesNotMatch(out, /^why:   stage not started$/m);
+    assert.match(out, /^why: {3}host "generic" cannot drive workstream "pm" headlessly$/m);
+    assert.doesNotMatch(out, /^why: {3}stage not started$/m);
   });
 
   it("reports a halt reason", () => {
@@ -44,39 +44,39 @@ describe("chat /status: why the run stopped", () => {
       status: "halted", halted: true, halt_action: "budget",
       halt_reason: "budget cap reached: $5.10 ≥ $5.00",
     }));
-    assert.match(out, /^why:   budget cap reached/m);
+    assert.match(out, /^why: {3}budget cap reached/m);
   });
 
   it("prefers the failure reason when a run somehow carries both", () => {
     const out = render(withRun({
       status: "failed", halt_reason: "reached --until boundary", failure_reason: "disk full",
     }));
-    assert.match(out, /^why:   disk full$/m);
+    assert.match(out, /^why: {3}disk full$/m);
   });
 
   it("keeps the next action's reason, labelled as a note about that action", () => {
     const out = render(withRun({ status: "halted", halt_reason: "stopped" }));
-    assert.match(out, /^note:  stage not started$/m);
-    assert.match(out, /^try:   devteam stage requirements --headless$/m);
+    assert.match(out, /^note: {2}stage not started$/m);
+    assert.match(out, /^try: {3}devteam stage requirements --headless$/m);
   });
 });
 
 describe("chat /status: when the outcome is unknown", () => {
   it("says the outcome was never recorded for a pre-#464 run-state", () => {
     const out = render({ ...base, unavailable: ["run-outcome"], run: { iterations: 3, cost_usd: 0, status: null } });
-    assert.match(out, /^why:   not recorded \(run-state predates run-outcome tracking\)$/m);
+    assert.match(out, /^why: {3}not recorded \(run-state predates run-outcome tracking\)$/m);
   });
 
   it("prints no why line for a run that has not stopped", () => {
     const out = render(withRun({ status: "in-progress" }));
     assert.doesNotMatch(out, /^why:/m);
-    assert.match(out, /^run:   in-progress/m);
+    assert.match(out, /^run: {3}in-progress/m);
   });
 
   it("handles a project with no run at all", () => {
     const out = render({ ...base, run: null });
-    assert.match(out, /^run:   none$/m);
-    assert.match(out, /^cost:  unavailable$/m);
+    assert.match(out, /^run: {3}none$/m);
+    assert.match(out, /^cost: {2}unavailable$/m);
     assert.doesNotMatch(out, /^why:/m);
   });
 });
