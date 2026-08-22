@@ -1,6 +1,7 @@
 # ADR 025 — Ceremony belongs on the build matrix, not only the review matrix
 
-**Status:** Proposed
+**Status:** Proposed — **premise corrected 2026-08-22, decision needs revision
+before it can be accepted. See "Correction" below.**
 **Date:** 2026-08-21
 **Authors:** Stagecraft maintainers
 
@@ -49,9 +50,81 @@ argued there was a missing rung between `loop` (4 dispatches) and `quick` (15),
 cost ladder — it is that the cheap track is cheap for a reason the other light
 tracks do not share.
 
+## Correction (2026-08-22): the measurement did not survive a real repository
+
+The dispatch counts above were taken "on a throwaway project". Re-measured on a
+**git repository with an actual scoped change dirty**, the central claim
+inverts.
+
+The mechanism is `expectedRolesForStage()` in `core/pipeline/right-sizing.js`:
+
+```js
+if (active.size === 0) return roles;          // no discovery → every role
+return roles.filter((role) => ... active.has(role) ...);
+```
+
+`activeRoles` comes from `candidateActiveRoles()`, which reads
+`gitChangedFiles()`. On a throwaway project with nothing dirty — or nothing in
+git at all — discovery returns `[]`, that first line fires, and **every track
+gets the full four-area build matrix**. The "4" in the table above is not
+`nano`'s cost; it is the cost of measuring a track against a project that has no
+change to right-size.
+
+Measured on a real repository, dispatches per track by the shape of the change:
+
+| Change shape | `loop` | `nano` | `refactor` | `quick` |
+|---|---:|---:|---:|---:|
+| one backend file dirty — *this ADR's own example, "rename a helper function"* | 3 | **2** | **2** | 7 |
+| five files across backend, frontend, tests, infra | 4 | **6** | — | 16 |
+| throwaway project, nothing dirty (as originally measured) | 4 | 6 | 6 | 15 |
+
+**`nano` does not cost 50% more than `loop`. On the change `nano` exists for, it
+costs less — 2 dispatches against `loop`'s 3.** Right-sizing already scopes the
+build matrix to the roles the change actually touches; the scoping this ADR
+proposes to add is, on real projects, already happening dynamically.
+
+The claim holds only in the third row — no change to right-size — and in the
+second, where four build workstreams are the *correct* answer to a change
+spanning four areas, not ceremony to be trimmed.
+
+### What the re-measurement did surface
+
+`loop` dispatches **one** builder for a change spanning four areas, because
+`loopBuildRole(config)` pins it to a single role unconditionally rather than
+deriving it from what changed. Every other track scales its build matrix with
+the change; `loop` — the default track — does not. Whether that is the right
+trade is a separate question from this ADR's, and a more interesting one, since
+it points at under-assurance on the most-used track rather than over-ceremony on
+a rarely-used one.
+
+### What this means for the decision below
+
+The decision as written would add a *static* scoping rule on top of a *dynamic*
+one that already produces the same result whenever the project is a real
+repository with a scoped change. On the cross-cutting case it would reduce a
+four-area build to one — which is the assurance reduction the Consequences
+section describes, but bought against a cost that measurement says is not
+being paid.
+
+**It should not be accepted in its current form.** A revised version would need
+to state which of these it is actually for:
+
+1. the no-git / nothing-dirty case, where discovery finds nothing and every
+   track falls through to the full matrix — arguably a right-sizing defect
+   rather than a track-sizing one;
+2. the cross-cutting case, where it is a deliberate assurance reduction and
+   should be argued as one, not as removing waste;
+3. `loop`'s unconditional single-builder pin, which is the opposite problem and
+   the one the numbers actually point to.
+
+The measurement method is the transferable lesson: a track's cost cannot be
+measured on a project with no change in it, because right-sizing has nothing to
+size.
+
 ## Decision
 
-**Proposed:** extend single-workstream build scoping to the specialist tracks
+**Proposed (premise corrected above — not ready to accept):** extend
+single-workstream build scoping to the specialist tracks
 whose change shape already justifies a single reviewer.
 
 Concretely: a track that declares a scoped `PEER_REVIEW_SIZING` should scope its

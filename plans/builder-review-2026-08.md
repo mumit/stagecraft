@@ -355,8 +355,27 @@ Those four names cost a 250-line explainer, a nine-branch decision tree, and a r
 difference is three orthogonal modifiers: *does it need a brief*, *does it deploy*, and *is
 behavior meant to be preserved*.
 
-**Recommendation.** Keep three visible tracks, and **scope the build, not just the
-review.** `PEER_REVIEW_SIZING` gives `nano`, `refactor`, and `review-pr` a single reviewer,
+> **Correction (2026-08-22).** The dispatch table above was measured on a throwaway
+> project, and it does not survive a real repository. `expectedRolesForStage()` returns
+> *every* role when active-role discovery finds nothing, and discovery reads
+> `gitChangedFiles()` — so on a project with nothing dirty, every track gets the full
+> four-area build matrix. The "4" in the `build` column is not `nano`'s cost; it is the
+> cost of measuring a track against a project that has no change to right-size.
+>
+> Re-measured on a git repository with one backend file dirty — this section's own
+> example, a mechanical rename — `nano` costs **2** dispatches and `loop` costs **3**.
+> `nano` is *cheaper* than `loop` on the change `nano` is for. The 50% claim holds only
+> when the change spans four areas, where a four-area build is the correct answer rather
+> than ceremony.
+>
+> What the re-measurement did surface: `loop` pins its build to one role unconditionally
+> (`loopBuildRole`), so it dispatches a single builder even for a change spanning four
+> areas. That is under-assurance on the default track — the opposite problem, and the one
+> the numbers point at. See [ADR-025](../docs/adr/025-scope-build-not-just-review.md)'s
+> Correction section.
+
+**Recommendation (superseded in part by the correction above).** Keep three visible
+tracks, and **scope the build, not just the review.** `PEER_REVIEW_SIZING` gives `nano`, `refactor`, and `review-pr` a single reviewer,
 but nothing scopes build except `loop`'s `loopBuildRole`. So `nano` runs a four-area build
 matrix and then has one reviewer look at all of it — the funnel narrows where the cost has
 already been spent. Pairing the two takes `nano` and `refactor` from 6 dispatches to 3.
