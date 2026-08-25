@@ -869,4 +869,8 @@ if (require.main === module) {
 // in-process (not via the SubagentStop hook this file is normally invoked
 // as), so it needs to trigger the same pipeline/context.md consequence
 // plumbing directly rather than duplicating it.
-module.exports = { main, runMain, VALID_TRACKS, injectRedTeamBlockers };
+// stageKey exported for reuse outside the validator: `devteam stage <name>`
+// uses it to detect "dispatching a later stage while an earlier one has an
+// unresolved ESCALATE gate" — the same later-stage-order comparison this
+// file uses to flag a bypassed escalation after the fact.
+module.exports = { main, runMain, VALID_TRACKS, injectRedTeamBlockers, stageKey };

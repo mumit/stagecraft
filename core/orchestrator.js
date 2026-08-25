@@ -35,7 +35,7 @@ const {
 const { collectChangedFileManifest } = require("./context-manifest");
 const { computeContextDelta } = require("./context-delta");
 const { detectNoProgress, countArchivedAttempts, noProgressEvidence } = require("./gates/convergence");
-const { archiveGateIfFail, pruneArchives } = require("./gates/archive");
+const { archiveGate, archiveGateIfFail, listArchives, pruneArchives } = require("./gates/archive");
 const { isAllowed } = require("./guards/write-audit");
 const { hostConcurrencyLimit, mapByHostConcurrency } = require("./scheduler");
 const { WorkstreamIsolation, shouldIsolateBuildWorkstreams } = require("./workstream-isolation");
@@ -1172,29 +1172,53 @@ async function runStageHeadless(stageName, opts = {}) {
         : rootLogPathExpected;
       if (opts.skipCompleted) {
         if (fs.existsSync(rootGatePathExpected)) {
-          process.stderr.write(`[devteam] --skip-completed: ${ws.role} already has a gate, skipping\n`);
-          const skipped = {
-            role: ws.role, host: ws.host, descriptor: ws.descriptor, skipped: true,
-            exitCode: 0, gatePath: rootGatePathExpected, logPath: rootLogPathExpected, durationMs: 0,
-            queueMs: queue.queueMs,
-          };
-          if (workstreamIsolation) workstreamIsolation.cleanup(ws);
-          emitWorkstreamEvent({
-            type: "workstream-finished",
-            stage: plan.stage,
-            name: stageName,
-            role: ws.role,
-            host: ws.host,
-            workstream_id: ws.descriptor.workstreamId,
-            skipped: true,
-            exit_code: 0,
-            gate_path: rootGatePathExpected,
-            log_path: rootLogPathExpected,
-            duration_ms: 0,
-            queue_ms: queue.queueMs,
-            queue_limit: queue.queueLimit,
-          });
-          return skipped;
+          const { gate: existingGate } = loadGateSafe(rootGatePathExpected);
+          const existingStatus = existingGate && existingGate.status;
+          if (existingStatus === "PASS" || existingStatus === "WARN") {
+            process.stderr.write(`[devteam] --skip-completed: ${ws.role} already has a gate, skipping\n`);
+            const skipped = {
+              role: ws.role, host: ws.host, descriptor: ws.descriptor, skipped: true,
+              exitCode: 0, gatePath: rootGatePathExpected, logPath: rootLogPathExpected, durationMs: 0,
+              queueMs: queue.queueMs,
+            };
+            if (workstreamIsolation) workstreamIsolation.cleanup(ws);
+            emitWorkstreamEvent({
+              type: "workstream-finished",
+              stage: plan.stage,
+              name: stageName,
+              role: ws.role,
+              host: ws.host,
+              workstream_id: ws.descriptor.workstreamId,
+              skipped: true,
+              exit_code: 0,
+              gate_path: rootGatePathExpected,
+              log_path: rootLogPathExpected,
+              duration_ms: 0,
+              queue_ms: queue.queueMs,
+              queue_limit: queue.queueLimit,
+            });
+            return skipped;
+          }
+          // FAIL/ESCALATE/unreadable: this workstream isn't actually done —
+          // on a shared (non-worktree-isolated) checkout it may have raced
+          // ahead of sibling workstreams that hadn't written their outputs
+          // yet (stage-04.md dispatches backend/frontend/platform/qa in
+          // parallel against the same checkout by default), so its blockers
+          // can already be stale by the time we get to a resumed dispatch.
+          // Archive the stale attempt — same convention as the merged stage
+          // gate's archive-before-overwrite — and fall through to a real
+          // re-dispatch instead of carrying a possibly-obsolete gate into
+          // the merge unexamined.
+          process.stderr.write(
+            `[devteam] --skip-completed: ${ws.role}'s gate is ${existingStatus || "unreadable"} (not PASS/WARN) — re-dispatching\n`,
+          );
+          try {
+            const priorAttempts = listArchives(gatesDir, ws.descriptor.workstreamId);
+            const nextAttempt = priorAttempts.length > 0
+              ? Math.max(...priorAttempts.map((a) => a.attempt)) + 1
+              : 1;
+            archiveGate(gatesDir, ws.descriptor.workstreamId, nextAttempt);
+          } catch { /* best-effort — never block re-dispatch */ }
         }
       }
       const queueSuffix = queue.queueMs > 0 ? ` after ${queue.queueMs}ms queue` : "";
@@ -1399,6 +1423,20 @@ async function runStageHeadless(stageName, opts = {}) {
             }
           }
         }
+      }
+      // Prune this workstream's per-attempt archives once it recovers to a
+      // real pass — mirrors the singleRoleGate pruning above, scoped per
+      // role, so a stale attempt count doesn't outlive the failure sequence
+      // it describes. Read after stamping since orchestrator verification
+      // (stampWorkstream, just above) can flip a model-claimed PASS to FAIL.
+      {
+        const wsGatePathForPrune = r.gatePath || wsGatePathExpected;
+        try {
+          const { gate: finalGate } = loadGateSafe(wsGatePathForPrune);
+          if (finalGate && (finalGate.status === "PASS" || finalGate.status === "WARN")) {
+            pruneArchives(gatesDir, ws.descriptor.workstreamId);
+          }
+        } catch { /* archiving must never block a run */ }
       }
       if (workstreamIsolation) {
         const reconciliation = workstreamIsolation.reconcile(ws, {
@@ -2427,11 +2465,65 @@ function evaluateStageInPipeline(stageName, ctx) {
           if (filtered) effectiveRoles = filtered;
         }
       }
+      // A role only counts as "completed" if its gate is a real pass — not
+      // merely present. On a shared (non-worktree-isolated) checkout,
+      // stage-04 dispatches backend/frontend/platform/qa in parallel against
+      // the same working tree, so a fast-finishing role (typically qa,
+      // whose job is to test what the others produce) can legitimately race
+      // ahead and FAIL/ESCALATE against a checkout its siblings haven't
+      // finished writing to yet. If a FAIL/ESCALATE gate were treated as
+      // "done" here, `continue-stage` would skip re-dispatching it forever
+      // (see the --skip-completed check in dispatchWorker above) and a stale,
+      // since-resolved blocker would ride along into the eventual merge —
+      // reported to the human as a live escalation even after the sibling
+      // workstreams it blamed have since passed.
       const completed = [];
       const remaining = [];
       for (const role of effectiveRoles) {
         const p = path.join(gatesDir, `${stageDef.stage}.${role}.json`);
-        (fs.existsSync(p) ? completed : remaining).push(role);
+        if (fs.existsSync(p)) {
+          const { gate: wsGate } = loadGateSafe(p);
+          if (wsGate && (wsGate.status === "PASS" || wsGate.status === "WARN")) {
+            completed.push(role);
+            continue;
+          }
+        }
+        remaining.push(role);
+      }
+      // Roles left in `remaining` because their gate is FAIL/ESCALATE (not
+      // merely absent) get re-dispatched on the next continue-stage — but not
+      // unboundedly. Mirror the merged-gate convergence ceiling below
+      // (archive-based attempt count + no-progress detection) per workstream,
+      // so a role that's genuinely stuck — not just racing its siblings on a
+      // shared checkout — still surfaces to a human instead of being
+      // redispatched every iteration until the driver's generic
+      // max-iterations guard trips.
+      for (const role of remaining) {
+        const workstreamId = `${stageDef.stage}.${role}`;
+        const workstreamGatePath = path.join(gatesDir, `${workstreamId}.json`);
+        const progress = detectNoProgress(gatesDir, workstreamId);
+        if (progress.noProgress) {
+          const evidence = noProgressEvidence(progress.stuckBlockers, progress.attempts);
+          return {
+            action: "resolve-escalation", stage: stageDef.stage, name: stageName,
+            gate: workstreamGatePath,
+            failure_class: "convergence-exhausted",
+            blockers: progress.stuckBlockers,
+            no_progress_evidence: evidence,
+            reason: `workstream '${role}' no-progress convergence: ${evidence}; escalating for a ruling`,
+            command: `devteam ruling --topic "..." --target-gate ${workstreamGatePath} [--headless]`,
+          };
+        }
+        const archiveCount = countArchivedAttempts(gatesDir, workstreamId);
+        if (archiveCount >= maxRetries) {
+          return {
+            action: "resolve-escalation", stage: stageDef.stage, name: stageName,
+            gate: workstreamGatePath,
+            failure_class: "convergence-exhausted",
+            reason: `workstream '${role}' retry budget exhausted (${archiveCount}/${maxRetries} attempts); escalating for a ruling`,
+            command: `devteam ruling --topic "..." --target-gate ${workstreamGatePath} [--headless]`,
+          };
+        }
       }
       if (remaining.length === 0) {
         return {

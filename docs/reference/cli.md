@@ -55,7 +55,7 @@ Render stage prompt(s) for <name>, or drive the host CLI non-interactively with 
 | --workstream                     | list   | Dispatch only this workstream (repeatable)                                  |
 | --scope                          | list   | Scope review to this path (repeatable; review-only track)                   |
 | --experimental-omnigent-director | bool   | EXPERIMENTAL: run planned Omnigent workstreams through one director session |
-| --force                          | bool   | Bypass stoplist guard                                                       |
+| --force                          | bool   | Bypass stoplist / unresolved-escalation guards                              |
 | --json                           | bool   | JSON output                                                                 |
 | --skip-preflight                 | bool   | Skip automatic preflight check before peer-review                           |
 
