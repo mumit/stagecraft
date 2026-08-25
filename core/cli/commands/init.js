@@ -111,11 +111,36 @@ function run(positional, _flags) {
 
   const agentsPath = path.join(cwd, "AGENTS.md");
   if (!fs.existsSync(agentsPath) || _flags.force) {
+    // AGENTS.md is subject content, not framework (see FRAMEWORK_ROOTED_READ_FIRST
+    // in core/pipeline/stages.js), and it is read by every agent before every
+    // stage. The stub was a fill-in comment and nothing else, which meant a new
+    // project started with no stated conventions at all.
+    //
+    // The documentation lines are here because `README.md` sits in backend's and
+    // platform's allowedWrites -- permitted, never required -- and no stage owns
+    // "does this project explain how to run it". So whether a project got a
+    // README depended on whether the brief happened to mention it, and nothing
+    // re-checked it when a later change added a UI. A stated convention is the
+    // cheapest fix: it reaches every dispatch, and `devteam patterns seed` reads
+    // normative statements like these into the reviewed-pattern queue.
+    //
+    // Written only when AGENTS.md is absent, so an existing project's file is
+    // never clobbered.
     const stub = [
       "# Project context",
       "",
       "<!-- Fill in: project name, language/stack, key constraints, team conventions.",
       "     This file is read by every pipeline agent before each stage. -->",
+      "",
+      "## Conventions",
+      "",
+      "<!-- Edit or delete anything here that does not fit the project. Agents read",
+      "     these as binding, and `devteam patterns seed` can promote them into",
+      "     reviewed guidance that is injected into future builds. -->",
+      "",
+      "- The project must have a root `README.md` documenting how to install and run it.",
+      "- A change that adds or alters an entry point, command, or user-facing surface",
+      "  must update `README.md` in the same change.",
       "",
     ].join("\n");
     fs.writeFileSync(agentsPath, stub, "utf8");

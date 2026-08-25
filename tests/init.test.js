@@ -290,3 +290,58 @@ describe("devteam init --profile dogfood", () => {
     );
   });
 });
+
+// `README.md` sits in backend's and platform's allowedWrites — permitted, never
+// required — and no stage owns "does this project explain how to run it". So a
+// README appeared only when the brief happened to ask for one, and nothing
+// re-checked it when a later change added a UI. AGENTS.md is subject content
+// read by every agent before every stage, and its stub was a fill-in comment
+// and nothing else, so a new project started with no stated conventions at all.
+describe("devteam init: the AGENTS.md stub states documentation conventions", () => {
+  const initProject = () => {
+    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
+    const r = runCLI(["init", "--host", "generic", "--cwd", cwd]);
+    assert.equal(r.status, 0, r.stderr);
+    return cwd;
+  };
+  const agents = (cwd) => fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8");
+
+  it("requires a root README that says how to run the project", () => {
+    assert.match(agents(initProject()),
+      /must have a root `README\.md` documenting how to install and run it/);
+  });
+
+  it("requires README updates when a user-facing surface changes", () => {
+    // The second symptom: the README is written once and then drifts.
+    assert.match(agents(initProject()),
+      /adds or alters an entry point, command, or user-facing surface[\s\S]*must update `README\.md`/);
+  });
+
+  it("keeps the original fill-in guidance", () => {
+    const text = agents(initProject());
+    assert.match(text, /^# Project context/);
+    assert.match(text, /Fill in: project name, language\/stack/);
+  });
+
+  it("says the conventions are editable", () => {
+    // It is the project's file, not Stagecraft's. A library in a monorepo may
+    // legitimately have no root README.
+    assert.match(agents(initProject()), /Edit or delete anything here that does not fit/);
+  });
+
+  it("never clobbers an existing AGENTS.md", () => {
+    const cwd = track(fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-")));
+    fs.writeFileSync(path.join(cwd, "AGENTS.md"), "# Mine\n\nDo not touch.\n");
+    assert.equal(runCLI(["init", "--host", "generic", "--cwd", cwd]).status, 0);
+    assert.equal(agents(cwd), "# Mine\n\nDo not touch.\n");
+  });
+
+  it("is normative enough for `devteam patterns seed` to read", () => {
+    // The conventions reach every dispatch through AGENTS.md directly; seeding
+    // is the second channel, which tracks whether they actually help.
+    const cwd = initProject();
+    const r = runCLI(["patterns", "seed", "--cwd", cwd]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Read 2 documented convention\(s\) from AGENTS\.md/);
+  });
+});
