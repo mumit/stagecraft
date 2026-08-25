@@ -156,6 +156,89 @@ register("stage-04a", (gate, ctx) => {
   return { clear_gates, steps };
 });
 
+// ── stage-04b: security-review, stage-04d: migration-safety ──────────────────
+//
+// Regression: neither stage had a registered recipe, so a FAIL fell through
+// to DEFAULT_DIAGNOSE (clear_gates: []). With nothing to clear, next() never
+// re-dispatches the review — the driver's fix-and-retry loop (core/driver.js)
+// still "retries" once per its own bookkeeping, but each pass just re-archives
+// the same untouched FAIL gate. Two archives of one real attempt then look
+// identical, and detectNoProgress() escalates as "no-progress convergence...
+// 2 blockers identical across attempts 1,2" after exactly one genuine
+// dispatch — the review never got a real second look at changed code. Both
+// stages are veto-power reviews of stage-04 build output (see stages.js),
+// same shape as stage-04a/04c below: the defect lives in a build workstream,
+// not the review itself, so the fix is to clear that workstream's gate,
+// re-run build with the review's blockers as context, then re-run the review.
+function _reviewOfBuildRecipe(stageId, stageName) {
+  return (gate, ctx) => {
+    const wsSet = new Set(gate.affected_workstreams || []);
+    for (const w of _wsFromBlockers(gate)) wsSet.add(w);
+    if (!wsSet.size) {
+      for (const b of (gate.blockers || [])) {
+        if (typeof b === "string") for (const w of _wsFromText(b)) wsSet.add(w);
+      }
+    }
+    const ws = [...wsSet];
+
+    const reviewPath = `pipeline/gates/${stageId}.json`;
+    const steps = [];
+    let buildClearGates;
+
+    if (ws.length) {
+      buildClearGates = buildGatePaths(ws);
+      steps.push({
+        description: `Clear affected build workstream gate${ws.length !== 1 ? "s" : ""}: ${ws.join(", ")}`,
+        commands: formatGateClear(buildClearGates),
+      });
+    } else {
+      // Last resort: scan for actual stage-04 workstream gate files on disk
+      // (same fallback stage-04c uses below).
+      let actualGateFiles = [];
+      if (ctx.gatesDir) {
+        try {
+          actualGateFiles = fs.readdirSync(ctx.gatesDir)
+            .filter((f) => /^stage-04\..+\.json$/.test(f));
+        } catch { /* gatesDir unreadable — keep empty */ }
+      }
+      if (actualGateFiles.length > 0) {
+        const diskWs = actualGateFiles.map((f) => f.replace(/^stage-04\./, "").replace(/\.json$/, ""));
+        buildClearGates = buildGatePaths(diskWs);
+        steps.push({
+          description: `Clear affected build workstream gate${diskWs.length !== 1 ? "s" : ""}: ${diskWs.join(", ")}`,
+          commands: formatGateClear(buildClearGates),
+        });
+      } else {
+        buildClearGates = buildGatePaths(_buildRoles());
+        steps.push({
+          description: "Clear all build workstream gates (workstream not identified from gate data)",
+          commands: formatGateClear(buildClearGates),
+        });
+      }
+    }
+
+    steps.push({
+      description: `Re-run build with ${stageName} findings as context`,
+      commands: [`devteam stage build --patch --from ${stageName} --skip-completed --headless`],
+    });
+    steps.push({ description: "Merge build workstream gates", commands: ["devteam merge build"] });
+    steps.push({
+      description: `Re-run ${stageName}`,
+      commands: [...formatGateClear([reviewPath]), `devteam stage ${stageName} --headless`],
+    });
+
+    const derived = derivedClearGates({
+      rootStageId: "stage-04", failingStageId: stageId,
+      stageList: ctx.stageList, gatesDir: ctx.gatesDir, changeId: ctx.changeId,
+    });
+    const clear_gates = [...(buildClearGates || []), reviewPath, ...derived];
+    return { clear_gates, steps };
+  };
+}
+
+register("stage-04b", _reviewOfBuildRecipe("stage-04b", "security-review"));
+register("stage-04d", _reviewOfBuildRecipe("stage-04d", "migration-safety"));
+
 // ── stage-04c: red-team (Phase 5.1: derived invalidation added) ───────────────
 
 register("stage-04c", (gate, ctx) => {

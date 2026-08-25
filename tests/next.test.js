@@ -582,6 +582,132 @@ describe("next: stage-04c (red-team) fix steps", () => {
   });
 });
 
+// Regression: a real run had security-review (stage-04b) FAIL with
+// affected_workstreams set (per rules/gates-core.md's general FAIL-gate
+// convention) but no registered fix recipe — DEFAULT_DIAGNOSE cleared
+// nothing, so next() never actually re-dispatched the review. The driver's
+// own fix-and-retry bookkeeping (core/driver.js) still counted a "retry" and
+// archived the untouched gate a second time; two archives of one real
+// dispatch then read as identical, and detectNoProgress() escalated as
+// "no-progress convergence ... 2 blockers identical across attempts 1,2"
+// after exactly one genuine agent call. See core/pipeline/fix-recipes.js.
+describe("next: stage-04b (security-review) fix steps", () => {
+  function seedThroughPreReview(cwd) {
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04a", { status: "PASS", security_review_required: true });
+  }
+
+  it("security-review FAIL with affected_workstreams → fix steps clear the named build gates and re-run security-review", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughPreReview(cwd);
+    seedGate(cwd, "stage-04b", {
+      status: "FAIL",
+      security_approved: false,
+      affected_workstreams: ["backend", "frontend", "platform"],
+      blockers: [
+        "The running HTTP server serves an outdated inline UI instead of the reviewed src/frontend assets.",
+        "POST /generate has no documented trusted-network restriction, authentication boundary, rate limiting, or concurrency/budget control.",
+      ],
+    });
+
+    const r = next({ cwd });
+    assert.equal(r.action, "fix-and-retry");
+    assert.equal(r.name, "security-review");
+    assert.ok(Array.isArray(r.fix_steps) && r.fix_steps.length > 0, "fix_steps present");
+    assert.ok(
+      Array.isArray(r.clear_gates) && r.clear_gates.length > 0,
+      "clear_gates present — an empty list here is the regression: next() would never re-dispatch the review"
+    );
+
+    const allCmds = r.fix_steps.flatMap(s => s.commands);
+    for (const ws of ["backend", "frontend", "platform"]) {
+      assert.ok(
+        clearsGate(allCmds, `pipeline/gates/stage-04.${ws}.json`),
+        `fix steps must clear the ${ws} build workstream gate named in affected_workstreams`
+      );
+    }
+    assert.ok(
+      clearsGate(allCmds, "pipeline/gates/stage-04b.json"),
+      "fix steps must clear stage-04b.json itself so the review actually re-dispatches on retry"
+    );
+    assert.ok(
+      allCmds.some(c => c.includes("devteam stage security-review")),
+      "fix steps must re-run security-review"
+    );
+    assert.ok(
+      allCmds.some(c => c.includes("devteam stage build") && c.includes("--patch") && c.includes("--from security-review")),
+      "fix steps must re-run build with security-review's blockers as context"
+    );
+  });
+
+  it("security-review FAIL with no affected_workstreams, disk scan finds build gates → fix steps clear them", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughPreReview(cwd);
+    for (const ws of ["backend", "frontend", "platform", "qa"]) {
+      seedGate(cwd, `stage-04.${ws}`, { workstream: ws, status: "PASS" });
+    }
+    seedGate(cwd, "stage-04b", {
+      status: "FAIL",
+      security_approved: false,
+      blockers: ["Some free-text finding with no workstream attribution"],
+    });
+
+    const r = next({ cwd });
+    assert.equal(r.action, "fix-and-retry");
+    const allCmds = r.fix_steps.flatMap(s => s.commands);
+    assert.ok(
+      clearsGate(allCmds, "pipeline/gates/stage-04.backend.json"),
+      "disk scan finds the backend build gate when affected_workstreams is absent"
+    );
+    assert.ok(
+      clearsGate(allCmds, "pipeline/gates/stage-04b.json"),
+      "fix steps must clear stage-04b.json itself"
+    );
+  });
+});
+
+describe("next: stage-04d (migration-safety) fix steps", () => {
+  function seedThroughRedTeam(cwd) {
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b", "stage-04", "stage-04c"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04a", { status: "PASS", migration_safety_required: true });
+  }
+
+  it("migration-safety FAIL with affected_workstreams → fix steps clear the named build gate and re-run migration-safety", () => {
+    const cwd = track(makeTargetProject());
+    seedThroughRedTeam(cwd);
+    seedGate(cwd, "stage-04d", {
+      status: "FAIL",
+      affected_workstreams: ["backend"],
+      blockers: ["Migration script drops a column with no backward-compatible fallback."],
+    });
+
+    const r = next({ cwd });
+    assert.equal(r.action, "fix-and-retry");
+    assert.equal(r.name, "migration-safety");
+    const allCmds = r.fix_steps.flatMap(s => s.commands);
+    assert.ok(
+      clearsGate(allCmds, "pipeline/gates/stage-04.backend.json"),
+      "fix steps must clear the backend build workstream gate named in affected_workstreams"
+    );
+    assert.ok(
+      clearsGate(allCmds, "pipeline/gates/stage-04d.json"),
+      "fix steps must clear stage-04d.json itself so migration-safety actually re-dispatches on retry"
+    );
+    assert.ok(
+      allCmds.some(c => c.includes("devteam stage migration-safety")),
+      "fix steps must re-run migration-safety"
+    );
+    assert.ok(
+      allCmds.some(c => c.includes("devteam stage build") && c.includes("--patch") && c.includes("--from migration-safety")),
+      "fix steps must re-run build with migration-safety's blockers as context"
+    );
+  });
+});
+
 describe("next: malformed gate handling", () => {
   it("returns fix-and-retry with a clear error when a stage gate is malformed", () => {
     const cwd = track(makeTargetProject());
