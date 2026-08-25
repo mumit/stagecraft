@@ -41,7 +41,7 @@ const flags = {
   workstream:        { type: "list",    description: "Dispatch only this workstream (repeatable)" },
   scope:             { type: "list",    description: "Scope review to this path (repeatable; review-only track)" },
   "experimental-omnigent-director": { type: "boolean", description: "EXPERIMENTAL: run planned Omnigent workstreams through one director session" },
-  force:             { type: "boolean", description: "Bypass stoplist guard" },
+  force:             { type: "boolean", description: "Bypass stoplist / unresolved-escalation guards" },
   json:              { type: "boolean", description: "JSON output" },
   "skip-preflight":  { type: "boolean", description: "Skip automatic preflight check before peer-review" },
   help:              { type: "boolean", description: "Show this help" },
@@ -117,6 +117,42 @@ function run(positional, _flags) {
   const cwd = _flags.cwd || process.cwd();
   const config = loadConfig(cwd);
   const changeId = resolveChangeId(_flags, config);
+  const stageDef = getStage(stageName);
+
+  // Guard: refuse to dispatch a stage strictly later than one still sitting
+  // on an unresolved ESCALATE gate. `devteam stage <name>` is a direct
+  // dispatch that bypasses `next()`'s recommendation entirely — exactly the
+  // loophole an escalation-applicator agent (or a human) can trip into when
+  // a routing table names a stage that collides with an unrelated workstream
+  // role (e.g. bare `qa` = stage-06 QA Testing, confused for the qa *build
+  // workstream*). Scoped to ESCALATE only, not FAIL, so it doesn't interfere
+  // with the driver's own same-stage retry loop; scoped to *strictly later*
+  // so dispatching an earlier stage to fix the root cause of a later
+  // escalation — the documented recovery path — still works.
+  if (!_flags.force && stageDef) {
+    try {
+      const { next } = getOrchestrator();
+      const { stageKey } = require(path.join(__dirname, "..", "..", "gates", "validator"));
+      const nr = next({ cwd });
+      if (nr && nr.action === "resolve-escalation" && stageKey(`${nr.stage}.json`) < stageKey(`${stageDef.stage}.json`)) {
+        console.error(
+          `devteam stage: refusing to dispatch '${stageName}' (${stageDef.stage}) — ` +
+          `${nr.stage} has an unresolved ESCALATE gate that comes first.`,
+        );
+        console.error("");
+        console.error(`  Escalating gate:  ${nr.gate}`);
+        console.error(`  Reason:           ${nr.reason}`);
+        console.error("");
+        console.error("Resolve it, then re-run this:");
+        console.error(`  1. ${nr.command}`);
+        console.error(`  2. devteam fix-escalation [--headless]`);
+        console.error(`  3. devteam next   # should no longer say resolve-escalation for ${nr.stage}`);
+        console.error("");
+        console.error(`Already handled and dispatching '${stageName}' on purpose? Pass --force.`);
+        process.exit(2);
+      }
+    } catch { /* next() unavailable or errored — don't block dispatch on a guard failure */ }
+  }
   // If the target directory isn't initialized, the prompt we're about to
   // print will reference files (`.claude/agents/<role>.md`, `.devteam/
   // rules/*.md`, `.devteam/templates/*-template.md`) that don't exist. Warn loudly
@@ -214,7 +250,6 @@ function run(positional, _flags) {
   }
   // Auto-run preflight (stage-04e) when dispatching peer-review.
   // Skipped if stage-04e.json already exists and is PASS (stage manager ran manually).
-  const stageDef = getStage(stageName);
   const isPeerReview = stageDef ? stageDef.stage === "stage-05" : stageName === "peer-review";
   if (isPeerReview && !_flags.skipPreflight) {
     const { runPreflight } = require(path.join(__dirname, "..", "..", "preflight"));

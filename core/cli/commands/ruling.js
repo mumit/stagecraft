@@ -65,7 +65,7 @@ async function run(positional, _flags) {
     }
   }
 
-  const prompt = renderPrincipalRulingPrompt(topic, contextPaths, targetGate);
+  const prompt = renderPrincipalRulingPrompt(topic, contextPaths, targetGate, cwd);
 
   if (!_flags.headless && !isHttpNativePrincipal(cwd)) {
     // User-driven mode: print the prompt for paste-into-host.

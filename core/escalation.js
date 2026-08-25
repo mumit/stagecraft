@@ -137,20 +137,66 @@ function deriveTopicFromGate(targetGate) {
 // dispatch in-process rather than shelling out to the CLI).
 // ---------------------------------------------------------------------------
 
+// Resolve where the Principal's role brief actually lives for the host
+// routed to the `principal` role in this project, mirroring how
+// renderStagePromptLayers() (core/adapters/markdown-host.js) computes
+// `${capabilities.rolePromptsDir}/${role}.md` per host instead of guessing.
+// Returns null when the routed host has no installed role-brief file at all
+// (e.g. "generic", capabilities.prompts === "prompt-only" — its brief is
+// inline in the system prompt, not a file the agent can read).
+function resolvePrincipalRoleBriefPath(cwd) {
+  try {
+    const { loadConfig } = require("./config");
+    const { loadAdapter } = require("./router");
+    const config = loadConfig(cwd);
+    const host = (config.routing.roles && config.routing.roles.principal) || config.routing.default_host;
+    const adapter = loadAdapter(host);
+    const caps = adapter.capabilities || {};
+    if (caps.agentsDir) return `${caps.agentsDir}/principal.md`;
+    if (caps.rolePromptsDir) return `${caps.rolePromptsDir}/principal.md`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Render a Principal-ruling prompt — instructs the Principal subagent to read
 // the cited context, weigh the question, and write a PRINCIPAL-RULING (or a
 // typed PRINCIPAL-CANNOT-DECIDE) line into pipeline/context.md.
-function renderPrincipalRulingPrompt(topic, contextPaths, targetGate) {
+//
+// `cwd` resolves the actual routed host's role-brief path (see
+// resolvePrincipalRoleBriefPath above). It's optional so existing callers that
+// can't supply it yet degrade to the generic fallback line rather than
+// throwing; but naming all three hardcoded host paths unconditionally was
+// itself the bug this fixes — every host outside {claude-code, codex,
+// gemini-cli} (acp, antigravity, omnigent, openai-compat, generic) sent the
+// dispatched agent hunting for files that were never going to exist there,
+// even when its own real role brief was correctly installed one directory
+// over. See the openai-compat demo run: `.openai-compat/prompts/roles/principal.md`
+// existed and was correct, but the prompt only ever named the other three hosts.
+function renderPrincipalRulingPrompt(topic, contextPaths, targetGate, cwd) {
+  const roleBriefPath = cwd ? resolvePrincipalRoleBriefPath(cwd) : null;
+  const roleBriefLines = roleBriefPath
+    ? [
+      "You are the Principal Engineer. Your role brief lives at",
+      `\`${roleBriefPath}\` — read it before ruling.`,
+      "",
+    ]
+    : [
+      "You are the Principal Engineer, per whatever role brief your host",
+      "installed for this project (if any) — check `.devteam/config.yml`",
+      "under `routing` for the host routed to the `principal` role, and",
+      "look for a role-brief file at that host's installed prompts",
+      "location. Some hosts have no separate file; your brief is inline",
+      "in this system prompt instead.",
+      "",
+    ];
   const lines = [
     "# Principal Ruling Request",
     "",
     `**Topic:** ${topic}`,
     "",
-    "You are the Principal Engineer. Your role brief lives at the",
-    "installed path for the current host (`.claude/agents/principal.md`,",
-    "`.codex/prompts/roles/principal.md`, or",
-    "`.gemini/prompts/roles/principal.md`).",
-    "",
+    ...roleBriefLines,
     "Your task is to issue a binding ruling on the topic above.",
     "**This is not a pipeline stage — there is no gate to write.** The",
     "ruling is consumed by `devteam fix-escalation`, which dispatches",
@@ -425,6 +471,11 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("  preflight, peer-review, qa, accessibility-audit,");
   lines.push("  observability-gate, verification-beyond-tests,");
   lines.push("  performance-budget, sign-off, retrospective, deploy");
+  lines.push("`qa` here is the QA Testing stage (stage-06, full test-suite gate) —");
+  lines.push("NOT the qa build workstream. Bare `devteam stage qa --headless` runs");
+  lines.push("stage-06 and does nothing to fix a build-time qa blocker. A build/test");
+  lines.push("fix for the qa role is `devteam stage build --workstream qa --headless`");
+  lines.push("(see Build fixes above).");
   lines.push("Valid workstream roles for peer-review and build:");
   lines.push("  backend, frontend, platform, qa, documentation");
   lines.push("");
@@ -563,7 +614,7 @@ function runRuling(cwd, { topic, targetGate = null, contextPaths = [] } = {}) {
   const resolvedTopic = topic
     || (targetGate ? deriveTopicFromGate(targetGate) : null)
     || "Escalation ruling";
-  const prompt = renderPrincipalRulingPrompt(resolvedTopic, contextPaths, targetGate);
+  const prompt = renderPrincipalRulingPrompt(resolvedTopic, contextPaths, targetGate, cwd);
   return dispatchToPrincipal(cwd, prompt, { label: "principal-ruling" });
 }
 

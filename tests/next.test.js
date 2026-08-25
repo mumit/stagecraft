@@ -722,6 +722,138 @@ describe("next: convergence ceiling (H1 + 4.2 progress-based)", () => {
   });
 });
 
+// Regression: stage-04 (build) dispatches backend/frontend/platform/qa in
+// parallel against a shared (non-worktree-isolated) checkout by default. qa
+// typically finishes fastest since its job is to test what its siblings
+// produce, so it can legitimately race ahead and FAIL/ESCALATE against a
+// checkout backend/frontend/platform haven't finished writing to yet. A real
+// run hit exactly this: qa escalated blaming backend/frontend/platform for
+// missing implementation files, backend and platform went on to PASS 25
+// minutes later, but a `continue-stage` resume with --skip-completed treated
+// qa's stale gate as done purely because the file existed — the escalation
+// rode along into the merged gate even though the workstreams it blamed had
+// since passed. These tests cover the fix: a workstream only counts as
+// "completed" when its gate is PASS/WARN, and a FAIL/ESCALATE workstream gets
+// re-dispatched (within its own convergence ceiling) rather than treated as
+// terminal.
+describe("next: multi-role workstream FAIL/ESCALATE is not treated as completed (stale-gate resume)", () => {
+  it("qa ESCALATE with siblings PASS → continue-stage, qa in remaining not completed", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.frontend", { workstream: "frontend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.platform", { workstream: "platform", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.qa", {
+      workstream: "qa", host: "claude-code", status: "ESCALATE",
+      blockers: ["The checkout contains no package.json, src/, ... so QA cannot author or execute tests."],
+      escalation_reason: "Implementation-owned inputs from backend, frontend, and platform are absent.",
+    });
+    const r = next({ cwd });
+    assert.equal(r.action, "continue-stage");
+    assert.deepEqual(r.completed.sort(), ["backend", "frontend", "platform"]);
+    assert.deepEqual(r.remaining, ["qa"]);
+  });
+
+  it("frontend FAIL (orchestrator-verified npm test failure) with siblings PASS → continue-stage, frontend in remaining", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.platform", { workstream: "platform", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.qa", { workstream: "qa", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.frontend", {
+      workstream: "frontend", host: "claude-code", status: "FAIL",
+      blockers: ["test command failed [node] (exit 1): npm test"],
+    });
+    const r = next({ cwd });
+    assert.equal(r.action, "continue-stage");
+    assert.deepEqual(r.completed.sort(), ["backend", "platform", "qa"]);
+    assert.deepEqual(r.remaining, ["frontend"]);
+  });
+
+  it("below the per-workstream ceiling, a FAIL/ESCALATE workstream still gets one more chance (continue-stage), not immediate escalation", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.frontend", { workstream: "frontend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.platform", { workstream: "platform", host: "claude-code", status: "PASS" });
+    // One prior archived attempt (below default max_retries=2), no repeat
+    // blockers to compare against yet → no-progress check can't trip either.
+    seedNextArchive(cwd, "stage-04.qa", 1, { blockers: ["original qa blocker"] });
+    seedGate(cwd, "stage-04.qa", { workstream: "qa", host: "claude-code", status: "FAIL", blockers: ["different qa blocker"] });
+    const r = next({ cwd });
+    assert.equal(r.action, "continue-stage");
+    assert.deepEqual(r.remaining, ["qa"]);
+  });
+
+  it("per-workstream convergence ceiling: archive count at max_retries → resolve-escalation scoped to that workstream", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.frontend", { workstream: "frontend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.platform", { workstream: "platform", host: "claude-code", status: "PASS" });
+    // Two archives with different blockers → progress was made, so the
+    // no-progress breaker does not trip; the count ceiling is what escalates.
+    seedNextArchive(cwd, "stage-04.qa", 1, { blockers: ["original"] });
+    seedNextArchive(cwd, "stage-04.qa", 2, { blockers: ["improved"] });
+    seedGate(cwd, "stage-04.qa", { workstream: "qa", host: "claude-code", status: "FAIL", blockers: ["improved"] });
+    const r = next({ cwd });
+    assert.equal(r.action, "resolve-escalation");
+    assert.equal(r.failure_class, "convergence-exhausted");
+    assert.match(r.reason, /qa/);
+    assert.match(r.reason, /retry budget exhausted/i);
+    assert.match(r.gate, /stage-04\.qa\.json$/);
+  });
+
+  it("per-workstream convergence ceiling: identical blockers across last two archives (no-progress) → resolve-escalation even below count ceiling", () => {
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.frontend", { workstream: "frontend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.platform", { workstream: "platform", host: "claude-code", status: "PASS" });
+    seedNextArchive(cwd, "stage-04.qa", 1, { blockers: ["stuck qa blocker"] });
+    seedNextArchive(cwd, "stage-04.qa", 2, { blockers: ["stuck qa blocker"] }); // identical!
+    seedGate(cwd, "stage-04.qa", { workstream: "qa", host: "claude-code", status: "ESCALATE", blockers: ["stuck qa blocker"] });
+    const r = next({ cwd });
+    assert.equal(r.action, "resolve-escalation");
+    assert.equal(r.failure_class, "convergence-exhausted");
+    assert.ok(r.no_progress_evidence, "no_progress_evidence must be present");
+    assert.match(r.no_progress_evidence, /stuck qa blocker/);
+    assert.match(r.reason, /qa/);
+    assert.match(r.reason, /no-progress convergence/i);
+    assert.match(r.gate, /stage-04\.qa\.json$/);
+  });
+
+  it("a stuck workstream does not block a sibling that has already recovered — only the stuck role's gate path is escalated", () => {
+    // backend is PASS (recovered); qa is the one at the no-progress ceiling.
+    // The escalation must be scoped to qa's own gate, not the merged stage
+    // gate or backend's gate.
+    const cwd = track(makeTargetProject());
+    for (const s of ["stage-01", "stage-02", "stage-03", "stage-03b"]) {
+      seedGate(cwd, s, { status: "PASS" });
+    }
+    seedGate(cwd, "stage-04.backend", { workstream: "backend", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.platform", { workstream: "platform", host: "claude-code", status: "PASS" });
+    seedGate(cwd, "stage-04.frontend", { workstream: "frontend", host: "claude-code", status: "PASS" });
+    seedNextArchive(cwd, "stage-04.qa", 1, { blockers: ["stuck"] });
+    seedNextArchive(cwd, "stage-04.qa", 2, { blockers: ["stuck"] });
+    seedGate(cwd, "stage-04.qa", { workstream: "qa", host: "claude-code", status: "FAIL", blockers: ["stuck"] });
+    const r = next({ cwd });
+    assert.equal(r.action, "resolve-escalation");
+    assert.match(r.gate, /stage-04\.qa\.json$/);
+    assert.doesNotMatch(r.gate, /backend|platform|frontend/);
+  });
+});
+
 // review-only and review-pr have no build stage — retrying *any* of their
 // stages can never change the (unchanged, un-owned) code under review, so a
 // FAIL is terminal for every stage in these tracks, not just peer-review.
