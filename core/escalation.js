@@ -171,6 +171,14 @@ function renderPrincipalRulingPrompt(topic, contextPaths, targetGate) {
     "  build, pre-review, security-review, red-team, peer-review, qa",
     "  (testing), accessibility-audit, sign-off, deploy.",
     "- **Gate advance to WARN:** name the gate file and the warning text.",
+    "- **Scope gap:** if the blocker is that a role's write dispatch was",
+    "  rejected for a path stage-01's `affected_files` never named — not",
+    "  a wrong role, an incomplete requirements scope — say so explicitly",
+    "  and name every missing path. Redispatching the same role will not",
+    "  help; it changes nothing about what that role is authorized to",
+    "  write. The fix is `devteam restart requirements --cascade`,",
+    "  updating stage-01's `affected_files` to include the missing",
+    "  paths, then re-approving stage-01 before build re-runs.",
     "",
     "## Read first",
     "",
@@ -369,6 +377,7 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   }
   lines.push("| re-run peer-review for [role]            | devteam stage peer-review --workstream [role] --headless        |");
   lines.push("| fix gate shape / correct gate            | Edit gate JSON, then devteam derive-approvals && devteam merge  |");
+  lines.push("| scope gap / missing affected_files entry | devteam restart requirements --cascade, then re-approve stage-01|");
   lines.push("");
   lines.push("CRITICAL: when the ruling orders a build workstream dispatch, you MUST");
   lines.push("run `devteam stage build --workstream <role>`, NOT `devteam stage peer-review`.");
@@ -399,6 +408,15 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("  pre-review gate correction.");
   lines.push("Do NOT use `devteam restart qa` for a build fix — that clears");
   lines.push("the QA testing stage (stage-06), not the build workstream.");
+  lines.push("");
+  lines.push("**Scope gap** (write rejected for a path stage-01 never approved):");
+  lines.push("  `devteam restart requirements --cascade --headless`");
+  lines.push("Then re-run stage-01 with `affected_files` expanded to include");
+  lines.push("every missing path the ruling named, get it back to PASS, and let");
+  lines.push("build re-dispatch from there. Do NOT redispatch the same build");
+  lines.push("role without first widening stage-01's scope — its allowed writes");
+  lines.push("are derived from that gate, so an unchanged gate reproduces the");
+  lines.push("identical rejection.");
   lines.push("");
   lines.push("**Stage re-runs:**");
   lines.push("  `devteam stage <name> [--workstream <role>] --headless`");

@@ -91,6 +91,47 @@ function loadDocumentationScope(cwd, changeId) {
   return loadDocumentationScopeFromGatesDir(gatesDir(cwd, changeId));
 }
 
+// ADR-027: the same "exact, PM-approved paths beat a guessed folder
+// convention" contract as documentation scope above, generalized for any
+// track-pinned build role (see isTrackPinnedBuildRole in ./stages.js). Unlike
+// documentation, this is never the *sole* write authority for the role — it's
+// an addition to the role's static roleWrites, so an invalid entry is simply
+// dropped rather than invalidating the whole scope. Callers that want to
+// surface what was dropped can inspect `dropped`; nothing today escalates on
+// it, matching how a role's static allowedWrites has never been validated
+// against the working tree either.
+function normalizeApprovedFiles(rawList) {
+  if (!Array.isArray(rawList)) return { files: [], dropped: [] };
+  const files = [];
+  const dropped = [];
+  const seen = new Set();
+  for (const raw of rawList) {
+    const normalized = normalizeAffectedFile(raw);
+    if (!normalized || seen.has(normalized)) { dropped.push(raw); continue; }
+    seen.add(normalized);
+    files.push(normalized);
+  }
+  return { files, dropped };
+}
+
+function buildScopeFromGate(gate) {
+  if (!gate || gate.stage !== "stage-01" || gate.status !== "PASS") return { files: [], dropped: [] };
+  return normalizeApprovedFiles(gate.affected_files);
+}
+
+function loadBuildScopeFromGatesDir(directory) {
+  try {
+    const gate = JSON.parse(fs.readFileSync(path.join(directory, "stage-01.json"), "utf8"));
+    return buildScopeFromGate(gate);
+  } catch {
+    return { files: [], dropped: [] };
+  }
+}
+
+function loadBuildScope(cwd, changeId) {
+  return loadBuildScopeFromGatesDir(gatesDir(cwd, changeId));
+}
+
 function rolesWithDocumentationScope(stageDef, roles, scope, opts = {}) {
   if (!stageDef || !["stage-04", "stage-05"].includes(stageDef.stage)) return roles;
   if (scope && scope.selected) return [DOCUMENTATION_ROLE];
@@ -110,9 +151,12 @@ function affectedFilesForDescriptor(stageDef, scope) {
 module.exports = {
   DOCUMENTATION_ROLE,
   affectedFilesForDescriptor,
+  buildScopeFromGate,
   documentationScopeError,
   documentationScopeFromGate,
   isDocumentationPath,
+  loadBuildScope,
+  loadBuildScopeFromGatesDir,
   loadDocumentationScope,
   loadDocumentationScopeFromGatesDir,
   normalizeAffectedFile,

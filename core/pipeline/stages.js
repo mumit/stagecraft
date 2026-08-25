@@ -1063,6 +1063,22 @@ function rolesForStage(stageDef, track, config) {
   return stageDef.roles;
 }
 
+// ADR-027: true only for the *structural* single-build-role tracks — loop
+// (loopBuildRole) and nano/refactor (scopedBuildRole) — where `role` is the
+// sole build owner for the whole feature by the track's own definition, not
+// merely because right-sizing narrowed a dirty-tree snapshot to one area this
+// dispatch. That distinction matters: quick/full can also resolve to a single
+// active role for a given dispatch, but a different role may legitimately run
+// in a separate dispatch for the same change, so granting the *whole* brief's
+// affected_files there would leak write authority across roles that never
+// agreed to share it. Only the two branches below ever have no sibling role
+// at all, which is the precondition for widening allowedWrites safely.
+function isTrackPinnedBuildRole(stageDef, track, config, role) {
+  if (!stageDef || stageDef.stage !== "stage-04") return false;
+  if (track === "loop") return role === loopBuildRole(config);
+  return role === scopedBuildRole(track);
+}
+
 // Track-aware required_approvals for stages that gate on approvals.
 // Returns undefined when the stage doesn't use the approval mechanism.
 function requiredApprovalsFor(stageDef, track) {
@@ -1125,6 +1141,7 @@ module.exports = {
   trackLabel,
   getStage,
   rolesForStage,
+  isTrackPinnedBuildRole,
   requiredApprovalsFor,
   loopBuildRole,
   LOOP_BUILD_WORKSTREAMS,

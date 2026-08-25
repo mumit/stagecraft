@@ -3,9 +3,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { gatesDir } = require("./paths");
-const { rolesForStage, STAGES } = require("./pipeline/stages");
+const { isTrackPinnedBuildRole, rolesForStage, STAGES } = require("./pipeline/stages");
 const {
   DOCUMENTATION_ROLE,
+  loadBuildScope,
   loadDocumentationScope,
   rolesWithDocumentationScope,
 } = require("./pipeline/affected-files");
@@ -145,11 +146,21 @@ function resolveRetryOwnership({ cwd, changeId, retryAction, track, config }) {
     ...buildStage.roles.filter((role) => candidateSet.has(role)),
     ...[...candidateSet].filter((role) => !buildStage.roles.includes(role)).sort(),
   ];
+  // ADR-027: mirrors the widening in orchestrator.js's buildDescriptor() —
+  // a track-pinned build role (loop/nano/refactor's sole owner) is also
+  // compatible with a retry targeting a PM-approved affected_files path,
+  // not just its static roleWrites. Computed lazily: only track-pinned
+  // tracks ever reach the isTrackPinnedBuildRole branch below.
+  let buildScope = null;
   const compatibleRoles = candidateRoles.filter((role) => {
     const staticWrites = buildStage.roleWrites && buildStage.roleWrites[role];
-    const allowedWrites = role === DOCUMENTATION_ROLE && documentationScope.selected
-      ? [...(staticWrites || []), ...documentationScope.affectedFiles]
-      : staticWrites;
+    let allowedWrites = staticWrites;
+    if (role === DOCUMENTATION_ROLE && documentationScope.selected) {
+      allowedWrites = [...(staticWrites || []), ...documentationScope.affectedFiles];
+    } else if (isTrackPinnedBuildRole(buildStage, track, config, role)) {
+      buildScope = buildScope || loadBuildScope(cwd, changeId);
+      allowedWrites = [...(staticWrites || []), ...buildScope.files];
+    }
     return Array.isArray(allowedWrites)
       && targetPaths.every((file) =>
         allowedWrites.some((pattern) => ownershipPatternMatches(pattern, file)));
