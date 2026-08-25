@@ -13,7 +13,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
-const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, trackLabel, isAdversarialReviewMode, isFrameworkReadFirstPath } = require("./pipeline/stages");
+const { STAGES, getStage, orderedStageNamesForTrack, isStageInTrack, rolesForStage, isTrackPinnedBuildRole, trackLabel, isAdversarialReviewMode, isFrameworkReadFirstPath } = require("./pipeline/stages");
 const { resolveFrameworkPath } = require("./adapters/render-helpers");
 const { loadConfig, changeIdFromFeature, escalateModel } = require("./config");
 const { gatesDir: getGatesDir, logsDir: getLogsDir, pipelineRoot, prefixPipelineRelative } = require("./paths");
@@ -27,6 +27,7 @@ const { deterministicSkipForStage } = require("./pipeline/right-sizing");
 const {
   DOCUMENTATION_ROLE,
   affectedFilesForDescriptor,
+  loadBuildScope,
   loadDocumentationScope,
   loadDocumentationScopeFromGatesDir,
   rolesWithDocumentationScope,
@@ -529,6 +530,21 @@ function buildDescriptor(stageDef, role, opts = {}) {
       if (!resolvedAllowedWrites.includes(file)) resolvedAllowedWrites.push(file);
     }
   }
+  // ADR-027: loop/nano/refactor pin stage-04 to one role for the whole
+  // feature (isTrackPinnedBuildRole) — there is no sibling role to protect
+  // isolation from, so that role also gets the PM-approved affected_files
+  // list from stage-01, additively, alongside its static roleWrites. This is
+  // never the sole write authority (unlike documentation above) and never
+  // applies to quick/full/dep-update, where a single active role can be an
+  // artifact of what's dirty this dispatch rather than a structural
+  // guarantee — see the why-comment on isTrackPinnedBuildRole.
+  const buildScope = (stageDef.stage === "stage-04" && role !== DOCUMENTATION_ROLE
+    && isTrackPinnedBuildRole(stageDef, opts.track, opts.config, role))
+    ? (opts.buildScope || (opts.cwd ? loadBuildScope(opts.cwd, changeId) : { files: [], dropped: [] }))
+    : { files: [], dropped: [] };
+  for (const file of buildScope.files) {
+    if (!resolvedAllowedWrites.includes(file)) resolvedAllowedWrites.push(file);
+  }
   const dispatchedGate = prefix(`pipeline/gates/${wsId}.json`);
   // active_roles and track overrides can collapse a normally multi-role stage
   // to one dispatch. In that case the workstream id becomes the bare stage id
@@ -554,7 +570,10 @@ function buildDescriptor(stageDef, role, opts = {}) {
           .map((item) => resolveReadFirstItem(item, prefix, opts))
       : effectiveDef.readFirst,
     allowedWrites: resolvedAllowedWrites,
-    approvedAffectedFiles: affectedFilesForDescriptor(stageDef, documentationScope),
+    approvedAffectedFiles: uniqueStrings([
+      ...affectedFilesForDescriptor(stageDef, documentationScope),
+      ...buildScope.files,
+    ]),
     artifact: prefix(effectiveDef.artifact),
     template: effectiveDef.template,
     goalCondition: effectiveDef.goalCondition
@@ -827,7 +846,7 @@ function runStage(stageName, opts = {}) {
       // (ctx.processCwd, 36.1's codeRoot) — see resolveReadFirstItem() above.
       // Unset on every non-review path today, matching ctx.processCwd's own
       // "not set by any orchestrator path yet" state (hosts/acp/adapter.js).
-      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, rolesInStage: [...new Set(effectivePlan.map((candidate) => candidate.role))], changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, projectFacts, reviewMode: config.review && config.review.mode });
+      const baseDescriptor = buildDescriptor(stageDef, entry.role, { workstreamId: entry.workstreamId, rolesInStage: [...new Set(effectivePlan.map((candidate) => candidate.role))], changeId: ctx.changeId, cwd: ctx.cwd, processCwd: ctx.processCwd, toolBudget, intent: ctx.intent, track: ctx.track, config, contextManifest, contextDelta, priorKnowledge: opts.priorKnowledge, projectFacts, reviewMode: config.review && config.review.mode });
       const knownPatterns = require("./patterns").selectForDescriptor({ cwd: ctx.cwd, descriptor: baseDescriptor, ctx });
       // 32.3: model rides on the descriptor (like knownPatterns above) so
       // every adapter's invoke()/runHeadless sees it without a signature
