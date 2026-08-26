@@ -64,4 +64,22 @@ function listRoles() {
     .sort();
 }
 
-module.exports = { listRoles, toolBudgetFor, ROLES_DIR };
+// Role briefs (roles/*.md) reference skills with a bare `skills/<name>/
+// SKILL.md` path — the brief source is host-agnostic. But every host
+// installs the actual skill files under its own capabilities.skillsDir
+// (".claude/skills", ".openai-compat/skills", ...), never bare "skills/"
+// at the project root. Regression: a real headless run had the qa role's
+// brief tell an openai-compat-routed agent to load `skills/qa-test-
+// authoring/SKILL.md` — the file was correctly installed at
+// `.openai-compat/skills/qa-test-authoring/SKILL.md`, but the brief
+// (copied verbatim by every adapter's installRoles()) still pointed at
+// the bare path, so every `read_file` for it hit ENOENT. Applied at
+// install time so each host's copy matches where its files actually are;
+// skillsDir is null for hosts with no skills install step (generic) —
+// leave those briefs unchanged, there's nothing to point at instead.
+function withSkillsDir(body, skillsDir) {
+  if (!skillsDir) return body;
+  return body.replace(/`skills\//g, `\`${skillsDir}/`);
+}
+
+module.exports = { listRoles, toolBudgetFor, ROLES_DIR, withSkillsDir };

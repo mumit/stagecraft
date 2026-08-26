@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { REPO_ROOT, makeTargetProject, cleanup } = require("./_helpers");
 const { listHosts, loadAdapter } = require(path.join(REPO_ROOT, "core", "router"));
+const { withSkillsDir } = require(path.join(REPO_ROOT, "core", "roles"));
 
 let _dirs = [];
 function track(cwd) { _dirs.push(cwd); return cwd; }
@@ -73,6 +74,46 @@ describe("install round-trip per adapter", () => {
         );
       });
 
+      // Regression: role briefs (roles/*.md) reference skills via a bare
+      // `skills/<name>/SKILL.md` path, but every host installs the actual
+      // skill files under its own capabilities.skillsDir (".claude/skills",
+      // ".openai-compat/skills", ...) — never bare "skills/" at the project
+      // root. A real openai-compat headless run had the qa role's installed
+      // brief still pointing at the bare path, so its `read_file` calls for
+      // `skills/qa-test-authoring/SKILL.md` and `skills/qa-test-execution/
+      // SKILL.md` all hit ENOENT even though the files were correctly
+      // installed at `.openai-compat/skills/qa-test-*/SKILL.md`.
+      // installRoles() now rewrites the brief text at install time via
+      // withSkillsDir() (core/roles.js) — this asserts the installed copy,
+      // not just the helper in isolation.
+      it("installed qa role brief points at this host's real skillsDir, not the bare `skills/` path", () => {
+        const cwd = track(makeTargetProject());
+        const adapter = loadAdapter(host);
+        if (host === "generic") return; // installs nothing — no brief to check
+
+        adapter.install(cwd);
+        // claude-code writes role briefs to agentsDir under a per-role
+        // frontmatter filename (qa -> dev-qa.md, see ROLE_FRONTMATTER in
+        // hosts/claude-code/adapter.js); every other host writes
+        // rolePromptsDir/<role>.md verbatim.
+        const briefPath = host === "claude-code"
+          ? path.join(cwd, adapter.capabilities.agentsDir, "dev-qa.md")
+          : path.join(cwd, adapter.capabilities.rolePromptsDir, "qa.md");
+        assert.ok(fs.existsSync(briefPath), `${host} did not install a qa role brief at ${briefPath}`);
+        const body = fs.readFileSync(briefPath, "utf8");
+        assert.doesNotMatch(
+          body,
+          /`skills\//,
+          `${host} installed qa brief still references the bare 'skills/' path`,
+        );
+        const escapedSkillsDir = adapter.capabilities.skillsDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        assert.match(
+          body,
+          new RegExp("`" + escapedSkillsDir + "/qa-test-authoring/SKILL\\.md`"),
+          `${host} installed qa brief does not point at ${adapter.capabilities.skillsDir}/qa-test-authoring/SKILL.md`,
+        );
+      });
+
       it("uninstall removes the install payload", () => {
         const cwd = track(makeTargetProject());
         const adapter = loadAdapter(host);
@@ -89,4 +130,32 @@ describe("install round-trip per adapter", () => {
       });
     });
   }
+});
+
+// Regression: see the "installed qa role brief" test above for the
+// end-to-end failure mode. This is the direct unit test of the rewrite
+// helper itself (core/roles.js).
+describe("core/roles: withSkillsDir", () => {
+  it("rewrites a bare `skills/...` reference to the host's skillsDir", () => {
+    const body = "Load the skill at `skills/qa-test-authoring/SKILL.md` before starting.";
+    const out = withSkillsDir(body, ".openai-compat/skills");
+    assert.equal(out, "Load the skill at `.openai-compat/skills/qa-test-authoring/SKILL.md` before starting.");
+  });
+
+  it("rewrites every occurrence, not just the first", () => {
+    const body = "See `skills/a/SKILL.md` and also `skills/b/SKILL.md`.";
+    const out = withSkillsDir(body, ".claude/skills");
+    assert.equal(out, "See `.claude/skills/a/SKILL.md` and also `.claude/skills/b/SKILL.md`.");
+  });
+
+  it("is a no-op when skillsDir is falsy (e.g. the generic host)", () => {
+    const body = "Load the skill at `skills/qa-test-authoring/SKILL.md`.";
+    assert.equal(withSkillsDir(body, null), body);
+    assert.equal(withSkillsDir(body, undefined), body);
+  });
+
+  it("leaves text with no `skills/` references unchanged", () => {
+    const body = "Nothing to rewrite here.";
+    assert.equal(withSkillsDir(body, ".claude/skills"), body);
+  });
 });

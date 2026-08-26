@@ -9,7 +9,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { listRoles, ROLES_DIR } = require("../roles");
+const { listRoles, ROLES_DIR, withSkillsDir } = require("../roles");
 const baseInstall = require("./base-install");
 const { renderPatchBlock, allowedWritesCaption, appendGateFooter, renderApprovedAffectedFiles, renderContextDelta, renderContextManifest, renderFrameworkPreamble, renderGoalCondition, renderProjectKnowledgePack, renderRoleBriefBlock, renderScopeLine, resolveFrameworkPath, splitReadFirst, toolBudgetSection } = require("./render-helpers");
 
@@ -51,7 +51,8 @@ function makeMarkdownHostAdapter(capabilities) {
         skipped.push(dest);
         continue;
       }
-      fs.copyFileSync(src, dest);
+      const body = withSkillsDir(fs.readFileSync(src, "utf8"), capabilities.skillsDir);
+      fs.writeFileSync(dest, body, "utf8");
       written.push(dest);
     }
     return { written, skipped, warnings };

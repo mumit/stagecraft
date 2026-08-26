@@ -18,7 +18,7 @@ const path = require("node:path");
 
 const capabilities = require("./capabilities.json");
 const { runHeadless } = require("../../core/adapters/headless");
-const { listRoles, toolBudgetFor, ROLES_DIR } = require("../../core/roles");
+const { listRoles, toolBudgetFor, ROLES_DIR, withSkillsDir } = require("../../core/roles");
 const baseInstall = require("../../core/adapters/base-install");
 const RULES_DIR = baseInstall.RULES_DIR;
 const SKILLS_DIR = baseInstall.SKILLS_DIR;
@@ -201,7 +201,7 @@ function installRoles(targetDir, opts) {
       skipped.push(out);
       continue;
     }
-    const body = fs.readFileSync(briefPath, "utf8");
+    const body = withSkillsDir(fs.readFileSync(briefPath, "utf8"), capabilities.skillsDir);
     fs.writeFileSync(out, `${yaml}\n\n${body}`, "utf8");
     written.push(out);
   }
