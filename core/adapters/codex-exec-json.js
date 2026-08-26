@@ -41,6 +41,8 @@ function textForJsonLine(line, setUsage) {
         : {}),
       costUsd: null,
       model: null,
+      // OpenAI documents ordinary = input_tokens - cached - cache_write, so cached is a subset of the input total reported above.
+      inputAccounting: "inclusive",
       source: "codex:exec-json",
     });
     return "";

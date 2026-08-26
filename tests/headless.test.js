@@ -616,7 +616,10 @@ test("usageFormat: stream-json fixture yields observed usage/telemetry on the re
     );
     assert.equal(r.exitCode, 0);
     assert.equal(r.telemetry, "observed");
-    assert.deepEqual(r.usage, { tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5" });
+    assert.deepEqual(r.usage, {
+      tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5",
+      inputAccounting: "exclusive",
+    });
 
     const logContent = fs.readFileSync(r.logPath, "utf8");
     assert.match(logContent, /Working on it/, "assistant text should be readable in the transcript");
@@ -749,7 +752,8 @@ test("usageFormat: codex-exec-json fixture yields observed usage/telemetry on th
     assert.equal(r.exitCode, 0);
     assert.equal(r.telemetry, "observed");
     assert.deepEqual(r.usage, {
-      tokensIn: 1234, tokensOut: 56, cachedTokens: 100, costUsd: null, model: null, source: "codex:exec-json",
+      tokensIn: 1234, tokensOut: 56, cachedTokens: 100, costUsd: null, model: null,
+      inputAccounting: "inclusive", source: "codex:exec-json",
     });
 
     const logContent = fs.readFileSync(r.logPath, "utf8");

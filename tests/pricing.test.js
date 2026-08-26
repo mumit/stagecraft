@@ -95,10 +95,13 @@ test("pricingFor: the models Stagecraft actually routes to today are priced", ()
 });
 
 test("pricingFor: prefix match requires a name boundary, never a bare substring", () => {
-  // "gpt-5.6-sol" starts with the "gpt-5" key but is a different model at 4x
+  // "gpt-5.6-sol" starts with the "gpt-5" key but is a different model at 3.2x
   // the input rate. Matching it to gpt-5 would under-report every budget check
   // rather than raise the honest unpriced-model warning.
-  assert.equal(pricingFor("gpt-5.6-sol").input, 5.00);
+  // The 5.00 this once asserted was gpt-5.5's rate carried onto the wrong key;
+  // OpenAI publishes Sol at $4.00 / $20.00.
+  assert.equal(pricingFor("gpt-5.6-sol").input, 4.00);
+  assert.equal(pricingFor("gpt-5.6-sol").output, 20.00);
   assert.equal(pricingFor("gpt-5").input, 1.25);
   // An unreleased sibling resolves to null, not to the shorter family key.
   assert.equal(pricingFor("gpt-5.9-not-yet-released"), null);
@@ -111,5 +114,99 @@ test("PRICING_USD_PER_MTOK: every entry is a well-formed positive rate", () => {
     assert.ok(typeof rate.input === "number" && rate.input > 0, `${id}: bad input rate`);
     assert.ok(typeof rate.output === "number" && rate.output > 0, `${id}: bad output rate`);
     assert.ok(rate.output >= rate.input, `${id}: output rate below input rate — likely transposed`);
+  }
+});
+
+// Cached tokens bill far below uncached input — both providers publish cache
+// reads at 0.1x. computeCostUsd charged every input token at the full rate and
+// took no cached parameter at all, so a derived cost overstated any cache-heavy
+// agentic dispatch. Measured on a real codex build dispatch: 270,639 input
+// tokens of which 237,312 (88%) were cache reads.
+//
+// The two providers count cached tokens against the input total in OPPOSITE
+// ways, so the convention has to travel with the numbers:
+//   OpenAI    ordinary = input_tokens - cached - cache_write  (cached ⊂ input)
+//   Anthropic input_tokens is the uncached remainder          (cached additive)
+test("computeCostUsd: inclusive accounting bills the cached subset at the cached rate", () => {
+  // The real dispatch above. Old behaviour charged all 270,639 at $5/Mtok
+  // against a wrong Sol rate and returned $1.5218.
+  const cost = computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 270639, tokens_out: 5619,
+    cached_tokens: 237312, input_accounting: "inclusive",
+  });
+  // (270639-237312)/1e6*4 + 237312/1e6*0.40 + 5619/1e6*20
+  assert.ok(Math.abs(cost - 0.34059) < 0.0005, `got ${cost}`);
+});
+
+test("computeCostUsd: exclusive accounting adds the cached tokens instead of subtracting", () => {
+  // Same three numbers, Anthropic's convention: tokens_in is already uncached.
+  const inclusive = computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 1000, tokens_out: 0,
+    cached_tokens: 900, input_accounting: "inclusive",
+  });
+  const exclusive = computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 1000, tokens_out: 0,
+    cached_tokens: 900, input_accounting: "exclusive",
+  });
+  assert.ok(exclusive > inclusive, "reading the wrong convention moves the answer");
+  // exclusive: 1000 full + 900 cached; inclusive: 100 full + 900 cached
+  assert.ok(Math.abs(exclusive - (1000 / 1e6 * 4 + 900 / 1e6 * 0.40)) < 1e-9);
+  assert.ok(Math.abs(inclusive - (100 / 1e6 * 4 + 900 / 1e6 * 0.40)) < 1e-9);
+});
+
+test("computeCostUsd: defaults to inclusive, the convention every deriving host uses", () => {
+  const withBasis = computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 1000, tokens_out: 10,
+    cached_tokens: 900, input_accounting: "inclusive",
+  });
+  const without = computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 1000, tokens_out: 10, cached_tokens: 900,
+  });
+  assert.equal(without, withBasis);
+  // An unrecognised value must not silently become a third behaviour.
+  assert.equal(computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 1000, tokens_out: 10,
+    cached_tokens: 900, input_accounting: "nonsense",
+  }), withBasis);
+});
+
+test("computeCostUsd: a model with no published cached rate is never given a discount", () => {
+  // gpt-4o has no cachedInput entry. Charging cached tokens at the full input
+  // rate overstates, but inventing a discount the provider does not publish is
+  // how a budget silently stops binding.
+  const cost = computeCostUsd({
+    model: "gpt-4o", tokens_in: 1000, tokens_out: 100,
+    cached_tokens: 900, input_accounting: "inclusive",
+  });
+  assert.ok(Math.abs(cost - (1000 / 1e6 * 2.5 + 100 / 1e6 * 10)) < 1e-9);
+});
+
+test("computeCostUsd: an exclusive host with no cached rate pays for its cached tokens", () => {
+  // They are extra input on that convention, so dropping them would undercount.
+  const cost = computeCostUsd({
+    model: "gpt-4o", tokens_in: 1000, tokens_out: 0,
+    cached_tokens: 500, input_accounting: "exclusive",
+  });
+  assert.ok(Math.abs(cost - (1500 / 1e6 * 2.5)) < 1e-9);
+});
+
+test("computeCostUsd: more cached than input clamps instead of going negative", () => {
+  const cost = computeCostUsd({
+    model: "gpt-5.6-sol", tokens_in: 100, tokens_out: 0,
+    cached_tokens: 900, input_accounting: "inclusive",
+  });
+  assert.ok(cost >= 0, `negative cost: ${cost}`);
+});
+
+test("computeCostUsd: absent cached_tokens keeps the pre-existing arithmetic", () => {
+  const cost = computeCostUsd({ model: "gpt-5.6-sol", tokens_in: 1000, tokens_out: 100 });
+  assert.ok(Math.abs(cost - (1000 / 1e6 * 4 + 100 / 1e6 * 20)) < 1e-9);
+});
+
+test("PRICING_USD_PER_MTOK: a cachedInput rate is below its own input rate", () => {
+  for (const [id, rate] of Object.entries(PRICING_USD_PER_MTOK)) {
+    if (typeof rate.cachedInput !== "number") continue;
+    assert.ok(rate.cachedInput > 0, `${id}: cachedInput must be positive`);
+    assert.ok(rate.cachedInput < rate.input, `${id}: cachedInput not below input — likely transposed`);
   }
 });

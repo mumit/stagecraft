@@ -36,6 +36,7 @@ describe("createCodexJsonExtractor — JSON mode", () => {
       cachedTokens: 100,
       costUsd: null,
       model: null,
+      inputAccounting: "inclusive",
       source: "codex:exec-json",
     });
   });
