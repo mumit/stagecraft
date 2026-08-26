@@ -50,6 +50,37 @@ describe("restart: argument handling", () => {
   });
 });
 
+// Regression: `devteam restart` special-cased id→name resolution locally;
+// `devteam stage` (the actual dispatch command) had no equivalent, so
+// `devteam stage stage-04 --headless` failed with "Unknown stage" even
+// though the semantically identical `devteam restart stage-04` worked.
+// resolveStageName/getStage are now the one shared implementation both
+// commands (and core/orchestrator.js's runStage) resolve through.
+describe("pipeline/stages: resolveStageName + getStage id aliasing", () => {
+  const { STAGES, resolveStageName, getStage } = require("../core/pipeline/stages");
+
+  it("resolveStageName is the identity for a friendly name", () => {
+    assert.equal(resolveStageName("build"), "build");
+  });
+
+  it("resolveStageName maps a gate-id back to its friendly name", () => {
+    assert.equal(resolveStageName("stage-04"), "build");
+  });
+
+  it("resolveStageName returns null for unknown input", () => {
+    assert.equal(resolveStageName("not-a-stage"), null);
+  });
+
+  it("getStage accepts the gate-id form and returns the same def as the name", () => {
+    assert.equal(getStage("stage-04"), STAGES.build);
+    assert.equal(getStage("stage-04"), getStage("build"));
+  });
+
+  it("getStage still returns null for unknown input", () => {
+    assert.equal(getStage("not-a-stage"), null);
+  });
+});
+
 describe("restart: gate-file removal", () => {
   it("removes the named stage's merged + per-workstream gates", () => {
     const cwd = track(makeTargetProject());

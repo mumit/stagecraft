@@ -121,6 +121,20 @@ describe("cli: stage", () => {
     assert.match(r.stdout, /test feature/);
   });
 
+  // Regression: escalation-applicator/Principal-ruling prompts commonly name
+  // a stage by its gate-id form (matching gate filenames / rules docs), e.g.
+  // "stage-01", not the friendly CLI name "requirements". `devteam restart`
+  // already accepted both forms (tests/restart.test.js); dispatch via
+  // `devteam stage` did not, and failed with "Unknown stage stage-01" mid
+  // fix-escalation even though the equivalent friendly name worked fine.
+  it("stage accepts the stage id form (e.g. 'stage-01') as well as the name", () => {
+    const cwd = track(makeTargetProject());
+    const r = runCLI(["stage", "stage-01", "--feature", "test feature"], { cwd });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /workstream: pm/);
+    assert.match(r.stdout, /test feature/);
+  });
+
   it("stage reads the feature prompt from --feature-file", () => {
     const cwd = track(makeTargetProject());
     const featureFile = path.join(cwd, "feature-brief.md");

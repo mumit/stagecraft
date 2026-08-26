@@ -158,3 +158,18 @@ describe("renderEscalationApplicatorPrompt: qa stage name vs. qa build workstrea
     assert.match(prompt, /devteam stage build --workstream qa --headless/);
   });
 });
+
+// Regression: the "Scope gap" routing example suggested
+// `devteam restart requirements --cascade --headless`, but `devteam restart`
+// has no --headless flag — core/cli/flags.js hard-exits(2) on any
+// unrecognized flag, so an applicator following this suggestion literally
+// always failed and cleared nothing. `devteam restart` is synchronous/local
+// (it only deletes gate files); it never needs --headless.
+describe("renderEscalationApplicatorPrompt: restart suggestions never carry --headless", () => {
+  it("the scope-gap restart example omits --headless", () => {
+    const cwd = track(makeTargetProject());
+    const prompt = renderEscalationApplicatorPrompt(cwd, ["PRINCIPAL-RULING: x → y"], null);
+    assert.match(prompt, /devteam restart requirements --cascade`/);
+    assert.doesNotMatch(prompt, /devteam restart[^\n]*--headless/);
+  });
+});

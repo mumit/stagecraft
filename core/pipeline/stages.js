@@ -1122,8 +1122,26 @@ function trackLabel(track) {
   return track || "full";
 }
 
+// Resolve either the friendly stage name ('peer-review') or the internal
+// gate-id ('stage-05') to its canonical friendly name. Regression: prompt
+// text (escalation routing tables, Principal rulings) and agents commonly
+// refer to a stage by its gate-id form (matching gate filenames / rules
+// docs), but `devteam stage <name>` dispatch only ever accepted the
+// friendly name — `devteam stage stage-04 --headless` failed with "Unknown
+// stage" even though `devteam restart stage-04` (which special-cased this
+// locally) already worked. Centralized here so both commands, and getStage
+// itself, share one resolution.
+function resolveStageName(input) {
+  if (STAGES[input]) return input;
+  for (const [sName, def] of Object.entries(STAGES)) {
+    if (def && def.stage === input) return sName;
+  }
+  return null;
+}
+
 function getStage(name) {
-  return STAGES[name] || null;
+  const resolved = resolveStageName(name);
+  return resolved ? STAGES[resolved] : null;
 }
 
 module.exports = {
@@ -1140,6 +1158,7 @@ module.exports = {
   isStageInTrack,
   trackLabel,
   getStage,
+  resolveStageName,
   rolesForStage,
   isTrackPinnedBuildRole,
   requiredApprovalsFor,

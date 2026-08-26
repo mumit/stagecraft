@@ -456,7 +456,7 @@ function renderEscalationApplicatorPrompt(cwd, rulings, escalatingGate) {
   lines.push("the QA testing stage (stage-06), not the build workstream.");
   lines.push("");
   lines.push("**Scope gap** (write rejected for a path stage-01 never approved):");
-  lines.push("  `devteam restart requirements --cascade --headless`");
+  lines.push("  `devteam restart requirements --cascade`");
   lines.push("Then re-run stage-01 with `affected_files` expanded to include");
   lines.push("every missing path the ruling named, get it back to PASS, and let");
   lines.push("build re-dispatch from there. Do NOT redispatch the same build");

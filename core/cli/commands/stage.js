@@ -5,7 +5,7 @@ const path = require("node:path");
 const { generateHelp } = require(path.join(__dirname, "..", "flags"));
 const { applyFeatureFile } = require(path.join(__dirname, "..", "feature-file"));
 const { getOrchestrator } = require(path.join(__dirname, "..", "get-orchestrator"));
-const { getStage } = require(path.join(__dirname, "..", "..", "pipeline", "stages"));
+const { getStage, resolveStageName } = require(path.join(__dirname, "..", "..", "pipeline", "stages"));
 const { resolveActiveTrack } = require(path.join(__dirname, "..", "..", "pipeline", "active-track"));
 const { loadConfig } = require(path.join(__dirname, "..", "..", "config"));
 const { resolveChangeId } = require(path.join(__dirname, "..", "resolve-change-id"));
@@ -108,11 +108,17 @@ function run(positional, _flags) {
   if (_flags.help) { console.log(generateHelp("devteam stage <name> [options]", flags)); process.exit(0); }
   applyFeatureFile(_flags, "stage");
   const { runStage, runStageHeadless } = getOrchestrator();
-  const stageName = positional[0];
-  if (!stageName) {
+  const stageInput = positional[0];
+  if (!stageInput) {
     console.error(generateHelp("devteam stage <name> [options]", flags));
     process.exit(2);
   }
+  // Accept either the friendly name ('peer-review') or the gate-id
+  // ('stage-05') — same fallback `devteam restart` already had. Escalation
+  // routing tables and Principal rulings commonly name a stage by its
+  // gate-id form; falling back to the raw input when unresolvable preserves
+  // the existing "Unknown stage" error further down for genuinely bad input.
+  const stageName = resolveStageName(stageInput) || stageInput;
   // Resolve track and run stoplist if applicable
   const cwd = _flags.cwd || process.cwd();
   const config = loadConfig(cwd);
