@@ -59,15 +59,9 @@ function run(positional, _flags) {
   // Resolve <stage> to a stage definition. Accept either the friendly
   // name ('peer-review') or the gate-id ('stage-05'); errored input is
   // user-actionable.
-  const { STAGES, getStage, orderedStageNamesForTrack } = require(path.join(__dirname, "..", "..", "pipeline", "stages"));
-  let stageName = stageInput;
-  let stageDef = getStage(stageInput);
-  if (!stageDef) {
-    // Maybe the user passed a stage id; map it back to the friendly name.
-    for (const [sName, def] of Object.entries(STAGES)) {
-      if (def && def.stage === stageInput) { stageName = sName; stageDef = def; break; }
-    }
-  }
+  const { STAGES, getStage, resolveStageName, orderedStageNamesForTrack } = require(path.join(__dirname, "..", "..", "pipeline", "stages"));
+  const stageName = resolveStageName(stageInput);
+  const stageDef = stageName ? STAGES[stageName] : null;
   if (!stageDef) {
     console.error(`Unknown stage "${stageInput}".`);
     console.error(`Known stages: ${Object.keys(STAGES).join(", ")}`);
