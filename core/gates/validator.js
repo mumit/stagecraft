@@ -393,6 +393,29 @@ function retryValidationError(gate) {
   return null;
 }
 
+/**
+ * Validate escalation metadata if this gate is escalating.
+ *
+ * Regression: a real headless run had a review role self-escalate directly
+ * (per rules/gates-core.md's "same failure twice = escalate, don't retry"
+ * guidance) without setting escalation_reason. Nothing caught it — this
+ * required-field check didn't exist, so the gate passed validation with
+ * status=ESCALATE and no reason. core/orchestrator.js's resolve-escalation
+ * branch reads escalation_reason straight from the gate; with it empty,
+ * `devteam next` / `devteam run` could only report the generic fallback
+ * "escalation required; pipeline halted" — no indication of what a human
+ * was actually being asked to rule on, even though the gate's own
+ * blockers/previous_failure_reason fields fully explained it.
+ */
+function escalationValidationError(gate) {
+  if (gate.status !== "ESCALATE") return null;
+  const reason = gate.escalation_reason;
+  if (typeof reason !== "string" || reason.trim() === "") {
+    return `status=ESCALATE requires non-empty escalation_reason`;
+  }
+  return null;
+}
+
 function deployCostGateError(gate) {
   if (gate.stage !== "stage-08") return null;
   if (gate.status !== "PASS" && gate.status !== "WARN") return null;
@@ -676,6 +699,15 @@ function main() {
     console.error(`[gate-validator] INVALID GATE ${latest.name}: ${retryErr}`);
     console.error(
       `[gate-validator] See .devteam/rules/gates-core.md §Retry Protocol`,
+    );
+    process.exit(1);
+  }
+
+  const escalationErr = escalationValidationError(gate);
+  if (escalationErr) {
+    console.error(`[gate-validator] INVALID GATE ${latest.name}: ${escalationErr}`);
+    console.error(
+      `[gate-validator] See .devteam/rules/gates-core.md §Non-interactive execution: always write the gate`,
     );
     process.exit(1);
   }

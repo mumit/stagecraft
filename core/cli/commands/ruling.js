@@ -46,9 +46,15 @@ async function run(positional, _flags) {
     if (targetGate) {
       try {
         const gate = JSON.parse(fs.readFileSync(targetGate, "utf8"));
-        const reason = gate.escalation_reason || "";
+        // escalationReasonFor falls back to the gate's blockers/
+        // previous_failure_reason when escalation_reason itself is empty —
+        // a review that self-escalates always has one of those populated,
+        // and either gives the Principal far more to rule on than the bare
+        // "Escalation in <file>" fallback below.
+        const reason = getOrchestrator().escalationReasonFor(gate);
         const decision = gate.decision_needed || "";
-        topic = reason + (decision ? ` — ${decision}` : "");
+        topic = (reason === "escalation required; pipeline halted" ? "" : reason)
+          + (decision ? ` — ${decision}` : "");
         if (!topic) topic = `Escalation in ${path.basename(targetGate)}`;
         process.stderr.write(`[devteam] ruling topic (auto-derived): ${topic}\n`);
       } catch {

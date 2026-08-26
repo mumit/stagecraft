@@ -2295,6 +2295,29 @@ function tryAutoLocalDeployRecord(cwd, gatesDir, track, changeId) {
 // "this stage is done/skipped — a sequential caller should continue past it."
 // _nextImpl below is now a thin loop over this; behavior is unchanged from
 // before this extraction (verified by the full existing test suite).
+
+// core/gates/validator.js now rejects a freshly written ESCALATE gate that
+// lacks escalation_reason (rules/gates-core.md §Non-interactive execution),
+// but that check runs at write time — it can't retroactively fix a gate
+// already on disk (an older run, a host that skips the hook, hand-edited
+// state). Rather than surface the fully generic fallback in that case,
+// fall back to the gate's own blockers/previous_failure_reason: a review
+// that self-escalates per the "same failure twice" rule (gates-core.md
+// §Retry Protocol) always has one of these populated, and either beats
+// "escalation required; pipeline halted" with no further detail.
+function escalationReasonFor(gate) {
+  if (typeof gate.escalation_reason === "string" && gate.escalation_reason.trim() !== "") {
+    return gate.escalation_reason;
+  }
+  if (Array.isArray(gate.blockers) && gate.blockers.length > 0) {
+    return `escalation_reason missing on gate — blocker(s) reported: ${gate.blockers.join("; ")}`;
+  }
+  if (typeof gate.previous_failure_reason === "string" && gate.previous_failure_reason.trim() !== "") {
+    return `escalation_reason missing on gate — previous_failure_reason: ${gate.previous_failure_reason}`;
+  }
+  return "escalation required; pipeline halted";
+}
+
 function evaluateStageInPipeline(stageName, ctx) {
   const { gatesDir, track, stageList, skipStages, forceStages, rightSizingEnabled, auditSkips, auditedSkips, maxRetries, cwd, changeId, opts } = ctx;
   const stageDef = getStage(stageName);
@@ -2597,7 +2620,7 @@ function evaluateStageInPipeline(stageName, ctx) {
       action: "resolve-escalation", stage: stageDef.stage, name: stageName,
       gate: stageGatePath,
       failure_class: "judgment-gate",
-      reason: gate.escalation_reason || "escalation required; pipeline halted",
+      reason: escalationReasonFor(gate),
       command: `devteam ruling --topic "..." --target-gate ${stageGatePath} [--headless]`,
     };
   }
@@ -2886,6 +2909,7 @@ module.exports = {
   patchGateForEstimatedUsage,
   patchGateWithRequestedModel,
   patchGateWithPromptPackVersion,
+  escalationReasonFor,
   ORCHESTRATOR_ID,
   rolesPath,
   templatesPath,
