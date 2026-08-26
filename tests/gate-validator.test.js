@@ -110,6 +110,40 @@ describe("gate-validator: exit codes", () => {
   });
 });
 
+// Regression: a real headless run had a review role self-escalate directly
+// (gates-core.md's "same failure twice = escalate, don't retry" guidance)
+// with no escalation_reason set. Nothing caught it — the gate passed
+// validation with status=ESCALATE and no reason, so `devteam next` /
+// `devteam run` could only report the generic "escalation required;
+// pipeline halted" fallback with no indication of what a human was being
+// asked to rule on. Enforce it the same way retry_number/
+// this_attempt_differs_by is already enforced.
+describe("gate-validator: ESCALATE requires escalation_reason", () => {
+  it("ESCALATE with no escalation_reason → exit 1, INVALID GATE", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { workstream: "pm", host: "claude-code", status: "ESCALATE" });
+    const r = runValidator(cwd);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /INVALID GATE/);
+    assert.match(r.stderr, /requires non-empty escalation_reason/);
+  });
+
+  it("ESCALATE with an empty-string escalation_reason → exit 1", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { workstream: "pm", host: "claude-code", status: "ESCALATE", escalation_reason: "   " });
+    const r = runValidator(cwd);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /requires non-empty escalation_reason/);
+  });
+
+  it("non-ESCALATE gates are unaffected by the check", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { workstream: "pm", host: "claude-code", status: "FAIL", blockers: ["x"] });
+    const r = runValidator(cwd);
+    assert.equal(r.status, 2); // FAIL, not the escalation check
+  });
+});
+
 describe("gate-validator: ADR-022 documentation scope", () => {
   it("rejects wildcard documentation authority before dispatch", () => {
     const cwd = track(makeTargetProject());

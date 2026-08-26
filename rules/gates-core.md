@@ -23,6 +23,11 @@ normal, expected way to raise a blocking question — `devteam ruling` /
 without writing the required gate file is never correct, no matter how
 severe the ambiguity feels.
 
+**Enforced:** the validator exits 1 when `status` is `ESCALATE` but
+`escalation_reason` is missing or empty. `devteam next` / `devteam run`
+read `escalation_reason` directly to tell a human what to rule on — an
+ESCALATE gate without one halts the pipeline with no usable explanation.
+
 Before escalating on a question, check `pipeline/context.md` for a
 `PRINCIPAL-RULING:` entry that already answers it — earlier retries or
 escalations in this run's history may have already settled the exact

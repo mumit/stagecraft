@@ -92,6 +92,45 @@ describe("next: walks through full track", () => {
     assert.match(r.reason, /ambiguous spec/);
   });
 
+  // Regression: a real headless run had a review role self-escalate directly
+  // (gates-core.md's "same failure twice = escalate, don't retry" guidance)
+  // without setting escalation_reason. gate-validator.js now rejects that at
+  // write time, but an older gate written before that check existed (or by a
+  // host that skips the hook) still reaches next() with the field empty —
+  // this should surface the gate's blockers instead of the bare generic
+  // fallback, since that's the whole point of a "reason" a human can act on.
+  it("ESCALATE gate with no escalation_reason → falls back to blockers, not the bare generic reason", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "ESCALATE",
+      blockers: ["same finding twice: README missing env var docs"],
+    });
+    const r = next({ cwd });
+    assert.equal(r.action, "resolve-escalation");
+    assert.match(r.reason, /README missing env var docs/);
+    assert.notEqual(r.reason, "escalation required; pipeline halted");
+  });
+
+  it("ESCALATE gate with no escalation_reason and no blockers → falls back to previous_failure_reason", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", {
+      status: "ESCALATE",
+      blockers: [],
+      previous_failure_reason: "the exact same defect reported last attempt",
+    });
+    const r = next({ cwd });
+    assert.equal(r.action, "resolve-escalation");
+    assert.match(r.reason, /the exact same defect reported last attempt/);
+  });
+
+  it("ESCALATE gate with nothing to fall back on → bare generic reason (unchanged behavior)", () => {
+    const cwd = track(makeTargetProject());
+    seedGate(cwd, "stage-01", { status: "ESCALATE", blockers: [] });
+    const r = next({ cwd });
+    assert.equal(r.action, "resolve-escalation");
+    assert.equal(r.reason, "escalation required; pipeline halted");
+  });
+
   it("CLI does not treat stale Principal rulings as resolving the current escalation", () => {
     const cwd = track(makeTargetProject());
     fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
