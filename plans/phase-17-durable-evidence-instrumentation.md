@@ -19,6 +19,26 @@ autonomous driver records one allowlisted `dispatch-observation` event for every
 non-skipped workstream dispatch. `devteam evidence status` prefers those durable events
 for routing aggregates and uses gate snapshots only as a legacy display fallback.
 
+### Scope: the autonomous driver only
+
+"The autonomous driver" is the whole scope, and it is deliberate. `devteam stage`
+dispatches to the same host with the same role, model and cost, and writes both a gate
+and a corpus row — but it emits **no** `dispatch-observation`, so it contributes nothing
+to routing readiness.
+
+The reason is what the ≥5-per-(role, host) threshold assumes. A stage invocation is
+ad-hoc by design: `--workstream`, a `--track` override, `--patch`, `--from`,
+`--skip-completed`, and it can be re-run against unchanged code as often as you like.
+Five repeats of one peer-review are five samples of a single input, not five independent
+observations of how a host performs on a role. Counting them would inflate the
+denominator with correlated data — and would make the gate openable with a shell loop,
+which is precisely what an evidence gate exists to prevent.
+
+Corpus rows carry a `run_id` when they came from a run and none when they did not, which
+is the exact discriminator. `devteam evidence status` reports the uncounted total
+("Dispatches not counted: N recorded via `devteam stage`") so the exclusion is visible
+at the moment someone is collecting, rather than discovered afterwards.
+
 ---
 
 ## 2. Event contract
