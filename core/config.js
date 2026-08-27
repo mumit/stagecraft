@@ -168,7 +168,17 @@ function loadConfig(cwd = process.cwd()) {
         default_host: parsed.routing?.default_host ?? DEFAULTS.routing.default_host,
         roles: parsed.routing?.roles ?? DEFAULTS.routing.roles,
         stages: parsed.routing?.stages ?? DEFAULTS.routing.stages,
-        review_fanout: Array.isArray(parsed.routing?.review_fanout) ? parsed.routing.review_fanout : [],
+        // Entries may be a bare host name or the same {host, model} object a
+        // route takes. The object form exists because a fanout entry is the one
+        // dispatch the router does NOT resolve a model for -- the host is fixed
+        // by this list, so there is no role route to read one from, and a host
+        // that reports no model of its own (codex emits none at all) then lands
+        // with a null model and, downstream, no derivable cost. A per-entry
+        // model is the only place that pin can live: the role's own model
+        // belongs to the role's own host and would be wrong to send elsewhere.
+        review_fanout: Array.isArray(parsed.routing?.review_fanout)
+          ? parsed.routing.review_fanout.map(normalizeRouteValue).filter(Boolean)
+          : [],
         host_concurrency: (
           parsed.routing
           && typeof parsed.routing.host_concurrency === "object"

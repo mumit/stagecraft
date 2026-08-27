@@ -250,3 +250,66 @@ pipeline:
     assert.ok(!files.some((f) => f.includes(".claude-code.")));
   });
 });
+
+// A fanout dispatch is the one dispatch the router never resolves a model for:
+// its host comes from routing.review_fanout, not from a role route, so there is
+// no route to read a model from. On a host that reports no model of its own --
+// codex 0.144.3 emits none anywhere in its --json stream -- the gate then lands
+// with a null model, and with no model there is no pricing entry and no derived
+// cost either.
+//
+// That mattered because review_fanout is the ONLY mechanism that dispatches the
+// same role to two hosts, which is exactly what D5's comparable-roles condition
+// requires. Its two conditions were mutually unsatisfiable on codex: fanout for
+// the comparison, a model for the cost, and fanout dropped the model.
+describe("fanout: per-entry model pinning", () => {
+  const planFor = (fanoutList) => computeDispatchPlan(getStage("peer-review"), {
+    routing: { review_fanout: fanoutList },
+  });
+
+  it("carries a model from the {host, model} entry form", () => {
+    const plan = planFor([
+      { host: "codex", model: "gpt-5.6-sol" },
+      { host: "claude-code", model: "claude-opus-5" },
+    ]);
+    const codex = plan.find((p) => p.role === "backend" && p.hostName === "codex");
+    const claude = plan.find((p) => p.role === "backend" && p.hostName === "claude-code");
+    assert.equal(codex.model, "gpt-5.6-sol");
+    assert.equal(claude.model, "claude-opus-5");
+  });
+
+  it("does not put one host's model on another host", () => {
+    // The role's own model belongs to the role's own host. Carrying it across
+    // would send an OpenAI model id to claude-code.
+    const plan = planFor([{ host: "codex", model: "gpt-5.6-sol" }, "claude-code"]);
+    const claude = plan.find((p) => p.hostName === "claude-code");
+    assert.equal(claude.model, undefined, "an unpinned entry stays unpinned");
+  });
+
+  it("leaves the bare host-name form exactly as it was", () => {
+    const plan = planFor(["codex", "claude-code"]);
+    assert.equal(plan.length, 8);
+    assert.ok(plan.every((p) => p.fanout === true));
+    assert.ok(plan.every((p) => p.model === undefined));
+    assert.ok(plan.every((p) => typeof p.hostName === "string"));
+  });
+
+  it("accepts the two shapes mixed, since only loadConfig normalizes", () => {
+    const plan = planFor(["codex", { host: "claude-code", model: "claude-opus-5" }]);
+    assert.equal(new Set(plan.map((p) => p.hostName)).size, 2);
+    assert.equal(plan.find((p) => p.hostName === "claude-code").model, "claude-opus-5");
+  });
+
+  it("skips an entry with no host rather than planning a hostless dispatch", () => {
+    const plan = planFor(["codex", { model: "orphaned" }, null]);
+    assert.ok(plan.every((p) => p.hostName === "codex"));
+    assert.equal(plan.length, 4);
+  });
+
+  it("keeps the workstream id keyed on the host, not the model", () => {
+    const plan = planFor([{ host: "codex", model: "gpt-5.6-sol" }]);
+    const sample = plan.find((p) => p.role === "backend");
+    assert.equal(sample.workstreamId, "stage-05.backend.codex");
+    assert.equal(sample.gateFile, "stage-05.backend.codex.json");
+  });
+});

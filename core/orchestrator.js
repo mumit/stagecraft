@@ -448,9 +448,25 @@ function computeDispatchPlan(stageDef, config, track, opts = {}) {
   const plan = [];
   for (const role of roles) {
     if (isPeerReview) {
-      for (const hostName of fanout) {
+      for (const rawEntry of fanout) {
+        // Accept both shapes at the point of use. loadConfig normalizes
+        // review_fanout to {host, model}, but computeDispatchPlan is also
+        // called with hand-built config objects (tests, previews), and a bare
+        // host name is still the documented form. Normalizing here rather than
+        // trusting the caller keeps one reader of the shape.
+        const entry = typeof rawEntry === "string" ? { host: rawEntry } : (rawEntry || {});
+        const hostName = entry.host;
+        if (!hostName) continue;
         const ws = `${stageDef.stage}.${role}.${hostName}`;
-        plan.push({ role, hostName, workstreamId: ws, gateFile: `${ws}.json`, fanout: true });
+        // The entry's model, when it pins one. A fanout dispatch is the only
+        // one the router never resolves a model for -- its host comes from this
+        // list, not from a role route -- so without this the gate records no
+        // model_requested, and a host that reports none of its own ends up with
+        // no model and no derivable cost at all.
+        plan.push({
+          role, hostName, workstreamId: ws, gateFile: `${ws}.json`, fanout: true,
+          ...(entry.model ? { model: entry.model } : {}),
+        });
       }
     } else {
       const ws = workstreamId(stageDef.stage, role, roles.length);
@@ -821,6 +837,9 @@ function runStage(stageName, opts = {}) {
         hostName = entry.hostName;
         const { loadAdapter } = require("./router");
         adapter = loadAdapter(hostName);
+        // Carried from routing.review_fanout's object form. Absent for the bare
+        // host-name form, which stays exactly as it was.
+        model = entry.model;
       } else {
         const resolved = resolveAdapter(config, stageDef.stage, entry.role);
         hostName = resolved.hostName;
@@ -829,8 +848,9 @@ function runStage(stageName, opts = {}) {
         agentCommand = resolved.agentCommand;
         // 32.3: escalate-on-retry — a fix-and-retry of a dispatch whose
         // route pinned a model bumps it one tier up routing.tiers[host].
-        // Never applies to fanout entries (handled above) since those
-        // don't carry a routing-resolved model at all.
+        // Still does not apply to fanout entries: they may now carry a model
+        // pinned per entry, but tier escalation is a property of a resolved
+        // route, and a fanout entry has none to escalate within.
         if (ctx.isRetry && config.routing.escalate_on_retry && model) {
           const escalated = escalateModel(config, hostName, model);
           if (escalated && escalated !== model) {

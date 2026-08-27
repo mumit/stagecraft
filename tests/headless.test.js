@@ -941,3 +941,21 @@ test("C3: adds no env override at all for a host that doesn't declare printBackg
     fs.rmSync(ctx.cwd, { recursive: true, force: true });
   }
 });
+
+test("runHeadless: the transcript header records the command as spawned", async () => {
+  // It printed the configured command string, which is the value *before* this
+  // function appends flags -- notably `--model`. A transcript that omits the
+  // model flag reads as though routing pinned nothing, which sent me looking
+  // for a bug in the routing rather than in the header.
+  const ctx = makeCtx();
+  const adapter = {
+    capabilities: { name: "generic", headless: true, headlessCommand: "/bin/echo" },
+    renderStagePrompt: () => "prompt",
+  };
+  const descriptor = { ...makeDescriptor("stage-05.backend.codex"), model: "gpt-5.6-sol" };
+  const r = await runHeadless(adapter, descriptor, ctx, "prompt");
+  const header = fs.readFileSync(r.logPath, "utf8")
+    .split("\n").find((l) => l.startsWith("# Command:"));
+  assert.match(header, /--model gpt-5\.6-sol/, `header did not record the model flag: ${header}`);
+  fs.rmSync(ctx.cwd, { recursive: true, force: true });
+});
