@@ -570,3 +570,78 @@ describe("evidence: dispatches made outside a run", () => {
     } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
   });
 });
+
+// Routing readiness counts durable `dispatch-observation` events, which only the
+// autonomous driver emits. A dispatch made with `devteam stage` writes a gate
+// and a corpus row but no such event, so it contributes nothing to D5 — and
+// nothing said so. The count has been computed and exported since #442; it was
+// simply never printed, so an operator collecting routing evidence by running
+// stages directly saw "complete for available sources" next to a stalled
+// condition with nothing connecting them.
+describe("evidence status: dispatches that routing readiness does not count", () => {
+  const { renderHuman } = require(path.join(REPO_ROOT, "core", "cli", "commands", "evidence"));
+  const report = (dispatchesOutsideRun) => analyzeEvidence({
+    events: [], gates: [], quality: { gate_files: 0, log_present: true },
+    dispatchesOutsideRun,
+  });
+
+  it("names the count and why it does not count", () => {
+    const out = renderHuman(report(9));
+    assert.match(out, /Dispatches not counted: 9 recorded via `devteam stage`/);
+    assert.match(out, /autonomous `devteam run` dispatches only/);
+  });
+
+  it("stays silent when every dispatch came from a run", () => {
+    assert.doesNotMatch(renderHuman(report(0)), /Dispatches not counted/);
+  });
+
+  it("stays silent when the corpus could not be consulted", () => {
+    // countDispatchesOutsideRun returns null for an absent or unreadable
+    // corpus: "not consulted" must not render as "zero uncounted".
+    assert.doesNotMatch(renderHuman(report(null)), /Dispatches not counted/);
+  });
+
+  it("does not claim the evidence is degraded — the sources are fine", () => {
+    // The dispatches are recorded correctly; they are simply outside the
+    // population D5 measures. Folding them into the quality line would
+    // misreport a scoping decision as a data problem.
+    const out = renderHuman(report(9));
+    assert.match(out, /Evidence quality: complete for available sources/);
+  });
+});
+
+describe("countDispatchesOutsideRun: run_id is the discriminator", () => {
+  const { countDispatchesOutsideRun } = require(path.join(REPO_ROOT, "core", "evidence", "readers"));
+  const withCorpus = (rows) => {
+    const cwd = track(makeTargetProject());
+    const dir = path.join(cwd, ".devteam", "corpus");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "dispatches.jsonl"),
+      rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    return cwd;
+  };
+
+  it("counts corpus rows with no run_id", () => {
+    // A driver dispatch carries the run's started_at as run_id; a stage
+    // dispatch has no run to belong to.
+    assert.equal(countDispatchesOutsideRun(withCorpus([
+      { role: "backend", host: "codex", run_id: "2026-08-20T01:05:02.678Z" },
+      { role: "backend", host: "claude-code" },
+      { role: "qa", host: "claude-code" },
+    ])), 2);
+  });
+
+  it("returns 0 when every row belongs to a run", () => {
+    assert.equal(countDispatchesOutsideRun(withCorpus([
+      { role: "backend", host: "codex", run_id: "r1" },
+    ])), 0);
+  });
+
+  it("counts 0 for an absent corpus, which is not the same as not consulted", () => {
+    // readCorpus swallows the read error and returns [], so absence reads as
+    // zero. The null branch is unreachable for a missing file -- pinning the
+    // real behaviour so the next reader of that comment is not misled as I was.
+    assert.equal(countDispatchesOutsideRun(track(makeTargetProject())), 0);
+    assert.equal(countDispatchesOutsideRun(null), null);
+  });
+});

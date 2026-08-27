@@ -61,7 +61,26 @@ function renderProject(report) {
   const sourceState = !report.quality.log_present && report.quality.gate_files === 0
     ? "no evidence sources found"
     : degraded === 0 ? "complete for available sources" : `degraded (${degraded} source/record issue(s))`;
-  lines.push(`Evidence quality: ${sourceState}`, "");
+  lines.push(`Evidence quality: ${sourceState}`);
+  // Dispatches recorded in the corpus with no run_id came from `devteam stage`,
+  // not from the autonomous driver, and the driver is the only thing that emits
+  // the durable `dispatch-observation` events routing readiness counts.
+  //
+  // Say so here rather than only in the exported bundle. The count has been
+  // computed and exported since #442, but nothing printed it, so an operator
+  // collecting routing evidence by running stages directly sees "complete for
+  // available sources" and a stalled condition, with nothing connecting the two.
+  // Phase 17's scope is deliberate -- a repeated stage dispatch against
+  // unchanged code is not an independent routing observation -- but the
+  // exclusion has to be visible to be a decision rather than a trap.
+  const outsideRun = report.quality.dispatches_outside_run;
+  if (typeof outsideRun === "number" && outsideRun > 0) {
+    lines.push(
+      `Dispatches not counted: ${outsideRun} recorded via \`devteam stage\``,
+      "  Routing readiness counts autonomous `devteam run` dispatches only.",
+    );
+  }
+  lines.push("");
   for (const item of report.readiness) {
     lines.push(`${item.capability} (#${item.issue}): ${item.status}`);
     for (const local of item.local_conditions) lines.push(renderCondition(local));

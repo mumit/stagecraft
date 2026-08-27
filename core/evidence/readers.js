@@ -234,7 +234,13 @@ function countDispatchesOutsideRun(cwd) {
     const { readCorpus } = require("../corpus");
     return readCorpus(cwd).filter((record) => !record || !record.run_id).length;
   } catch {
-    return null; // absent or unreadable corpus is "not consulted", not zero
+    // Reached only if requiring/calling the corpus reader itself throws.
+    // NOTE: an absent corpus file does NOT reach here -- readCorpus swallows
+    // the read error and returns [], so a project with no corpus counts 0
+    // rather than null. Distinguishing "checked, found none" from "never
+    // consulted" would need readCorpus to signal absence; until it does, treat
+    // 0 as "nothing uncounted that we could see".
+    return null;
   }
 }
 
