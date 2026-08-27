@@ -181,6 +181,13 @@ function patchGateForObservedUsage(gatePath, usage, routedModel = null) {
     // what distinguishes "the prefix is being cached" from "the prefix is
     // being re-cached every dispatch because something upstream of it moved".
     ...(typeof usage.cacheCreationTokens === "number" ? { cache_creation_tokens: usage.cacheCreationTokens } : {}),
+    // Which convention the numbers above follow. The two providers disagree:
+    // OpenAI's input_tokens INCLUDES cached, Anthropic's excludes it. Recorded
+    // per dispatch rather than inferred later, because a gate outlives the
+    // knowledge of which adapter wrote it -- and reading it the wrong way moves
+    // a derived cost by several times in either direction. See INPUT_ACCOUNTING
+    // in core/pricing.js.
+    ...(typeof usage.inputAccounting === "string" ? { input_accounting: usage.inputAccounting } : {}),
     cost_usd: usage.costUsd,
     model_observed: usage.model,
     source: usage.source || "claude-code:stream-json",
@@ -192,6 +199,8 @@ function patchGateForObservedUsage(gatePath, usage, routedModel = null) {
       model: costModel,
       tokens_in: usage.tokensIn,
       tokens_out: usage.tokensOut,
+      cached_tokens: usage.cachedTokens,
+      input_accounting: usage.inputAccounting,
     });
     // A null here is the honest outcome — no model id, or no pricing entry for
     // it. patchGateForUnpricedModel already surfaces the latter as the D7

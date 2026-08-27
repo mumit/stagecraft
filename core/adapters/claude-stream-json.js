@@ -89,6 +89,13 @@ function createStreamJsonExtractor() {
           ...(cacheCreation !== null ? { cacheCreationTokens: cacheCreation } : {}),
           costUsd: obj.total_cost_usd,
           model: modelFromResultMessage(obj),
+          // Anthropic reports input_tokens as the UNCACHED remainder, with
+          // cache reads and writes counted separately -- the opposite of
+          // OpenAI's convention. claude-code normally sends a real
+          // total_cost_usd so no cost is derived from these numbers, but the
+          // convention is recorded anyway: the field is what stops a later
+          // reader from having to guess which provider wrote the gate.
+          inputAccounting: "exclusive",
         };
       }
       return typeof obj.result === "string" ? `${obj.result}\n` : "";

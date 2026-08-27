@@ -38,7 +38,10 @@ describe("createStreamJsonExtractor — JSON mode", () => {
     assert.equal(telemetry, "observed");
     // Cache counters are omitted, not zero-filled, when the CLI does not report
     // them — an older claude must stay distinguishable from a real cache miss.
-    assert.deepEqual(usage, { tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5" });
+    assert.deepEqual(usage, {
+      tokensIn: 1234, tokensOut: 56, costUsd: 0.0456, model: "claude-sonnet-5",
+      inputAccounting: "exclusive",
+    });
   });
 
   it("captures cache read and creation counters when the result message carries them", () => {
