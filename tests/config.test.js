@@ -584,3 +584,26 @@ describe("config: the written default track vs the silent-config fallback", () =
     assert.equal(loadConfig(cwd).pipeline.default_track, "full");
   });
 });
+
+describe("loadConfig: review_fanout entry shapes", () => {
+  const write = (body) => {
+    const cwd = track(makeTargetProject({ config: `routing:\n  default_host: codex\n${body}` }));
+    clearConfigCache();
+    return loadConfig(cwd);
+  };
+
+  it("accepts bare host names and the {host, model} form", () => {
+    const cfg = write("  review_fanout:\n    - codex\n    - {host: claude-code, model: claude-opus-5}\n");
+    assert.deepEqual(cfg.routing.review_fanout.map((e) => [e.host, e.model]),
+      [["codex", undefined], ["claude-code", "claude-opus-5"]]);
+  });
+
+  it("drops a malformed entry rather than carrying it into a dispatch", () => {
+    const cfg = write("  review_fanout:\n    - codex\n    - {model: no-host-here}\n");
+    assert.deepEqual(cfg.routing.review_fanout.map((e) => e.host), ["codex"]);
+  });
+
+  it("defaults to an empty list when unset", () => {
+    assert.deepEqual(write("").routing.review_fanout, []);
+  });
+});

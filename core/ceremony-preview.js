@@ -156,7 +156,10 @@ function computeStaticEstimate(cwd, track, config, opts = {}) {
     for (const area of areas) {
       const baseTokens = tokEst(dispatchBytesForRole(stats, stageDef, area));
       const route = resolveRoute(config, stageDef.stage, area);
-      const hosts = isPeerReviewFanout ? fanoutHosts : [route.hostName];
+      // review_fanout entries are {host, model} after config normalization.
+    const hosts = isPeerReviewFanout
+      ? fanoutHosts.map((e) => (typeof e === "string" ? e : e && e.host)).filter(Boolean)
+      : [route.hostName];
 
       for (const host of hosts) {
         stageDispatches += 1;

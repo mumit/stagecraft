@@ -234,7 +234,12 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
       const header = [
         `# Stage transcript: ${descriptor.workstreamId}`,
         `# Host: ${adapter.capabilities && adapter.capabilities.name}`,
-        `# Command: ${cmdString}`,
+        // The command as SPAWNED, not the configured string. The header used
+        // to print cmdString, which is the value before flags this function
+        // appends -- notably `--model`. A transcript that omits the model flag
+        // reads as though routing pinned nothing, which is exactly the wrong
+        // conclusion when diagnosing a dispatch that ran on an unexpected model.
+        `# Command: ${[bin, ...args].join(" ")}`,
         `# Started: ${new Date().toISOString()}`,
         "# ---",
         "",
