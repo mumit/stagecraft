@@ -140,11 +140,56 @@ describe("driver dispatch handlers", () => {
       stubGate: false,
       exitCode: 0,
       queueWaitMs: 0,
+      // These results carry no outputBytes at all, which is "unknown", not
+      // "silent" — an adapter that does not report it must never be read as a
+      // host that said nothing.
+      noOutput: false,
     });
     assert.equal(wrapped.timedOut, true);
     assert.equal(wrapped.wroteGate, false);
     assert.equal(wrapped.stubGate, true);
     assert.equal(wrapped.exitCode, 1);
+  });
+
+  // A host that exits 0 having written nothing at all never ran the turn — a
+  // blocked account, an expired credential. That says nothing about the input,
+  // so it must not be reported as "input is structurally unworkable": the two
+  // conditions want opposite responses (fix the host and re-run unchanged, vs
+  // change the input). See issue #490.
+  it("reports total silence across every dispatch as noOutput", () => {
+    assert.equal(normalizeDispatchResults([
+      { gatePath: null, exitCode: 0, outputBytes: 0 },
+      { gatePath: null, exitCode: 0, outputBytes: 0 },
+    ]).noOutput, true);
+  });
+
+  it("does not call it silence when any dispatch spoke", () => {
+    // One host speaking means the turn ran somewhere; the silence has to be
+    // unanimous to mean "no host ran".
+    assert.equal(normalizeDispatchResults([
+      { gatePath: null, exitCode: 0, outputBytes: 0 },
+      { gatePath: null, exitCode: 0, outputBytes: 512 },
+    ]).noOutput, false);
+  });
+
+  it("treats an absent outputBytes as unknown, not silent", () => {
+    assert.equal(normalizeDispatchResults([
+      { gatePath: null, exitCode: 0 },
+    ]).noOutput, false);
+    assert.equal(normalizeDispatchResults([
+      { gatePath: null, exitCode: 0, outputBytes: undefined },
+    ]).noOutput, false);
+  });
+
+  it("ignores skipped workstreams when judging silence", () => {
+    assert.equal(normalizeDispatchResults([
+      { skipped: true, gatePath: null, exitCode: null },
+      { gatePath: null, exitCode: 0, outputBytes: 0 },
+    ]).noOutput, true);
+  });
+
+  it("is false when nothing was dispatched at all", () => {
+    assert.equal(normalizeDispatchResults([]).noOutput, false);
   });
 
   it("returns typed ok, transient, and structural dispatch outcomes", () => {
@@ -460,5 +505,48 @@ describe("driver transition characterization", () => {
       assert.deepEqual(persisted.outcomes, expected);
       assert.equal(persisted.state.last_action, scenario.action.action);
     }
+  });
+});
+
+// The operator-facing half of issue #490: what the halt actually says.
+describe("dispatchOutcomeTransition: the silent-host halt names the host", () => {
+  const silentHalt = () => dispatchOutcomeTransition({
+    action: { name: "requirements" },
+    base: { iteration: 1, stage: "stage-01", name: "requirements" },
+    transient: {}, maxTransientRetries: 2, retryDelayMs: 0,
+    wroteGate: false, exitCode: 0, timedOut: false, stubGate: false,
+    noOutput: true,
+  });
+
+  it("halts with its own action rather than structural-input", () => {
+    const t = silentHalt();
+    assert.equal(t.summaryPatch.halt_action, "host-silent");
+    assert.equal(t.summaryPatch.halt_failure_class, "host-silent");
+  });
+
+  it("points at the host, not the input", () => {
+    const reason = silentHalt().summaryPatch.halt_reason;
+    assert.match(reason, /written no output at all/);
+    assert.match(reason, /quota, credentials, and connectivity/);
+    assert.match(reason, /re-run unchanged/);
+    assert.doesNotMatch(reason, /structurally unworkable/);
+  });
+
+  it("logs a distinguishable outcome", () => {
+    const t = silentHalt();
+    assert.equal(t.logEvents[0].outcome, "host-silent-halt");
+    assert.equal(t.emittedEvents[0].type, "host-silent");
+  });
+
+  it("a clean exit WITH output still halts as structural-input", () => {
+    const t = dispatchOutcomeTransition({
+      action: { name: "requirements" },
+      base: { iteration: 1, stage: "stage-01", name: "requirements" },
+      transient: {}, maxTransientRetries: 2, retryDelayMs: 0,
+      wroteGate: false, exitCode: 0, timedOut: false, stubGate: false,
+      noOutput: false,
+    });
+    assert.equal(t.summaryPatch.halt_action, "structural-input");
+    assert.match(t.summaryPatch.halt_reason, /structurally unworkable/);
   });
 });

@@ -97,7 +97,19 @@ function classifyDispatch(result, { transientRetries = 0, maxTransientRetries = 
     if (transientRetries >= maxTransientRetries) return "structural-input";
     return "transient";
   }
-  // Clean exit but nothing written → the host did nothing; retry won't help.
+  // A clean exit that also produced ZERO bytes did not evaluate the input at
+  // all. That is the signature of a host that never ran the turn -- codex exits
+  // 0 and silent when the account is out of quota -- and the right response is
+  // to wait and re-run the same input, the opposite of what structural-input
+  // tells the operator to do. Classified separately so the driver can say so.
+  //
+  // Only when the silence is total. A host that emitted anything and still
+  // wrote no gate did evaluate the input, and that remains structural.
+  if (result.exitCode === 0 && !result.timedOut && result.noOutput === true) {
+    return "host-silent";
+  }
+  // Clean exit, some output, nothing written → the host did nothing useful
+  // with the input; retry won't help.
   if (result.exitCode === 0 && !result.timedOut) return "structural-input";
   // Crash / timeout / non-zero exit: transient until we've retried enough.
   if (transientRetries >= maxTransientRetries) return "structural-input";

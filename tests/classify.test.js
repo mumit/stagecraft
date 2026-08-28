@@ -107,3 +107,52 @@ describe("classifyDispatch", () => {
     );
   });
 });
+
+// Issue #490. codex exits 0 with an empty stream when the account is out of
+// quota; four consecutive runs halted as "input is structurally unworkable",
+// which sent the operator to re-read a feature description instead of checking
+// the account. A clean exit that produced ZERO bytes did not evaluate the input
+// at all, so naming the input is wrong — and the two conditions want opposite
+// responses: change the input, versus fix the host and re-run it unchanged.
+describe("classifyDispatch: a silent host is not a structural input", () => {
+  const silent = { wroteGate: false, exitCode: 0, timedOut: false, noOutput: true };
+
+  it("classifies a clean exit with no output at all as host-silent", () => {
+    assert.equal(classifyDispatch(silent), "host-silent");
+  });
+
+  it("still calls a clean exit WITH output structural", () => {
+    // The host ran and declined to write a gate. That is evidence about the
+    // input, and the existing behaviour is correct.
+    assert.equal(classifyDispatch({ ...silent, noOutput: false }), "structural-input");
+  });
+
+  it("treats an unreported outputBytes as structural, not silent", () => {
+    // An adapter that cannot report bytes must not have its dispatches
+    // reclassified: unknown is not silence.
+    assert.equal(classifyDispatch({ wroteGate: false, exitCode: 0, timedOut: false }),
+      "structural-input");
+  });
+
+  it("does not reclassify a crash or a timeout", () => {
+    // Those already retry; silence is only meaningful on a *clean* exit.
+    assert.equal(classifyDispatch({ wroteGate: false, exitCode: 1, timedOut: false, noOutput: true }),
+      "transient");
+    assert.equal(classifyDispatch({ wroteGate: false, exitCode: null, timedOut: true, noOutput: true }),
+      "transient");
+  });
+
+  it("never overrides a written gate", () => {
+    assert.equal(classifyDispatch({ wroteGate: true, exitCode: 0, timedOut: false, noOutput: true }),
+      "ok");
+  });
+
+  it("leaves the stub-gate path alone", () => {
+    // A stub gate means the host wrote something and ran out of room; that is
+    // transient on its own terms and unrelated to silence.
+    assert.equal(classifyDispatch(
+      { wroteGate: false, exitCode: 0, timedOut: false, stubGate: true, noOutput: true },
+      { transientRetries: 0, maxTransientRetries: 2 },
+    ), "transient");
+  });
+});

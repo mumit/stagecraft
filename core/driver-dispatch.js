@@ -89,6 +89,13 @@ function normalizeDispatchResults(runResult) {
     timedOut: results.some((result) => result.timedOut),
     wroteGate: nonSkipped.every((result) => result.gatePath),
     stubGate: nonSkipped.some((result) => result.stubGate),
+    // True only when EVERY dispatch produced zero bytes. One host that spoke
+    // means the turn ran; the silence has to be unanimous to mean "no host
+    // ran". Adapters that do not report outputBytes (an in-process stub, a
+    // test double) leave it undefined, and undefined must not read as silence
+    // -- hence the explicit === 0 rather than a falsy check.
+    noOutput: nonSkipped.length > 0
+      && nonSkipped.every((result) => result.outputBytes === 0),
     exitCode: nonSkipped.length > 0 && nonSkipped.every((result) => result.exitCode === 0) ? 0 : 1,
     queueWaitMs,
   };
@@ -121,9 +128,10 @@ function dispatchOutcomeTransition({
   exitCode,
   timedOut,
   stubGate,
+  noOutput,
 }) {
   const dispatchClass = classifyDispatch(
-    { wroteGate, exitCode, timedOut, stubGate },
+    { wroteGate, exitCode, timedOut, stubGate, noOutput },
     { transientRetries: transient[action.name] || 0, maxTransientRetries },
   );
 
@@ -156,6 +164,27 @@ function dispatchOutcomeTransition({
         backoff_class: backoffClass || null,
       }],
       details: { dispatchClass, retry: true, removeStubGate: stubGate, delayMs: retryDelayMs, retryReason, backoffClass },
+    });
+  }
+
+  // A host that exited cleanly having written nothing at all never evaluated
+  // the input, so naming the input is wrong and actively misleading: the two
+  // conditions want opposite responses. structural-input means change the
+  // input; this means fix the host and re-run the same input unchanged.
+  if (dispatchClass === "host-silent") {
+    return transitionResult(TRANSITION_CONTROLS.HALT, {
+      summaryPatch: {
+        halted: true,
+        halt_action: "host-silent",
+        halt_failure_class: "host-silent",
+        halt_reason:
+          `dispatch of "${action.name}" exited cleanly having written no output at all. ` +
+          "The host never ran the turn, so this says nothing about the input — check host " +
+          "quota, credentials, and connectivity, then re-run unchanged.",
+      },
+      logEvents: [{ ...base, outcome: "host-silent-halt" }],
+      emittedEvents: [{ type: "host-silent", ...base }],
+      details: { dispatchClass },
     });
   }
 
