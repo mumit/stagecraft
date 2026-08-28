@@ -99,7 +99,7 @@ describe("the evidence path reports a cost the orchestrator observed", () => {
     const report = analyzeEvidence({ events: [], gates: [gate], quality: {} });
     assert.deepEqual(report.routing, [{
       role: "backend", host: "claude-code", model: "claude-opus-5",
-      gate_observations: 1, pass: 1, warn: 0, fail: 0, escalate: 0,
+      gate_observations: 1, independent_observations: 1, pass: 1, warn: 0, fail: 0, escalate: 0,
       cost_observations: 1, total_cost_usd: 0.53,
       duration_observations: 0, total_duration_ms: 0,
       prompt_observations: 0, total_prompt_bytes: 0,

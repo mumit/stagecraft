@@ -645,3 +645,83 @@ describe("countDispatchesOutsideRun: run_id is the discriminator", () => {
     assert.equal(countDispatchesOutsideRun(null), null);
   });
 });
+
+// The 2026-08-27 D5 review measured stagecraft-dogfooding at 23.4 dispatch
+// observations per run against a `loop` plan of 5, with a max-iterations-halt
+// in its log. Its 196 backend observations were one or more runs retrying to
+// the cap — correlated looks at a single failing input — and the
+// >=5-per-(role, host) condition read that as satisfied. A run that cannot
+// finish should not be able to open an evidence gate by retrying.
+describe("routing evidence counts independent samples", () => {
+  const obs = (over = {}) => ({
+    outcome: "dispatch-observation", stage: "stage-05", role: "backend",
+    host: "codex", model: "gpt-5.6-sol", status: "PASS", ...over,
+  });
+  const routingOf = (events) => analyzeEvidence({ events, gates: [], quality: {} }).routing[0];
+
+  it("counts a first dispatch but not its retries", () => {
+    const row = routingOf([
+      obs({ attempt: 0 }), obs({ attempt: 1 }), obs({ attempt: 2 }),
+    ]);
+    assert.equal(row.gate_observations, 3, "the dispatch count stays faithful");
+    assert.equal(row.independent_observations, 1);
+  });
+
+  it("does not count a dispatch that produced no output", () => {
+    // A silent host never evaluated the input (#490), so it is not an
+    // observation of how that host performs on that role.
+    const row = routingOf([
+      obs({ attempt: 0, produced_output: true }),
+      obs({ attempt: 0, produced_output: false, status: "NO_GATE" }),
+    ]);
+    assert.equal(row.gate_observations, 2);
+    assert.equal(row.independent_observations, 1);
+  });
+
+  it("treats an event with no attempt as independent, so old bundles still read", () => {
+    const row = routingOf([obs(), obs(), obs()]);
+    assert.equal(row.independent_observations, 3);
+  });
+
+  it("treats an absent produced_output as unknown, not silent", () => {
+    assert.equal(routingOf([obs({ attempt: 0 })]).independent_observations, 1);
+  });
+
+  it("a retry storm no longer satisfies comparable-roles", () => {
+    // One first dispatch per host plus nine retries each: 20 dispatches, 2
+    // independent samples. Before this change that read as 10 and 10.
+    const events = [];
+    for (const host of ["codex", "claude-code"]) {
+      for (let attempt = 0; attempt < 10; attempt++) events.push(obs({ host, attempt }));
+    }
+    const report = analyzeEvidence({ events, gates: [], quality: {} });
+    const d5 = report.readiness.find((r) => r.capability === "d5-continuous-routing");
+    const comparable = d5.local_conditions.find((c) => c.id === "comparable-roles");
+    assert.equal(comparable.met, false, "retries of one input are not a host comparison");
+    assert.equal(report.routing.reduce((n, r) => n + r.gate_observations, 0), 20);
+  });
+
+  it("five genuinely separate dispatches per host still satisfy it", () => {
+    const events = [];
+    for (const host of ["codex", "claude-code"]) {
+      for (let i = 0; i < 5; i++) events.push(obs({ host, attempt: 0 }));
+    }
+    const d5 = analyzeEvidence({ events, gates: [], quality: {} })
+      .readiness.find((r) => r.capability === "d5-continuous-routing");
+    assert.equal(d5.local_conditions.find((c) => c.id === "comparable-roles").met, true);
+  });
+
+  it("gate-snapshot rows expose the field too, so readiness never reads undefined", () => {
+    // The legacy path has no attempt information; a snapshot is per-file and a
+    // retry overwrites it, so it cannot double-count one input.
+    const gate = {
+      source: "current",
+      gate: {
+        stage: "stage-05", workstream: "backend", host: "codex",
+        model: "gpt-5.6-sol", status: "PASS",
+      },
+    };
+    const row = analyzeEvidence({ events: [], gates: [gate], quality: {} }).routing[0];
+    assert.equal(row.independent_observations, row.gate_observations);
+  });
+});

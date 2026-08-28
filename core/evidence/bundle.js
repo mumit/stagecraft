@@ -187,9 +187,13 @@ function validateRows(rows, spec, label, errors) {
   if (!Array.isArray(rows)) { errors.push(`${label} must be an array`); return; }
   rows.forEach((row, index) => {
     const rowLabel = `${label}[${index}]`;
-    if (!exactKeys(row, [...spec.categories, ...spec.counts, ...(spec.numbers || [])], rowLabel, errors)) return;
+    // Optional counts are permitted but not demanded, so a row written before
+    // the field existed still validates and a row carrying it is still checked.
+    const present = (spec.optionalCounts || []).filter(
+      (key) => Object.prototype.hasOwnProperty.call(row, key));
+    if (!exactKeys(row, [...spec.categories, ...spec.counts, ...present, ...(spec.numbers || [])], rowLabel, errors)) return;
     for (const key of spec.categories) if (!validCategory(row[key])) errors.push(`${rowLabel}.${key} is invalid`);
-    validateNumbers(row, spec.counts, rowLabel, errors);
+    validateNumbers(row, [...spec.counts, ...present], rowLabel, errors);
     validateNumbers(row, spec.numbers || [], rowLabel, errors, false);
   });
 }
@@ -269,6 +273,9 @@ function validateBundle(bundle, opts = {}) {
   validateRows(bundle.routing, {
     categories: ["role", "host", "model"],
     counts: ["gate_observations", "pass", "warn", "fail", "escalate", "cost_observations", "duration_observations", "prompt_observations"],
+    // Added after the first bundles shipped, so it is accepted when present and
+    // never required: a bundle exported before it existed must keep validating.
+    optionalCounts: ["independent_observations"],
     numbers: ["total_cost_usd", "total_duration_ms", "total_prompt_bytes"],
   }, "routing", errors);
   validateRows(bundle.recovery, {

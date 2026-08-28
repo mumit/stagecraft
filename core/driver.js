@@ -179,7 +179,7 @@ function logEvent(cwd, changeId, entry) {
 const costEntryForGate = observedCostForGate;
 const observedModel = observedModelForGate;
 
-function dispatchObservation(base, result) {
+function dispatchObservation(base, result, attempt = 0) {
   if (!result || result.skipped) return null;
   let gate = null;
   if (result.gatePath) {
@@ -200,6 +200,24 @@ function dispatchObservation(base, result) {
     status: evidenceCategory(gate && gate.status || "NO_GATE"),
     gate_written: Boolean(gate),
     timed_out: Boolean(result.timedOut),
+    // How many times this stage had already been dispatched in this run when
+    // this observation was taken. 0 is the first dispatch; anything higher is a
+    // retry of the same input.
+    //
+    // Routing evidence thresholds assume independent samples. Without this, a
+    // single run retrying to its iteration cap contributes as many observations
+    // as it has attempts -- the 2026-08-27 D5 review measured 23.4 observations
+    // per run against a plan of 5, and the >=5-per-(role, host) condition read
+    // that as satisfied. A bounded integer is enough to tell the two apart and
+    // carries no identity, unlike a run id.
+    attempt: Number.isInteger(attempt) && attempt >= 0 ? attempt : 0,
+    // False only when the host wrote nothing at all -- a blocked account or an
+    // expired credential (#490). Such a dispatch never evaluated the input, so
+    // it is not an observation of how this host performs on this role.
+    // Omitted rather than defaulted when the adapter cannot report it.
+    ...(typeof result.outputBytes === "number"
+      ? { produced_output: result.outputBytes > 0 }
+      : {}),
   };
   // Same precedence the run's own cost total uses — host-reported, then
   // token-derived, then the model's self-report. Reading gate.cost_usd
@@ -1416,8 +1434,11 @@ async function run(opts = {}) {
       const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput } = dispatch;
       state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
       const durationMs = Date.now() - t0;
+      // state.retries[r.name] is incremented immediately below, so here it is
+      // still the count of PRIOR dispatches of this stage in this run.
+      const attemptIndex = state.retries[r.name] || 0;
       for (const result of results) {
-        const observation = dispatchObservation(base, result);
+        const observation = dispatchObservation(base, result, attemptIndex);
         if (observation) logEvent(cwd, changeId, observation);
       }
       state.retries[r.name] = (state.retries[r.name] || 0) + 1;
@@ -2138,8 +2159,10 @@ async function run(opts = {}) {
         const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput } = dispatch;
         state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
         const durationMs = Date.now() - t0;
+        // Still the count of PRIOR dispatches of this stage; incremented below.
+        const attemptIndex = state.retries[r.name] || 0;
         for (const result of results) {
-          const observation = dispatchObservation(base, result);
+          const observation = dispatchObservation(base, result, attemptIndex);
           if (observation) logEvent(cwd, changeId, observation);
         }
         state.retries[r.name] = (state.retries[r.name] || 0) + 1;
