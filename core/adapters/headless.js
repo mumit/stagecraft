@@ -295,16 +295,34 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
     // streamExtractor is set, stdout is parsed as claude's stream-json
     // and only the extracted readable text reaches the log/terminal —
     // raw JSONL would make the transcript unreadable.
-    if (logWriter !== null || captureOutput) {
+    // Counted unconditionally, not just when logging or capturing: a dispatch
+    // that writes NOTHING is the signature of a host that never ran the turn —
+    // a blocked account, an expired credential — and classifyDispatch cannot
+    // tell that from "ran and declined to write a gate" without this. See
+    // core/gates/classify.js. Bytes only; no content is retained here.
+    // undefined, not 0, when the child was spawned without pipes: we cannot
+    // observe what it wrote, and "unknown" must never read as "silent".
+    // normalizeDispatchResults tests === 0 for exactly that reason.
+    let outputBytes = (child.stdout || child.stderr) ? 0 : undefined;
+    const wantsText = logWriter !== null || captureOutput;
+    if (child.stdout) {
       child.stdout.on("data", (chunk) => {
+        outputBytes += chunk.length;
+        // The extractor must still see every chunk even when nothing is being
+        // logged or captured -- usage/telemetry is parsed out of this stream.
         const text = streamExtractor ? streamExtractor.push(chunk) : chunk;
+        if (!wantsText) return;
         if (liveTee) {
           try { process.stdout.write(text); } catch { /* */ }
         }
         appendLog(text);
         appendCaptured(text);
       });
+    }
+    if (child.stderr) {
       child.stderr.on("data", (chunk) => {
+        outputBytes += chunk.length;
+        if (!wantsText) return;
         if (liveTee) {
           try { process.stderr.write(chunk); } catch { /* */ }
         }
@@ -423,6 +441,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
         logPath,
         durationMs: Date.now() - start,
         timedOut,
+        outputBytes,
         writeViolations,
         ...(captureOutput ? { output: capturedOutput } : {}),
         ...(streamExtractor ? { usage, telemetry } : {}),

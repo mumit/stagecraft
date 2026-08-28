@@ -1413,7 +1413,7 @@ async function run(opts = {}) {
         });
       }
       const dispatch = normalizeDispatchResults(runResult);
-      const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs } = dispatch;
+      const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput } = dispatch;
       state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
       const durationMs = Date.now() - t0;
       for (const result of results) {
@@ -1450,6 +1450,7 @@ async function run(opts = {}) {
         exitCode,
         timedOut: anyTimedOut,
         stubGate: anyStubGate,
+        noOutput,
       });
       applyTransition(outcomeTransition);
       saveRunState(cwd, changeId, state);
@@ -2134,7 +2135,7 @@ async function run(opts = {}) {
           });
         }
         const dispatch = normalizeDispatchResults(runResult);
-        const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs } = dispatch;
+        const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput } = dispatch;
         state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
         const durationMs = Date.now() - t0;
         for (const result of results) {
@@ -2175,6 +2176,7 @@ async function run(opts = {}) {
           exitCode,
           timedOut: anyTimedOut,
           stubGate: anyStubGate,
+          noOutput,
         });
         applyTransition(outcomeTransition);
         saveRunState(cwd, changeId, state);
