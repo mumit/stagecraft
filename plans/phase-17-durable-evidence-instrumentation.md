@@ -57,6 +57,25 @@ Each `dispatch-observation` in `pipeline/run-log.jsonl` may contain only:
 | `timed_out` | adapter result | distinguishes timeout outcomes |
 | `cost_usd` | written gate, optional | supports cost coverage and comparison |
 | `duration_ms` | gate or adapter result, optional | supports latency comparison |
+| `attempt` | driver retry counter | prior dispatches of this stage in this run; 0 is the first |
+| `produced_output` | adapter byte count, optional | false only when the host wrote nothing at all |
+
+`attempt` and `produced_output` exist so readiness can count **independent
+samples** rather than raw dispatches. A retry is another look at one input, and
+a dispatch that produced no output never evaluated the input at all (#490);
+neither is an observation of how a host performs on a role. Both remain in
+`gate_observations`, which stays a faithful dispatch count; the readiness
+thresholds compare against `independent_observations` instead.
+
+The 2026-08-27 D5 review measured 23.4 observations per run against a plan of
+5, from runs retrying to the iteration cap — and the >=5-per-(role, host)
+condition read that as satisfied. `attempt` is a bounded integer and carries no
+identity, which is why it is preferred here over a run id.
+
+Events written before these fields existed are counted as independent, so
+existing bundles keep reading as they did. **The change is therefore
+forward-looking: it prevents a future retry storm from satisfying a gate, and
+does not repair evidence already collected.**
 
 The event never copies blockers, warnings, reasons, prompts, responses, paths,
 transcripts, feature text, credentials, or repository identity. The driver applies the

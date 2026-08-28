@@ -95,7 +95,14 @@ function extractRouting(gateRecords) {
       const key = `${role}\0${host}\0${model}`;
       if (!groups.has(key)) {
         groups.set(key, {
-          role, host, model, gate_observations: 0, pass: 0, warn: 0, fail: 0,
+          // Gate snapshots are per-file, so a retry overwrites rather than
+          // accumulates -- they cannot double-count one input the way durable
+          // events can. independent_observations therefore tracks
+          // gate_observations here, and exists so both routing shapes present
+          // the same field to readiness rather than one of them reading
+          // undefined.
+          role, host, model, gate_observations: 0, independent_observations: 0,
+          pass: 0, warn: 0, fail: 0,
           escalate: 0, cost_observations: 0, total_cost_usd: 0,
           duration_observations: 0, total_duration_ms: 0,
           prompt_observations: 0, total_prompt_bytes: 0,
@@ -103,6 +110,7 @@ function extractRouting(gateRecords) {
       }
       const row = groups.get(key);
       row.gate_observations += 1;
+      row.independent_observations += 1;
       const status = KNOWN_STATUSES.has(item.status) ? item.status : gate.status;
       if (status === "PASS") row.pass += 1;
       else if (status === "WARN") row.warn += 1;
@@ -136,7 +144,8 @@ function extractDurableRouting(events) {
     const key = `${role}\0${host}\0${model}`;
     if (!groups.has(key)) {
       groups.set(key, {
-        role, host, model, gate_observations: 0, pass: 0, warn: 0, fail: 0,
+        role, host, model, gate_observations: 0, independent_observations: 0,
+        pass: 0, warn: 0, fail: 0,
         escalate: 0, cost_observations: 0, total_cost_usd: 0,
         duration_observations: 0, total_duration_ms: 0,
         prompt_observations: 0, total_prompt_bytes: 0,
@@ -144,6 +153,20 @@ function extractDurableRouting(events) {
     }
     const row = groups.get(key);
     row.gate_observations += 1;
+    // Readiness thresholds assume independent samples. A retry of the same
+    // stage in the same run is another look at ONE input, not another
+    // observation of how this host performs on this role -- and a dispatch that
+    // produced no output never evaluated the input at all (#490). Both stay in
+    // gate_observations, which is a faithful dispatch count, and are excluded
+    // from the number the gates compare against.
+    //
+    // An event with no `attempt` predates the field; counting it as independent
+    // preserves how existing bundles read rather than silently deflating the
+    // evidence the earlier reviews cite.
+    const attempt = number(event.attempt);
+    const isRetry = attempt !== null && attempt > 0;
+    const silent = event.produced_output === false;
+    if (!isRetry && !silent) row.independent_observations += 1;
     const status = KNOWN_STATUSES.has(event.status) ? event.status : null;
     if (status === "PASS") row.pass += 1;
     else if (status === "WARN") row.warn += 1;
@@ -224,7 +247,13 @@ function readinessSummary({ runs, routing, recovery, resolutions, rulings, stall
   for (const row of routing) {
     if (!roleHosts.has(row.role)) roleHosts.set(row.role, new Map());
     const hosts = roleHosts.get(row.role);
-    hosts.set(row.host, (hosts.get(row.host) || 0) + row.gate_observations);
+    // Independent samples, not raw dispatches: see extractDurableRouting.
+    // Fall back to the dispatch count if a row predates the field, so a stale
+    // bundle degrades to the old reading rather than to NaN.
+    const independent = typeof row.independent_observations === "number"
+      ? row.independent_observations
+      : row.gate_observations;
+    hosts.set(row.host, (hosts.get(row.host) || 0) + independent);
   }
   const comparableRoles = [...roleHosts.values()].filter((hosts) =>
     [...hosts.values()].filter((count) => count >= 5).length >= 2).length;
