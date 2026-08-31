@@ -133,3 +133,77 @@ describe("stoplist: explanation", () => {
     assert.match(text, /…/, "truncated line must end with ellipsis");
   });
 });
+
+// Issue #489. The refusal quoted the matched line and stopped there, which is
+// not enough to act on: the same sentence can be the change you just described
+// or a brief left behind by a change that finished a week ago, and those want
+// opposite responses. Under the default in-place isolation one brief serves
+// every change, so a completed change's prose keeps gating lighter tracks --
+// attune's brief mentioned a migration it was *removing* and gated unrelated
+// work eight days later, at 22-24 dispatches on `full` instead of 5 on `loop`.
+describe("stoplist: the refusal names which artifact matched", () => {
+  const projectWithBrief = (brief) => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devteam-test-stoplist-"));
+    fs.mkdirSync(path.join(cwd, "pipeline"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "pipeline", "brief.md"), brief);
+    return cwd;
+  };
+
+  it("attributes a match to the change description", () => {
+    const m = checkStoplist({ description: "add authentication to login", cwd: CLEAN_CWD });
+    assert.equal(m[0].from, "the change description");
+    assert.match(explainMatches(m), /matched "authentication" in the change description/);
+  });
+
+  it("attributes a match to the brief, not the description", () => {
+    // The description is clean; only the stale brief matches.
+    const cwd = projectWithBrief(
+      "replace the obsolete promised Mem0-to-Graphiti migration with the current contract.\n");
+    const m = checkStoplist({ description: "add a unit test for adapter selection", cwd });
+    assert.equal(m.length, 1);
+    assert.equal(m[0].from, "pipeline/brief.md");
+    assert.match(explainMatches(m), /matched "migration" in pipeline\/brief\.md/);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("offers archiving when a brief is responsible", () => {
+    const cwd = projectWithBrief("this change performs a database migration\n");
+    const text = explainMatches(checkStoplist({ description: "tidy docs", cwd }));
+    assert.match(text, /belongs to a change you have already finished/);
+    assert.match(text, /mv pipeline\/brief\.md pipeline\/archive\//);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("does not offer archiving when no brief matched", () => {
+    // Suggesting it for a genuinely consequential description would teach
+    // operators to clear state instead of reading the warning.
+    const text = explainMatches(checkStoplist({ description: "add authentication", cwd: CLEAN_CWD }));
+    assert.doesNotMatch(text, /already finished/);
+    assert.match(text, /--force to bypass/);
+  });
+
+  it("still names --force, which remains the documented bypass", () => {
+    const cwd = projectWithBrief("a payments migration is planned\n");
+    assert.match(explainMatches(checkStoplist({ description: "tidy docs", cwd })), /--force to bypass/);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+});
+
+describe("stoplist: findStoplistMatches accepts both candidate shapes", () => {
+  const { findStoplistMatches } = require(path.join(REPO_ROOT, "core", "guards", "stoplist"));
+
+  it("still takes bare strings, so existing callers keep working", () => {
+    const m = findStoplistMatches(["this needs a database migration"]);
+    assert.equal(m.length, 1);
+    assert.equal(m[0].from, null, "an unlabelled candidate reports no source");
+  });
+
+  it("carries the label through when given one", () => {
+    const m = findStoplistMatches([{ text: "a payments change", from: "somewhere" }]);
+    assert.equal(m[0].from, "somewhere");
+  });
+
+  it("ignores malformed candidates rather than throwing", () => {
+    assert.deepEqual(findStoplistMatches([null, undefined, {}, { text: null }, ""]), []);
+  });
+});

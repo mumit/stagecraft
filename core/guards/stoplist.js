@@ -79,13 +79,26 @@ function pipelineBrief(cwd, changeId = null) {
 // Collect every string we want to scan for stoplist patterns: the user's
 // change description, pipeline/brief.md (written by requirements), any paths
 // git or the pipeline knows about.
+// Each candidate carries where it came from. The refusal used to quote the
+// matched line and stop there, which is not enough to act on: the same
+// sentence can be the change you just described or a brief left behind by a
+// change that finished a week ago, and those want opposite responses. Under
+// the default in-place isolation one brief serves every change, so a completed
+// change's prose keeps gating lighter tracks until someone works out which
+// artifact is responsible -- and nothing on screen said which. See issue #489.
+const BRIEF_SOURCE = "pipeline/brief.md";
+
 function gatherCandidates({ description, cwd, changeId = null }) {
   const list = [];
-  if (description) list.push(description);
+  if (description) list.push({ text: description, from: "the change description" });
   const brief = pipelineBrief(cwd, changeId);
-  if (brief) list.push(brief);
-  list.push(...gitChangedFiles(cwd));
-  list.push(...pipelineChangedFiles(cwd));
+  if (brief) list.push({ text: brief, from: BRIEF_SOURCE });
+  for (const file of gitChangedFiles(cwd)) {
+    list.push({ text: file, from: "a changed file path" });
+  }
+  for (const file of pipelineChangedFiles(cwd)) {
+    list.push({ text: file, from: "pipeline/changed-files.txt" });
+  }
   return list;
 }
 
@@ -120,10 +133,16 @@ function isNegatedAt(str, matchIndex) {
 // array of { name, re, matched } objects, where matched is the first
 // non-negated substring that triggered the pattern (a pattern that only
 // ever appears negated in a string produces no match for that string).
+// Accepts either a bare string or { text, from }. Both shapes are supported
+// deliberately: this is exported and called directly with plain strings, and
+// requiring every caller to change in order to improve one message would be
+// the wrong trade.
 function findStoplistMatches(strings, patterns = STOPLIST_PATTERNS) {
   const seen = new Set();
   const matches = [];
-  for (const str of strings) {
+  for (const candidate of strings) {
+    const str = typeof candidate === "string" ? candidate : (candidate && candidate.text);
+    const from = (candidate && typeof candidate === "object" && candidate.from) || null;
     if (typeof str !== "string" || str.length === 0) continue;
     for (const pattern of patterns) {
       const flags = pattern.re.flags.includes("g") ? pattern.re.flags : pattern.re.flags + "g";
@@ -138,7 +157,7 @@ function findStoplistMatches(strings, patterns = STOPLIST_PATTERNS) {
       const key = `${pattern.name}:${found[0].toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      matches.push({ name: pattern.name, re: pattern.re, matched: found[0], source: str });
+      matches.push({ name: pattern.name, re: pattern.re, matched: found[0], source: str, from });
     }
   }
   return matches;
@@ -167,7 +186,20 @@ function explainMatches(matches) {
   lines.push("This change matches the safety stoplist. Re-run with --track full instead.");
   lines.push("Reasons:");
   for (const m of matches) {
-    lines.push(`  - ${m.name}: matched "${m.matched}" in: ${matchingLine(m.source, m.matched)}`);
+    const where = m.from ? ` in ${m.from}` : "";
+    lines.push(`  - ${m.name}: matched "${m.matched}"${where}:`);
+    lines.push(`      ${matchingLine(m.source, m.matched)}`);
+  }
+  // Only when a brief is actually responsible. Under the default in-place
+  // isolation one brief serves every change, so the usual cause is a brief left
+  // behind by a change that already finished -- and archiving it is ordinary
+  // housekeeping, not a bypass of the guard. Naming --force for that case would
+  // teach operators to disable a safety check to clear stale state.
+  if (matches.some((m) => m.from === BRIEF_SOURCE)) {
+    lines.push("");
+    lines.push(`If that ${BRIEF_SOURCE} belongs to a change you have already finished, it is`);
+    lines.push("stale and still being scanned. Archive it and re-run:");
+    lines.push(`  mv ${BRIEF_SOURCE} pipeline/archive/`);
   }
   lines.push("");
   lines.push("If this is a false positive, re-run with --force to bypass.");
