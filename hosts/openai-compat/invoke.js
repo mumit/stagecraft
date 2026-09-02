@@ -27,11 +27,19 @@ const { gatesDir, logsDir, pipelineRoot } = require("../../core/paths");
 const { loadConfig } = require("../../core/config");
 const { snapshotWritables, auditWrites } = require("../../core/guards/write-audit");
 const { computeCostUsd } = require("../../core/pricing");
+const { rotateLog, createTranscriptWriter } = require("../../core/adapters/headless");
 const { buildTools, executeTool } = require("./tools");
 
 const MAX_TOOL_ITERATIONS = 40;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_TOKENS = 32768; // generous cap; models with lower hard limits self-cap via the API
+
+// How many tool-call turns before the iteration cap to warn the model that
+// this dispatch is about to be cut off. Without this, a model doing genuine,
+// converging work (scaffolding, editing, verifying) can run out of budget
+// mid-task with no chance to land on its final "write the gate" step — which
+// classify.js could previously only see as an unretriable structural halt.
+const NUDGE_BEFORE_CAP = 5;
 
 // Resolve the three required config values for a given role.
 function resolveConfig(ctx, role) {
@@ -177,9 +185,49 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
       : `[devteam] openai-compat: ${role} → ${model}\n`,
   );
 
+  // Persist a real transcript to pipeline/logs/<workstreamId>.log. Before this,
+  // this adapter always returned logPath: null and left the "log growth"
+  // stall probe (core/driver.js#defaultStallProbe) with nothing to observe —
+  // every openai-compat dispatch looked stalled after 5 minutes whether or
+  // not real progress was happening, and a halt could only be diagnosed after
+  // the fact by inferring it from file mtimes. Same rotation/header
+  // convention as the acp adapter (core/adapters/headless.js).
+  const logDisabled = process.env.DEVTEAM_NO_LOG === "1" || ctx.log === false;
+  let logPath = null;
+  let logWriter = null;
+  if (!logDisabled) {
+    try {
+      const logsDirPath = logsDir(ctx.cwd, ctx.changeId);
+      fs.mkdirSync(logsDirPath, { recursive: true });
+      logPath = path.join(logsDirPath, `${descriptor.workstreamId}.log`);
+      const rawHistory = process.env.DEVTEAM_LOG_HISTORY;
+      const maxHistory = (rawHistory !== undefined && Number.isFinite(parseInt(rawHistory, 10)) && parseInt(rawHistory, 10) >= 0)
+        ? parseInt(rawHistory, 10)
+        : 3;
+      rotateLog(logPath, maxHistory);
+      logWriter = createTranscriptWriter(logPath, [
+        `# Stage transcript: ${descriptor.workstreamId}`,
+        "# Host: openai-compat",
+        `# Model: ${model}`,
+        `# Started: ${new Date().toISOString()}`,
+        "# ---",
+        "",
+        "",
+      ].join("\n"));
+    } catch {
+      logPath = null;
+      logWriter = null;
+    }
+  }
+  function appendLog(line) {
+    if (!logWriter || line == null) return;
+    logWriter.append(line.endsWith("\n") ? line : `${line}\n`);
+  }
+
   const beforeSnapshot = snapshotWritables(ctx.cwd);
   const start = Date.now();
   let iterations = 0;
+  let nudged = false;
 
   // Phase-28 item 28.2: accumulate `usage` across every turn of the tool
   // loop — a multi-turn dispatch bills once per completion, not once per
@@ -194,10 +242,32 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
 
   while (iterations < MAX_TOOL_ITERATIONS) {
     iterations++;
+
+    // Budget-aware nudge: with NUDGE_BEFORE_CAP turns left, tell the model
+    // directly instead of letting it discover the cutoff by hitting it. A
+    // model mid-task (still scaffolding, still testing) has no way to know
+    // its budget is about to run out otherwise, and running out silently is
+    // exactly what previously produced an unretriable structural halt for
+    // dispatches that were doing real, converging work.
+    if (!nudged && MAX_TOOL_ITERATIONS - NUDGE_BEFORE_CAP > 0 && iterations === MAX_TOOL_ITERATIONS - NUDGE_BEFORE_CAP + 1) {
+      nudged = true;
+      const remaining = MAX_TOOL_ITERATIONS - iterations + 1;
+      const nudgeText =
+        `[stagecraft] ${remaining} tool-call turn(s) remain before this dispatch is cut off at ` +
+        `${MAX_TOOL_ITERATIONS} iterations. Stop expanding scope now. If the work described in the ` +
+        `brief is complete, write the gate file as your very next action. If it is not complete, ` +
+        "write the gate now with status FAIL or ESCALATE describing exactly what remains — do not " +
+        "let this dispatch end without a gate.";
+      messages.push({ role: "user", content: nudgeText });
+      appendLog(`[nudge] ${remaining} iteration(s) remaining — instructed model to wrap up and write the gate`);
+    }
+
     let json;
     try {
       json = await callAPI(url, apiKey, model, messages, tools, timeoutMs);
     } catch (err) {
+      appendLog(`[error] iteration ${iterations}: ${err.message}`);
+      logWriter?.end(`\n# ---\n# Ended: ${new Date().toISOString()}\n# Error: ${err.message}\n`);
       throw new Error(`openai-compat invoke failed (iteration ${iterations}): ${err.message}`);
     }
 
@@ -230,6 +300,14 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     const finishReason = choice.finish_reason;
     const toolCalls = assistantMsg.tool_calls;
 
+    appendLog(
+      `[iter ${iterations}/${MAX_TOOL_ITERATIONS}] finish_reason=${finishReason ?? "null"} ` +
+      `tool_calls=${Array.isArray(toolCalls) ? toolCalls.length : 0}`,
+    );
+    if (assistantMsg.content) {
+      appendLog(`  assistant: ${assistantMsg.content.slice(0, 2000)}`);
+    }
+
     // The conversational coordinator intentionally advertises zero tools.
     // Fail closed if an endpoint nevertheless returns a tool call (whether
     // through a provider quirk or a prompt-injection attempt); do not pass it
@@ -261,16 +339,22 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
       let parsedArgs;
       try { parsedArgs = JSON.parse(tc.function?.arguments || "{}"); } catch { parsedArgs = {}; }
 
+      // Computed once and always written to the persistent transcript log,
+      // regardless of the (unrelated) verbose/quiet stderr setting below —
+      // the log is how a stalled or halted dispatch gets diagnosed after
+      // the fact, so it should never depend on whether --verbose was set.
+      let argSummary;
+      if (tcName === "write_file" || tcName === "read_file") argSummary = parsedArgs.path;
+      else if (tcName === "list_files") argSummary = parsedArgs.dir ?? ".";
+      else if (tcName === "bash") argSummary = (parsedArgs.command ?? "").slice(0, 80);
+      else argSummary = "...";
+      const resultSummary = result.startsWith("error:")
+        ? result
+        : result.slice(0, 100) + (result.length > 100 ? "…" : "");
+      appendLog(`  tool ${tcName}(${argSummary}) -> ${resultSummary}`);
+
       if (verbose) {
-        // Verbose: log every tool call with a result summary.
-        let argSummary;
-        if (tcName === "write_file" || tcName === "read_file") argSummary = parsedArgs.path;
-        else if (tcName === "list_files") argSummary = parsedArgs.dir ?? ".";
-        else if (tcName === "bash") argSummary = (parsedArgs.command ?? "").slice(0, 80);
-        else argSummary = "...";
-        const resultSummary = result.startsWith("error:")
-          ? result
-          : result.slice(0, 100) + (result.length > 100 ? "…" : "");
+        // Verbose: mirror the same summary to stderr.
         process.stderr.write(`[devteam] openai-compat: tool ${tcName}(${argSummary}) → ${resultSummary}\n`);
       } else {
         // Quiet: writes always; bash non-zero exits; any error result.
@@ -297,6 +381,7 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     process.stderr.write(
       `[devteam] openai-compat: warn: hit ${MAX_TOOL_ITERATIONS}-iteration cap for ${descriptor.workstreamId}\n`,
     );
+    appendLog(`[warn] hit ${MAX_TOOL_ITERATIONS}-iteration cap`);
   }
 
   // Derive peer-review gates from any by-*.md files written during this
@@ -320,12 +405,17 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
   // but are never model-written — exempt them so they don't flip the gate to
   // FAIL in either in-place or bounded isolation.
   const afterSnapshot = snapshotWritables(ctx.cwd);
-  const { violations: rawViolations } = auditWrites(
+  const { violations: rawViolations, newPaths } = auditWrites(
     beforeSnapshot,
     afterSnapshot,
     descriptor.allowedWrites || [],
   );
   const violations = rawViolations.filter((v) => !isOrchestratorWrite(ctx, v));
+  // Did the model write anything at all (allowed or not), even though this
+  // dispatch may still end up with no gate? classifyDispatch uses this to
+  // tell "the host ran and chose to do nothing" (immediate structural halt)
+  // apart from "the host was mid-task and ran out of budget" (retriable).
+  const hadWrites = newPaths.some((p) => !isOrchestratorWrite(ctx, p));
   // Logging deferred to orchestrator so sibling-workstream false positives
   // (parallel stage writes captured in this snapshot window) can be filtered
   // before any ⛔ line is emitted.
@@ -342,6 +432,12 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
       isStub = parsed._stub === true;
     } catch { /* unreadable; treat as real gate */ }
   }
+
+  appendLog(
+    `[end] iterations=${iterations} gate=${gateExists ? (isStub ? "stub" : "written") : "none"} ` +
+    `hadWrites=${hadWrites} durationMs=${Date.now() - start}`,
+  );
+  logWriter?.end(`\n# ---\n# Ended: ${new Date().toISOString()}\n# Exit: ok\n`);
 
   // Phase-28 item 28.2: same usage/telemetry contract as claude-code's
   // stream-json extractor (core/adapters/claude-stream-json.js) — usage is
@@ -369,10 +465,11 @@ async function invoke(descriptor, ctx, preRenderedPrompt) {
     exitCode: 0,
     gatePath: gateExists && !isStub ? gatePath : null,
     stubGate: isStub,
-    logPath: null,
+    logPath,
     durationMs: Date.now() - start,
     timedOut: false,
     writeViolations: violations,
+    hadWrites,
     ...(ctx.captureOutput === true ? { output: capturedOutput } : {}),
     usage,
     telemetry: usage ? "observed" : "unavailable",

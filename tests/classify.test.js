@@ -106,6 +106,30 @@ describe("classifyDispatch", () => {
       "ok",
     );
   });
+
+  it("clean exit, no gate, but real writes occurred, first attempt → transient", () => {
+    assert.equal(
+      classifyDispatch({ wroteGate: false, exitCode: 0, timedOut: false, hadWrites: true }, { transientRetries: 0 }),
+      "transient",
+    );
+  });
+
+  it("clean exit, no gate, real writes occurred, after budget spent → structural-input", () => {
+    assert.equal(
+      classifyDispatch(
+        { wroteGate: false, exitCode: 0, timedOut: false, hadWrites: true },
+        { transientRetries: 1, maxTransientRetries: 1 },
+      ),
+      "structural-input",
+    );
+  });
+
+  it("clean exit, no gate, no writes at all → structural-input immediately (hadWrites: false unchanged)", () => {
+    assert.equal(
+      classifyDispatch({ wroteGate: false, exitCode: 0, timedOut: false, hadWrites: false }, { transientRetries: 0 }),
+      "structural-input",
+    );
+  });
 });
 
 // Issue #490. codex exits 0 with an empty stream when the account is out of
