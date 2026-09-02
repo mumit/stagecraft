@@ -1431,7 +1431,7 @@ async function run(opts = {}) {
         });
       }
       const dispatch = normalizeDispatchResults(runResult);
-      const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput } = dispatch;
+      const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput, hadWrites } = dispatch;
       state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
       const durationMs = Date.now() - t0;
       // state.retries[r.name] is incremented immediately below, so here it is
@@ -1472,6 +1472,7 @@ async function run(opts = {}) {
         timedOut: anyTimedOut,
         stubGate: anyStubGate,
         noOutput,
+        hadWrites,
       });
       applyTransition(outcomeTransition);
       saveRunState(cwd, changeId, state);
@@ -2156,7 +2157,7 @@ async function run(opts = {}) {
           });
         }
         const dispatch = normalizeDispatchResults(runResult);
-        const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput } = dispatch;
+        const { results, timedOut: anyTimedOut, wroteGate, stubGate: anyStubGate, exitCode, queueWaitMs, noOutput, hadWrites } = dispatch;
         state.token_dispatches_expected += results.filter((result) => !result.skipped).length;
         const durationMs = Date.now() - t0;
         // Still the count of PRIOR dispatches of this stage; incremented below.
@@ -2200,6 +2201,7 @@ async function run(opts = {}) {
           timedOut: anyTimedOut,
           stubGate: anyStubGate,
           noOutput,
+          hadWrites,
         });
         applyTransition(outcomeTransition);
         saveRunState(cwd, changeId, state);

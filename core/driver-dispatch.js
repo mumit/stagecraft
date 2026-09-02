@@ -97,6 +97,10 @@ function normalizeDispatchResults(runResult) {
     noOutput: nonSkipped.length > 0
       && nonSkipped.every((result) => result.outputBytes === 0),
     exitCode: nonSkipped.length > 0 && nonSkipped.every((result) => result.exitCode === 0) ? 0 : 1,
+    // True when ANY non-skipped dispatch actually wrote a file, even though
+    // this aggregate as a whole produced no gate. One host mid-flight on
+    // real work is enough to say "this wasn't nothing" — see classifyDispatch.
+    hadWrites: nonSkipped.some((result) => result.hadWrites === true),
     queueWaitMs,
   };
 }
@@ -129,9 +133,10 @@ function dispatchOutcomeTransition({
   timedOut,
   stubGate,
   noOutput,
+  hadWrites,
 }) {
   const dispatchClass = classifyDispatch(
-    { wroteGate, exitCode, timedOut, stubGate, noOutput },
+    { wroteGate, exitCode, timedOut, stubGate, noOutput, hadWrites },
     { transientRetries: transient[action.name] || 0, maxTransientRetries },
   );
 

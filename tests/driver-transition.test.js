@@ -139,6 +139,8 @@ describe("driver dispatch handlers", () => {
       wroteGate: true,
       stubGate: false,
       exitCode: 0,
+      // Neither result reports hadWrites, so none is treated as true.
+      hadWrites: false,
       queueWaitMs: 0,
       // These results carry no outputBytes at all, which is "unknown", not
       // "silent" — an adapter that does not report it must never be read as a

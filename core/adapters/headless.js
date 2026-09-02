@@ -386,10 +386,12 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
         return orchestratorWrites.has(normalized) || normalized.startsWith(`${relLogsDir}/`);
       }
       let writeViolations = [];
+      let hadWrites = false;
       if (shouldAudit && beforeSnapshot) {
         const afterSnapshot = snapshotWritables(ctx.cwd);
-        const { violations } = auditWrites(beforeSnapshot, afterSnapshot, descriptor.allowedWrites || []);
+        const { violations, newPaths } = auditWrites(beforeSnapshot, afterSnapshot, descriptor.allowedWrites || []);
         writeViolations = violations.filter((v) => !isOrchestratorWrite(v));
+        hadWrites = newPaths.some((p) => !isOrchestratorWrite(p));
         // Logging deferred to orchestrator so sibling-workstream false positives
         // (parallel stage writes captured in this snapshot window) can be filtered
         // before any ⛔ line is emitted.
@@ -443,6 +445,7 @@ function runHeadless(adapter, descriptor, ctx, preRenderedPrompt) {
         timedOut,
         outputBytes,
         writeViolations,
+        hadWrites,
         ...(captureOutput ? { output: capturedOutput } : {}),
         ...(streamExtractor ? { usage, telemetry } : {}),
       });

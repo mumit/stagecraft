@@ -84,6 +84,9 @@ const MAX_TRANSIENT_RETRIES_DEFAULT = 1;
  * @param {boolean} result.wroteGate  every non-skipped workstream wrote a gate
  * @param {number|null} result.exitCode  aggregate exit (null when timed out)
  * @param {boolean} result.timedOut
+ * @param {boolean} [result.hadWrites]  any non-orchestrator file was written
+ *                               during the dispatch (per the write-audit
+ *                               snapshot diff), even though no gate resulted.
  * @param {object} [opts]
  * @param {number} [opts.transientRetries=0]      retries already spent this stage
  * @param {number} [opts.maxTransientRetries=1]
@@ -110,7 +113,22 @@ function classifyDispatch(result, { transientRetries = 0, maxTransientRetries = 
   }
   // Clean exit, some output, nothing written → the host did nothing useful
   // with the input; retry won't help.
-  if (result.exitCode === 0 && !result.timedOut) return "structural-input";
+  //
+  // Exception: the host DID write files (hadWrites) even though no gate
+  // resulted. That is not "chose to do nothing" — for an agentic tool-loop
+  // host (e.g. openai-compat) it is the signature of a dispatch that was
+  // still mid-task (scaffolding, editing, running verification) when its
+  // iteration/time budget ran out before the model reached its final
+  // "write the gate" step. A retry (ideally with a budget-aware nudge to
+  // wrap up sooner) can plausibly converge; treat it like a crash/timeout
+  // instead of an immediate, unretriable halt.
+  if (result.exitCode === 0 && !result.timedOut) {
+    if (result.hadWrites === true) {
+      if (transientRetries >= maxTransientRetries) return "structural-input";
+      return "transient";
+    }
+    return "structural-input";
+  }
   // Crash / timeout / non-zero exit: transient until we've retried enough.
   if (transientRetries >= maxTransientRetries) return "structural-input";
   return "transient";
